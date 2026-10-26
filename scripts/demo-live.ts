@@ -59,13 +59,14 @@ if (!blocked) finish("Unexpected: an update with open questions committed", 1);
 let answered;
 if (values["reply-by"] === "model") {
   const m = await interpretReply(ledger, r.proposal, reply, live);
-  steps.replyReading = m.status === "proposed" ? { applied: m.applied, conflicts: m.conflicts, unanswered: m.unanswered, usage: m.usage } : m;
+  steps.replyReading = m.status === "proposed" ? { applied: m.applied, corrections: m.corrections, unanswered: m.unanswered, usage: m.usage } : m;
   if (m.status !== "proposed") finish(`Model produced no reply reading: ${m.reason}`, 1);
   answered = m;
 } else answered = applyAnswers(ledger, r.proposal, reply, coordinatorAnswers);
-if (answered.conflicts.length || answered.unanswered.length) {
-  steps.secondReview = { reply: reply.text, conflicts: answered.conflicts, unanswered: answered.unanswered };
-  finish(`The reply did not settle everything: ${[...answered.conflicts.map(c => c.field), ...answered.unanswered].join(", ")}. Stopping rather than guessing.`, 1);
+// This scripted reply only answers; a correction here would mean the model misread it.
+if (answered.corrections.length || answered.unanswered.length) {
+  steps.secondReview = { reply: reply.text, corrections: answered.corrections, unanswered: answered.unanswered };
+  finish(`Unexpected reading of the reply: corrected ${answered.corrections.map(c => c.field).join(", ") || "nothing"}; unanswered ${answered.unanswered.join(", ") || "nothing"}. Stopping before approval.`, 1);
 }
 
 // 3. Re-review, approve the reviewed hash, and replan.

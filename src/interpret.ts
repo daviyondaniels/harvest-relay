@@ -1,4 +1,4 @@
-import { applyAnswers, type Answer } from "./answers.ts";
+import { applyAnswers, openFields, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash } from "./planner.ts";
 import { integer, normalize, type Quantity } from "./quantity.ts";
 import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Field, type Interpretation, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -54,8 +54,10 @@ export const REPLY_PROMPT = [
   "Report only what the reply itself states. For each fact the reply states, add one answer with its field, an exact verbatim substring of reply as quote, and the value in the matching property; set every other value property to null.",
   "A wrong answer can send food to the wrong buyer; a missing one costs the coordinator a follow-up message. If the reply does not clearly settle an open question, leave it out.",
   "operation: replace-total only when the reply says the amount is the new, current or whole total; add-quantity only when it says the amount is extra; correction when it says an earlier listed update was wrong (set correctsEventId); forecast when the supply is expected or uncertain rather than in hand.",
-  "pack is what one case contains, copied as stated in g, kg or each as a whole number. Never convert units or estimate; for a fractional amount or any other unit, leave it out.",
-  "If the reply states a value for a fact the original message already settled, report it with its field even if it differs; the coordinator will check it."
+  "pack is what one case contains, copied as stated in g, kg or each as a whole number. Never convert units or estimate.",
+  "If the reply addresses a fact but you cannot report it under these rules (a fractional amount, an unsupported unit, or wording you cannot settle), do not answer it; list its field in unclear so the coordinator asks the grower.",
+  "lotId may accompany an answer for another field only to say which lot the reply is about; otherwise leave it null.",
+  "If the reply corrects a fact the original message already settled (for example \"sorry, it's 6 not 4\"), report the corrected value with its field and a quote of the correction; the coordinator approves every correction."
 ].join("\n");
 export const PROMPT_VERSION: PromptVersion = "v2";
 export const SYSTEM_PROMPT = PROMPTS[PROMPT_VERSION];
@@ -284,7 +286,7 @@ export async function interpretSource(l: Ledger, s: Source, o: InterpretOptions)
 const ANSWER_VALUES = ["operation", "lotId", "quantity", "pack", "grade", "deliveryOn", "correctsEventId"] as const;
 const VALUE_OF: Record<Field, typeof ANSWER_VALUES[number]> = { operation: "operation", lot: "lotId", quantity: "quantity", unit: "quantity", pack: "pack", grade: "grade", date: "deliveryOn", "correction-target": "correctsEventId" };
 export function replySchema(lotIds: string[], eventIds: string[]): Record<string, unknown> {
-  return object({ answers: { type: "array", items: object({
+  return object({ unclear: { type: "array", items: { type: "string", enum: FIELDS } }, answers: { type: "array", items: object({
     field: { type: "string", enum: FIELDS }, quote: { type: "string", description: "Exact verbatim substring of reply" },
     operation: choice(OPERATIONS.filter(x => x !== "unresolved")), lotId: choice(lotIds),
     quantity: nullable(object({ amount: { type: "integer" }, unit: { type: "string", enum: UNITS } })),
@@ -296,27 +298,38 @@ export function replySchema(lotIds: string[], eventIds: string[]): Record<string
 // reply; from the ledger, only the sender's own lots and recent updates.
 export function buildReplyRequest(l: Ledger, p: UpdateProposal, reply: Source, model: string, maxCompletionTokens: number, effort: Effort): ChatRequest {
   const ctx = context(l, p.source), { spans: _, ...reading } = p.interpretation;
-  const openQuestions = reviewUpdate(l, p).questions.map(q => ({ field: q.field, question: q.question }));
+  const asked = reviewUpdate(l, p).questions.map(q => ({ field: q.field, question: q.question }));
+  const openQuestions = [...asked, ...[...openFields(l, p)].filter(f => !asked.some(q => q.field === f)).map(f => ({ field: f, question: `Not stated in the message: ${f}` }))];
   return {
     model, max_completion_tokens: maxCompletionTokens, temperature: 0, reasoning_effort: effort, stream: false, n: 1,
     messages: [{ role: "system", content: REPLY_PROMPT }, { role: "user", content: JSON.stringify({ message: p.source.text, reading, openQuestions, reply: reply.text, context: ctx }) }],
     response_format: { type: "json_schema", json_schema: { name: "grower_reply_answers", strict: true, schema: replySchema(ctx.lots.map(x => x.id), ctx.updates.map(x => x.eventId)) } }
   };
 }
-function toAnswers(raw: string, lotIds: string[], eventIds: string[]): Answer[] {
+// An answer fills exactly the value for its field, plus optionally lotId naming the lot it
+// is about. One naming the update's own lot is kept; one naming another lot is about a
+// different update and is dropped, leaving its field open.
+function toAnswers(raw: string, lotIds: string[], eventIds: string[], updateLot: string | undefined): { answers: Answer[]; unclear: Field[]; dropped: Field[] } {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Invalid("Output is not JSON"); }
-  return list(exact(parsed, ["answers"]).answers, FIELDS.length).map(v => {
+  const o = exact(parsed, ["unclear", "answers"]);
+  const unclear = list(o.unclear, FIELDS.length).map(f => oneOf(f, FIELDS));
+  const read = list(o.answers, FIELDS.length).map(v => {
     const a = exact(v, ["field", "quote", ...ANSWER_VALUES]), field = oneOf(a.field, FIELDS), key = VALUE_OF[field];
-    if (ANSWER_VALUES.some(k => (k === key) === (a[k] === null))) throw new Invalid("Contradictory output: an answer must fill exactly the value for its field");
-    if (key === "lotId" && !lotIds.includes(a.lotId as string)) throw new Invalid("Unknown lot reference");
+    if (ANSWER_VALUES.some(k => k !== key && k !== "lotId" && a[k] !== null) || a[key] === null) throw new Invalid("Contradictory output: an answer must fill exactly the value for its field");
+    if (a.lotId !== null && !lotIds.includes(a.lotId as string)) throw new Invalid("Unknown lot reference");
     if (key === "correctsEventId" && !eventIds.includes(a.correctsEventId as string)) throw new Invalid("Unknown update reference");
     const value = key === "quantity" || key === "pack" ? exact(a[key], ["amount", "unit"]) : a[key];
-    return { field, quote: text(a.quote, LIMIT.quote), value };
+    return { answer: { field, quote: text(a.quote, LIMIT.quote), value }, about: key === "lotId" ? null : a.lotId as string | null };
   });
+  // The lot in question is the one this reply names for the update, if it does, else the reading's.
+  const target = read.find(x => x.answer.field === "lot")?.answer.value as string | undefined ?? updateLot;
+  const kept = read.filter(x => x.about === null || x.about === target);
+  if (new Set(unclear).size !== unclear.length || unclear.some(f => kept.some(x => x.answer.field === f))) throw new Invalid("Contradictory output: a field is both answered and unclear");
+  return { answers: kept.map(x => x.answer), unclear, dropped: read.filter(x => !kept.includes(x)).map(x => x.answer.field) };
 }
 export type ReplyResult = Failure | { status: "disabled"; reason: string }
-  | { status: "proposed"; proposal: UpdateProposal; applied: Field[]; conflicts: { field: Field; quote: string }[]; unanswered: Field[]; questions: Question[]; usage?: Usage };
+  | { status: "proposed"; proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unclear: Field[]; dropped: Field[]; unanswered: Field[]; questions: Question[]; usage?: Usage };
 
 // Proposes answers from a reply. They go through applyAnswers exactly as a coordinator's
 // would, and the result still needs review and named approval.
@@ -329,8 +342,9 @@ export async function interpretReply(l: Ledger, p: UpdateProposal, reply: Source
   if (!("raw" in r)) return r;
   const ctx = context(l, p.source);
   try {
-    const result = applyAnswers(l, p, reply, toAnswers(r.raw, ctx.lots.map(x => x.id), ctx.updates.map(x => x.eventId)));
-    return { status: "proposed", ...result, questions: reviewUpdate(l, result.proposal).questions, usage: r.usage };
+    const read = toAnswers(r.raw, ctx.lots.map(x => x.id), ctx.updates.map(x => x.eventId), p.interpretation.lotId);
+    const result = applyAnswers(l, p, reply, read.answers, read.unclear);
+    return { status: "proposed", ...result, dropped: read.dropped, questions: reviewUpdate(l, result.proposal).questions, usage: r.usage };
   } catch (e) { return { status: "invalid", reason: e instanceof Error ? e.message : "Invalid output", usage: r.usage }; }
 }
 
