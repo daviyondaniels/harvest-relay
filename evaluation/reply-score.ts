@@ -71,8 +71,11 @@ export function scoreReply(c: ReplyCase, r: ReplyResult) {
       : lb.open.includes(f) ? (applied.has(f) ? "over-answered" : "kept-open")
       : corrected.has(f) ? "spurious" : "n/a";
   }
-  // Unsafe: an incorrect or unsupported value would reach the approval step.
-  return { id: c.id, category: c.category, status: r.status, grades, unsafe: Object.values(grades).some(g => g === "wrong" || g === "over-answered" || g === "spurious") };
+  // Unsafe: an incorrect or unsupported value would reach the approval step. A missed
+  // correction counts when review raises no question, since the old value then goes to
+  // approval as if the reply had confirmed it.
+  const silentMiss = Object.keys(lb.corrections).some(f => grades[f as Field] === "missed") && r.questions.length === 0;
+  return { id: c.id, category: c.category, status: r.status, grades, unsafe: silentMiss || Object.values(grades).some(g => g === "wrong" || g === "over-answered" || g === "spurious") };
 }
 
 export function summarizeReplies(scores: ReturnType<typeof scoreReply>[]) {

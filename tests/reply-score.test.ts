@@ -25,7 +25,8 @@ test("grades answers, corrections and fields that must stay open", () => {
   const fix: ReplyCase = { ...base, id: "c3", reply: "Sorry, 4 cases not 5. That's all we have now, 4 kg a case.", label: { answers: base.label.answers, corrections: { quantity: { amount: 4, unit: "case" } }, open: [] } };
   const answersOnly = [{ field: "operation" as const, quote: "That's all we have now", value: "replace-total" }, { field: "pack" as const, quote: "4 kg a case", value: { amount: 4, unit: "kg" } }];
   assert.equal(scoreReply(fix, result(fix, [...answersOnly, { field: "quantity", quote: "4 cases not 5", value: { amount: 4, unit: "case" } }])).grades.quantity, "correct");
-  assert.equal(scoreReply(fix, result(fix, answersOnly)).grades.quantity, "missed");
+  const missedFix = scoreReply(fix, result(fix, answersOnly));
+  assert.deepEqual([missedFix.grades.quantity, missedFix.unsafe], ["missed", true], "a silently missed correction sends the old value to approval");
   const spurious = scoreReply(base, result(base, [...answersOnly, { field: "grade", quote: "all we have", value: "processing" }]));
   assert.deepEqual([spurious.grades.grade, spurious.unsafe], ["spurious", true]);
   assert.deepEqual(summarizeReplies([good, wrong, guessed, scoreReply(base, { status: "invalid", reason: "Output is not JSON" })]),

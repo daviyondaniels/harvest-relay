@@ -78,16 +78,18 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
   const applied: Field[] = [], corrections: Correction[] = [];
   // Quantity before pack, so one reply can state both a count of cases and their contents.
   for (const a of [...answers].sort((x, y) => FIELDS.indexOf(x.field) - FIELDS.indexOf(y.field))) {
-    const span = locate(reply.text, a.quote), value = read(a.field, a.value);
+    const span = locate(reply.text, a.quote);
+    let value = read(a.field, a.value);
+    // A count of cases stated without contents keeps the contents already known, before
+    // comparing, so restating "still five cases" is not a correction.
+    if ((a.field === "quantity" || a.field === "unit") && (value as Quantity).unit === "case" && !(value as Quantity).pack && i.quantity?.pack) value = { ...(value as Quantity), pack: i.quantity.pack };
     const correcting = !open.has(a.field), from = current(i, a.field) ?? null;
     if (correcting && digest(from) === digest(value)) continue;
     if (a.field === "pack") {
       if (i.quantity?.unit !== "case") throw new Error("Case contents answer needs a quantity in cases");
       i.quantity = { ...i.quantity, pack: value as NonNullable<Quantity["pack"]> };
-    } else if (a.field === "quantity" || a.field === "unit") {
-      const q = value as Quantity;
-      i.quantity = q.unit === "case" && !q.pack && i.quantity?.pack ? { ...q, pack: i.quantity.pack } : q;
-    } else (i as Record<string, unknown>)[KEYS[a.field]!] = value;
+    } else if (a.field === "quantity" || a.field === "unit") i.quantity = value as Quantity;
+    else (i as Record<string, unknown>)[KEYS[a.field]!] = value;
     i.unresolved = i.unresolved.filter(f => f !== a.field && !(a.field === "quantity" && f === "unit") && !(a.field === "unit" && f === "quantity"));
     const answer = { source: structuredClone(reply), span };
     if (correcting) {

@@ -33,6 +33,9 @@ test("a reply that contradicts a settled fact becomes a recorded correction that
   const l = createLedger(scenario()), p = surplus(l);
   const agree = applyAnswers(l, p, reply("Yes, four cases. That's the new total."), [{ field: "quantity", quote: "four cases", value: { amount: 4, unit: "case" } }, { field: "operation", quote: "That's the new total", value: "replace-total" }]);
   assert.deepEqual(agree.corrections, [], "restating the same fact is not a correction");
+  const packed = { ...p, interpretation: { ...p.interpretation, operation: "replace-total" as const, quantity: { amount: 4, unit: "case" as const, pack: { amount: 5000, unit: "g" as const } } } };
+  const still = applyAnswers(l, packed, reply("Still four cases total."), [{ field: "quantity", quote: "four cases", value: { amount: 4, unit: "case" } }]);
+  assert.deepEqual([still.corrections, still.proposal.interpretation.quantity], [[], packed.interpretation.quantity], "a count restated without contents keeps the known contents");
   const text = "Sorry, it's 6 cases not 4, that's the new total, 5 kg each.";
   const differ = applyAnswers(l, p, reply(text), [{ field: "quantity", quote: "it's 6 cases not 4", value: { amount: 6, unit: "case" } },
     { field: "operation", quote: "that's the new total", value: "replace-total" }, { field: "pack", quote: "5 kg each", value: { amount: 5, unit: "kg" } }]);
