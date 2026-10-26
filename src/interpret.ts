@@ -1,4 +1,4 @@
-import { applyAnswers, type Answer } from "./answers.ts";
+import { applyAnswers, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash } from "./planner.ts";
 import { integer, normalize, type Quantity } from "./quantity.ts";
 import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Field, type Interpretation, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -55,7 +55,7 @@ export const REPLY_PROMPT = [
   "A wrong answer can send food to the wrong buyer; a missing one costs the coordinator a follow-up message. If the reply does not clearly settle an open question, leave it out.",
   "operation: replace-total only when the reply says the amount is the new, current or whole total; add-quantity only when it says the amount is extra; correction when it says an earlier listed update was wrong (set correctsEventId); forecast when the supply is expected or uncertain rather than in hand.",
   "pack is what one case contains, copied as stated in g, kg or each as a whole number. Never convert units or estimate; for a fractional amount or any other unit, leave it out.",
-  "If the reply states a value for a fact the original message already settled, report it with its field even if it differs; the coordinator will check it."
+  "If the reply corrects a fact the original message already settled (for example \"sorry, it's 6 not 4\"), report the corrected value with its field and a quote of the correction; the coordinator approves every correction."
 ].join("\n");
 export const PROMPT_VERSION: PromptVersion = "v2";
 export const SYSTEM_PROMPT = PROMPTS[PROMPT_VERSION];
@@ -316,7 +316,7 @@ function toAnswers(raw: string, lotIds: string[], eventIds: string[]): Answer[] 
   });
 }
 export type ReplyResult = Failure | { status: "disabled"; reason: string }
-  | { status: "proposed"; proposal: UpdateProposal; applied: Field[]; conflicts: { field: Field; quote: string }[]; unanswered: Field[]; questions: Question[]; usage?: Usage };
+  | { status: "proposed"; proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unanswered: Field[]; questions: Question[]; usage?: Usage };
 
 // Proposes answers from a reply. They go through applyAnswers exactly as a coordinator's
 // would, and the result still needs review and named approval.

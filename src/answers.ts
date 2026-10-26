@@ -4,10 +4,13 @@ import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Clarific
 
 // A grower's reply settles open questions only through quoted words. Answers come from
 // the coordinator or from a model proposal; either way they are checked here and applied
-// to a new proposal, which is then reviewed and approved like any other. A reply never
-// overwrites a fact the original message settled: a differing value re-opens review.
+// to a new proposal, which is then reviewed and approved like any other. A reply that
+// states a different value for a fact the message settled corrects the pending update:
+// the change is recorded with both values and the reply quote, and the original message
+// evidence is kept. It takes effect only through approval of the new review hash.
 export type Answer = { field: Field; quote: string; value: unknown };
-export type AnswerResult = { proposal: UpdateProposal; applied: Field[]; conflicts: { field: Field; quote: string }[]; unanswered: Field[] };
+export type Correction = { field: Field; from: unknown; to: unknown; quote: string };
+export type AnswerResult = { proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unanswered: Field[] };
 
 const KEYS: Partial<Record<Field, keyof Interpretation>> = { operation: "operation", lot: "lotId", quantity: "quantity", unit: "quantity", grade: "grade", date: "deliveryOn", "correction-target": "correctsEventId" };
 const UNITS = ["g", "kg", "each", "case"];
@@ -61,16 +64,12 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
   if (answers.some(a => !FIELDS.includes(a?.field) || typeof a.quote !== "string" || a.quote.length > 500)) throw new Error("Invalid answer");
   const review = reviewUpdate(l, p), open = new Set(review.questions.map(q => q.field));
   const i: Interpretation = structuredClone(p.interpretation), clarifications: Clarification[] = structuredClone(p.clarifications);
-  const applied: Field[] = [], conflicts: AnswerResult["conflicts"] = [];
+  const applied: Field[] = [], corrections: Correction[] = [];
   // Quantity before pack, so one reply can state both a count of cases and their contents.
   for (const a of [...answers].sort((x, y) => FIELDS.indexOf(x.field) - FIELDS.indexOf(y.field))) {
     const span = locate(reply.text, a.quote), value = read(a.field, a.value);
-    if (!open.has(a.field)) {
-      if (digest(current(i, a.field) ?? null) === digest(value)) continue;
-      conflicts.push({ field: a.field, quote: a.quote });
-      clarifications.push({ field: a.field, question: `The reply ("${a.quote.slice(0, 200)}") differs from the original message; confirm with the grower and record a corrected revision` });
-      continue;
-    }
+    const correcting = !open.has(a.field), from = current(i, a.field) ?? null;
+    if (correcting && digest(from) === digest(value)) continue;
     if (a.field === "pack") {
       if (i.quantity?.unit !== "case") throw new Error("Case contents answer needs a quantity in cases");
       i.quantity = { ...i.quantity, pack: value as NonNullable<Quantity["pack"]> };
@@ -80,11 +79,16 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
     } else (i as Record<string, unknown>)[KEYS[a.field]!] = value;
     i.unresolved = i.unresolved.filter(f => f !== a.field && !(a.field === "quantity" && f === "unit") && !(a.field === "unit" && f === "quantity"));
     const answer = { source: structuredClone(reply), span };
+    if (correcting) {
+      corrections.push({ field: a.field, from, to: value, quote: a.quote });
+      clarifications.push({ field: a.field, question: `Reply corrects ${a.field} from ${JSON.stringify(from)} to ${JSON.stringify(value)}`.slice(0, 500), answer });
+      continue;
+    }
     const asked = clarifications.filter(c => c.field === a.field && !c.answer);
     if (asked.length) for (const c of asked) c.answer = answer;
     else clarifications.push({ field: a.field, question: review.questions.find(q => q.field === a.field)!.question, answer });
     applied.push(a.field);
   }
   const proposal: UpdateProposal = { ...structuredClone(p), interpretation: i, clarifications };
-  return { proposal, applied, conflicts, unanswered: [...new Set(reviewUpdate(l, proposal).questions.map(q => q.field))] };
+  return { proposal, applied, corrections, unanswered: [...new Set(reviewUpdate(l, proposal).questions.map(q => q.field))] };
 }
