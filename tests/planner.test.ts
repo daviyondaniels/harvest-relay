@@ -3,21 +3,21 @@ import assert from "node:assert/strict";
 import { scenario, shortage, surplus } from "../evaluation/scenario.ts";
 import { proposeAllocations, verifyPlan, snapshotHash } from "../src/planner.ts";
 import { normalize, type Quantity } from "../src/quantity.ts";
-import { applyUpdate, reviewUpdate } from "../src/updates.ts";
+import { commitUpdate, createLedger, reviewUpdate } from "../src/updates.ts";
 
 test("baseline and approved changes preserve shortages and surplus honestly", () => {
-  let s = scenario();
-  const original = structuredClone(s);
-  const before = proposeAllocations(s); verifyPlan(s, before);
+  let l = createLedger(scenario());
+  const original = scenario();
+  const before = proposeAllocations(l.snapshot); verifyPlan(l.snapshot, before);
   assert.deepEqual(before.unfilled.map(x => [x.orderId, x.amount]), [["order-c", 10000]]);
-  const p = shortage(s);
-  s = applyUpdate(s, p, { reviewer: "test", proposalHash: reviewUpdate(s, p).hash }).snapshot;
-  const unknown = surplus(s);
-  assert.match(reviewUpdate(s, unknown).questions[0], /case/);
-  assert.throws(() => applyUpdate(s, unknown, { reviewer: "test", proposalHash: reviewUpdate(s, unknown).hash }), /Clarification/);
-  const q = surplus(s, true);
-  s = applyUpdate(s, q, { reviewer: "test", proposalHash: reviewUpdate(s, q).hash }).snapshot;
-  const after = proposeAllocations(s); verifyPlan(s, after);
+  const p = shortage(l);
+  l = commitUpdate(l, p, { reviewer: "test", reviewHash: reviewUpdate(l, p).hash });
+  const unknown = surplus(l);
+  assert.deepEqual(reviewUpdate(l, unknown).questions.map(q => q.field).sort(), ["operation", "pack"]);
+  assert.throws(() => commitUpdate(l, unknown, { reviewer: "test", reviewHash: reviewUpdate(l, unknown).hash }), /Clarification/);
+  const q = surplus(l, true);
+  l = commitUpdate(l, q, { reviewer: "test", reviewHash: reviewUpdate(l, q).hash });
+  const s = l.snapshot, after = proposeAllocations(s); verifyPlan(s, after);
   assert.deepEqual(after.unfilled.map(x => [x.orderId, x.amount]), [["order-b", 30000]]);
   assert.deepEqual(after.unallocated.map(x => [x.lotId, x.amount]), [["lot-d", 10000]]);
   assert.equal(after.allocations.find(x => x.kind === "approved-substitution")?.amount, 10000);
@@ -70,16 +70,16 @@ test("duplicate IDs and invalid dates fail before planning", () => {
 });
 
 test("stale snapshots, altered proposals, missing evidence and unit-changing updates are blocked", () => {
-  const s = scenario(), p = shortage(s), approval = { reviewer: "test", proposalHash: reviewUpdate(s, p).hash };
-  const changed = structuredClone(p); changed.quantity.amount = 29;
-  assert.throws(() => applyUpdate(s, changed, approval), /approval/);
-  const first = applyUpdate(s, p, approval);
-  assert.throws(() => applyUpdate(first.snapshot, p, approval), /Stale/);
-  assert.throws(() => applyUpdate(s, p, { ...approval, reviewer: " " }), /approval/);
-  assert.throws(() => reviewUpdate(s, { ...p, evidence: { ...p.evidence, quote: "invented evidence" } }), /evidence/);
-  assert.match(reviewUpdate(s, { ...p, quantity: { amount: 30, unit: "each" } }).questions[0], /base unit/);
-  assert.equal(first.event.beforeHash, snapshotHash(s));
-  assert.equal(first.event.afterHash, snapshotHash(first.snapshot));
+  const l = createLedger(scenario()), p = shortage(l), approval = { reviewer: "test", reviewHash: reviewUpdate(l, p).hash };
+  const changed = structuredClone(p); changed.interpretation.quantity!.amount = 29;
+  assert.throws(() => commitUpdate(l, changed, approval), /approval/);
+  const first = commitUpdate(l, p, approval);
+  assert.throws(() => commitUpdate(first, p, approval), /Duplicate/);
+  assert.throws(() => commitUpdate(l, p, { ...approval, reviewer: " " }), /approval/);
+  assert.throws(() => reviewUpdate(l, { ...p, interpretation: { ...p.interpretation, spans: [{ start: 0, end: 9999 }] } }), /evidence/);
+  assert.match(reviewUpdate(l, { ...p, interpretation: { ...p.interpretation, quantity: { amount: 30, unit: "each" } } }).questions[0].question, /base unit/);
+  assert.equal(first.events[0].beforeHash, snapshotHash(l.snapshot));
+  assert.equal(first.events[0].afterHash, snapshotHash(first.snapshot));
 });
 
 test("independent verifier rejects overselling, missing residuals and forbidden products", () => {
