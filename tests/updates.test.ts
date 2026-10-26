@@ -101,7 +101,7 @@ test("clarification questions and answers stay linked to the original evidence a
   assert.equal(grams(l, "lot-d"), 20000);
 
   const fresh = createLedger(scenario()), q = surplus(fresh, true), hash = reviewUpdate(fresh, q).hash;
-  const reworded = structuredClone(q); reworded.clarifications[0] = answer("pack", "Clarify the confirmed contents of one case", { ...q.clarifications[0].answer!.source, text: "Confirmed net contents: 5 kg per case, washed." }, "Confirmed net contents: 5 kg per case");
+  const reworded = structuredClone(q); reworded.clarifications[0] = answer("pack", "Clarify the confirmed contents of one case", { ...q.clarifications[0].answer!.source, revision: 2, text: "Confirmed net contents: 5 kg per case, washed." }, "Confirmed net contents: 5 kg per case");
   const resourced = structuredClone(q); resourced.source.text += " ";
   for (const changed of [reworded, resourced]) {
     assert.notEqual(reviewUpdate(fresh, changed).hash, hash);
@@ -129,6 +129,45 @@ test("duplicate, conflicting and superseded source revisions cannot alter a lot 
   let m = approve(l0, lotA(l0)); m = approve(m, lotC(m));
   assert.deepEqual([grams(m, "lot-a"), grams(m, "lot-c")], [30000, 25000]);
   assert.throws(() => approve(m, lotC(m)), /Duplicate/);
+});
+
+test("each source ID and revision names one record across primaries, answers and history", () => {
+  const l0 = createLedger(scenario()), clarified = surplus(l0, true), reply = clarified.clarifications[0].answer!.source;
+  const rejects = (l: Ledger, p: UpdateProposal) => { const prior = structuredClone(l); assert.throws(() => reviewUpdate(l, p), /Source revision conflict/); assert.throws(() => approve(l, p), /Source revision conflict/); assert.deepEqual(l, prior); };
+
+  // 1. Two answers in one proposal cite the same ID/revision with different text.
+  const split = structuredClone(clarified);
+  split.clarifications[1] = answer("operation", "New total or addition?", { ...reply, text: "Sorry, this is in addition to the earlier lot total." }, "in addition to the earlier lot total");
+  rejects(l0, split);
+
+  // 2. An answer cites the primary source's ID/revision with different text.
+  const primary = structuredClone(clarified);
+  primary.clarifications[0] = answer("pack", "Clarify the confirmed contents of one case", { ...clarified.source, text: "Confirmed net contents: 5 kg per case." }, "Confirmed net contents: 5 kg per case");
+  rejects(l0, primary);
+
+  // 3. Later proposals conflict with an answer source already in committed history.
+  const l1 = approve(l0, clarified);
+  rejects(l1, tomatoes(l1, reply.id, "Lot B is now 10 kg standard tomatoes for Friday.", "replace-total", 10));
+  const shortAgain = shortage(l1);
+  shortAgain.clarifications = [answer("grade", "Standard grade?", { ...reply, text: "Yes, standard." }, "Yes, standard.")];
+  rejects(l1, shortAgain);
+
+  // 4. Identical reuse is legitimate: one reply backing two answers (above), a committed
+  // answer cited again, and a committed primary cited as an answer on the same lot.
+  const reused = shortage(l1);
+  reused.clarifications = [answer("pack", "Contents per case as previously confirmed?", reply, "Confirmed net contents: 5 kg per case")];
+  const l2 = approve(l1, reused);
+  const noteA = l2.events[1].proposal.source;
+  const fix = tomatoes(l2, "msg-11", "Sorry, 35 kg of tomatoes, not 30.", "correction", 35, { lotId: "lot-a", growerId: "grower-a", correctsEventId: "event-2" });
+  fix.clarifications = [answer("correction-target", "Which update is wrong?", noteA, "Only 30 kg of standard tomatoes")];
+  const l3 = approve(l2, fix);
+  assert.equal(grams(l3, "lot-a"), 35000, "citing a committed primary source as evidence is not a duplicate application");
+  assert.deepEqual(l3.events.map(e => e.lotId), ["lot-d", "lot-a", "lot-a"]);
+
+  // A primary source that was only ever cited as an answer may still update a lot once.
+  const fromReply = propose(l3, "from-reply", reply, { operation: "replace-total", lotId: "lot-b", quantity: { amount: 5, unit: "kg" }, grade: "standard", deliveryOn: FRIDAY, quotes: ["Confirmed net contents: 5 kg per case"] });
+  const l4 = approve(l3, fromReply);
+  assert.throws(() => approve(l4, propose(l4, "again", reply, { operation: "replace-total", lotId: "lot-b", quantity: { amount: 5, unit: "kg" }, grade: "standard", deliveryOn: FRIDAY, quotes: ["Confirmed net contents: 5 kg per case"] })), /Duplicate/);
 });
 
 test("approvals go stale when any other update commits, even if inventory is unchanged", () => {

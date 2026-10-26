@@ -99,12 +99,19 @@ export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string;
     if (!FIELDS.includes(c?.field) || typeof c.question !== "string" || !c.question.trim() || c.question.length > 500) throw new Error("Invalid clarification");
     if (c.answer !== undefined) { source(c.answer.source); spans(c.answer.source.text, [c.answer.span]); }
   }
-  // One message may update several lots, but each source revision changes a lot at most once.
+  // A source ID and revision name exactly one record wherever it appears: as a primary
+  // source or an answer, in this proposal or in committed history. Identical reuse is fine.
+  const records = new Map<string, string>();
+  for (const s of [...ledger.events.map(e => e.proposal), p].flatMap(x => [x.source, ...x.clarifications.flatMap(c => c.answer ? [c.answer.source] : [])])) {
+    const key = JSON.stringify([s.id, s.revision]), d = digest(s);
+    if ((records.get(key) ?? d) !== d) throw new Error("Source revision conflict; one ID and revision names different records");
+    records.set(key, d);
+  }
+  // One message may update several lots, but each source revision changes a lot at most
+  // once. Only primary sources count: citing a source as an answer applies nothing.
   for (const e of ledger.events) {
     const s = e.proposal.source;
-    if (s.id !== p.source.id) continue;
-    if (s.revision === p.source.revision && digest(s) !== digest(p.source)) throw new Error("Source revision conflict; committed text differs");
-    if (e.lotId !== i.lotId) continue;
+    if (s.id !== p.source.id || e.lotId !== i.lotId) continue;
     if (s.revision === p.source.revision) throw new Error("Duplicate source revision already committed for this lot");
     if (s.revision > p.source.revision) throw new Error("Superseded source revision; a newer revision is already committed");
   }
