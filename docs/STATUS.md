@@ -8,4 +8,12 @@ Unimplemented: model extraction/clarification, real operator records, CSV import
 
 Roadmap tracked in Asana. Hackathon portfolio placement requires browser fallback approval; Notion update proposal is prepared but not applied. Public repo/deployment/outreach/paid inference/submission not performed. Actual October 26 timestamps retained; event build-window eligibility remains unresolved.
 
+## Milestone 1 — update review (October 26, 2026, Claude Code on the development server)
+
+Implemented in `src/updates.ts` against the unchanged planner/verifier: intake `Source` records (ID, revision, grower, text) with span evidence; `replace-total`, `add-quantity`, `correction`, `forecast` and `unresolved` operations; blocking questions for any unresolved/conflicting lot, grower, quantity, unit, pack, grade, date or correction target and for unanswered clarifications; clarification answers stored as linked source spans and covered by the review hash; approval bound to the exact review hash; commit rechecks ledger version and snapshot hash; one commit per source revision per lot, rejecting duplicates, changed text under an existing revision and older revisions; corrections target only the latest inventory update for that lot and re-apply its operation from the original starting quantity; forecasts recorded in `ledger.forecasts`, outside the allocatable snapshot. The original absolute-total `applyUpdate` API was replaced.
+
+Verified: npm test (16 tests), npm run typecheck, npm run demo (same balances as above). Deliberate breakage of chained-correction, duplicate, forecast-separation and version checks each failed the suite.
+
+Still open: the ledger is in-memory only, so atomicity is a compare-and-swap contract that a persistent store must enforce; blocked reviews and unanswered questions are not persisted, only committed proposals; forecasts cannot be corrected or retired and lots are not confirmed by updates; fractional quantities, pounds and variable case weights remain unresolved rather than converted; held-out development cases for milestone 1 acceptance have not been independently authored; no model interpretation, UI or Notion/Asana update.
+
 Recovery: npm ci --ignore-scripts; npm test; npm run typecheck; npm run demo. Checkpoint excludes dependency caches, environment files and credentials; source and local history are included. Preserve the independent cybersecurity fallback checkpoint.

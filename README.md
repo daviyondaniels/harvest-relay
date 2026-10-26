@@ -21,9 +21,10 @@ npm run demo
 
 - Confirmed supply and existing demand, supplied delivery date, product/grade requirements and explicit substitution permissions.
 - Integer grams/counts, explicit case contents, missing-pack clarification and no guessed count-to-weight conversion.
-- Source-linked absolute-total updates, exact-proposal approval, stale-snapshot rejection and before/after event hashes.
+- Update review over an in-memory ledger (`src/updates.ts`): immutable source ID/revision records with character-span evidence; explicit new-total, added-quantity, correction, forecast and unresolved operations; linked clarification questions/answers inside the reviewed hash; exact-proposal approval; ledger-version and snapshot-hash staleness checks; duplicate/conflicting/superseded source-revision rejection; append-only event history with before/after quantities and hashes.
+- Any unresolved operation, lot, grower, quantity, unit, pack, grade, date, correction target or open clarification blocks inventory change. Forecasts are recorded beside the snapshot and never reach the planner.
 - Deterministic allocation proposals and full unfilled/unallocated balances, independently verified for eligibility and conservation.
-- Eight tests, including 200 generated development scenarios. These are not held-out customer cases or evidence of model performance.
+- Sixteen tests, including 200 generated planning scenarios and a 150-step generated update sequence. These are not held-out customer cases or evidence of model performance.
 
 The heuristic considers all direct demand before approved substitutes, then supplied priority and stable IDs. It does not guarantee globally optimal allocation. Grades and permissions are supplied customer rules, not AI food-safety assessments. Both lot and order use the same confirmed delivery date; multi-leg logistics, storage, transport capacity and refrigeration are outside this slice.
 
