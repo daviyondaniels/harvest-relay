@@ -28,8 +28,8 @@ export type Forecast = { eventId: string; lotId: string; amount: number; unit: B
 // Forecasts sit beside, never inside, the snapshot the planner allocates from.
 export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[] };
 
-const OPERATIONS: Operation[] = ["replace-total", "add-quantity", "correction", "forecast", "unresolved"];
-const FIELDS: Field[] = ["operation", "lot", "quantity", "unit", "pack", "grade", "date", "correction-target"];
+export const OPERATIONS: Operation[] = ["replace-total", "add-quantity", "correction", "forecast", "unresolved"];
+export const FIELDS: Field[] = ["operation", "lot", "quantity", "unit", "pack", "grade", "date", "correction-target"];
 
 export function createLedger(s: Snapshot): Ledger {
   validateSnapshot(s);
@@ -41,7 +41,7 @@ export function locate(text: string, quote: string): Span {
   return { start, end: start + quote.length };
 }
 
-function source(s: Source): void {
+export function validateSource(s: Source): void {
   if (!s || typeof s.id !== "string" || !s.id.trim() || s.id.length > 160 || typeof s.growerId !== "string" || !s.growerId.trim() || s.growerId.length > 160 ||
       typeof s.text !== "string" || !s.text.trim() || s.text.length > 8000) throw new Error("Valid source record required");
   integer(s.revision, "source revision");
@@ -89,7 +89,7 @@ function outcome(l: Ledger, p: UpdateProposal): Change {
 export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string; questions: Question[]; change?: Change } {
   validateSnapshot(ledger.snapshot);
   if (typeof p?.id !== "string" || !p.id.trim() || p.id.length > 160) throw new Error("Proposal identity required");
-  source(p.source);
+  validateSource(p.source);
   const i = p.interpretation;
   if (!i || !OPERATIONS.includes(i.operation) || !Array.isArray(i.unresolved) || i.unresolved.some(f => !FIELDS.includes(f)) ||
       ![i.lotId, i.grade, i.deliveryOn, i.correctsEventId].every(optional)) throw new Error("Invalid interpretation");
@@ -97,7 +97,7 @@ export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string;
   if (!Array.isArray(p.clarifications) || p.clarifications.length > 20) throw new Error("Bounded clarification list required");
   for (const c of p.clarifications) {
     if (!FIELDS.includes(c?.field) || typeof c.question !== "string" || !c.question.trim() || c.question.length > 500) throw new Error("Invalid clarification");
-    if (c.answer !== undefined) { source(c.answer.source); spans(c.answer.source.text, [c.answer.span]); }
+    if (c.answer !== undefined) { validateSource(c.answer.source); spans(c.answer.source.text, [c.answer.span]); }
   }
   // A source ID and revision name exactly one record wherever it appears: as a primary
   // source or an answer, in this proposal or in committed history. Identical reuse is fine.
