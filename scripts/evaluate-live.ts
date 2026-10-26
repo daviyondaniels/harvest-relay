@@ -12,6 +12,9 @@ import { commitUpdate, createLedger, reviewUpdate, type Ledger, type UpdatePropo
 //     --cases evaluation/heldout.local.json --model muse-spark-1.3 --max-calls 40
 // Everything is validated before the first call, and it refuses a budget too small to run
 // every case under every prompt, so a partial run cannot skew the comparison.
+// SHA-256 of case files whose results have been read during analysis. HTO09 (October 26,
+// v1 vs v2) shaped v3, so it cannot fairly judge v3.
+const RETIRED_SETS = ["4261ca02d6b6bc27b1963060239a36bce40951687eb674ed63c047e71f8bb9d6"];
 const { values } = parseArgs({ options: {
   cases: { type: "string" }, prompts: { type: "string", default: "v2,v3" }, model: { type: "string" },
   "max-calls": { type: "string" }, effort: { type: "string", default: "minimal" }, "max-tokens": { type: "string", default: "2000" } } });
@@ -22,6 +25,7 @@ if (!Array.isArray(cases) || !cases.length || cases.length > 60) throw new Error
 cases.forEach(validateCase);
 if (new Set(cases.map(c => c.id)).size !== cases.length) throw new Error("Duplicate case IDs");
 if (cases.some(c => c.id.startsWith("example-"))) throw new Error("Template examples are not evaluation cases");
+if (RETIRED_SETS.includes(createHash("sha256").update(raw).digest("hex"))) throw new Error("This case set has been read during analysis and can no longer judge a prompt change; write a new one");
 const prompts = values.prompts.split(",") as PromptVersion[];
 if (prompts.some(p => !Object.hasOwn(PROMPTS, p))) throw new Error(`Prompts must be from: ${Object.keys(PROMPTS).join(", ")}`);
 const maxCalls = Number(values["max-calls"]), needed = cases.length * prompts.length;
