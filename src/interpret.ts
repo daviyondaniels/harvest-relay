@@ -7,7 +7,7 @@ import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Field, t
 // is an untrusted proposal: it is validated here, then reviewed and approved like
 // any hand-authored proposal. Nothing in this module approves or commits updates.
 export const META_CHAT_COMPLETIONS_URL = "https://api.meta.ai/v1/chat/completions";
-const UNITS = ["g", "kg", "each", "case"], PACK_UNITS = ["g", "each"], EFFORTS = ["none", "minimal", "low"] as const;
+const UNITS = ["g", "kg", "each", "case"], PACK_UNITS = ["g", "each"], EFFORTS = ["minimal", "low"] as const;
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const LIMIT = { text: 160, quote: 500, question: 300, evidence: 12, questions: 5, events: 20, content: 32_000, body: 256_000 };
 
@@ -193,8 +193,9 @@ export async function interpretSource(l: Ledger, s: Source, o: InterpretOptions)
   if (typeof o.model !== "string" || !/^[a-z0-9][a-z0-9.-]{0,99}$/.test(o.model)) throw new Error("Explicit model ID required");
   // Contributor variants license prompts and responses for training; grower data rights are unsettled (HTO11).
   if (o.model.endsWith("-contributor")) throw new Error("Contributor-mode models are not permitted");
+  // Muse Spark rejects "none" with HTTP 400 (dev.meta.ai reasoning docs); above low needs approval.
   const effort = o.reasoningEffort ?? "low";
-  if (!EFFORTS.includes(effort)) throw new Error("Reasoning effort above low requires approval");
+  if (!EFFORTS.includes(effort)) throw new Error("Reasoning effort must be minimal or low");
   const timeoutMs = bounded(o.timeoutMs, 20_000, 60_000, "timeoutMs"), tokens = bounded(o.maxCompletionTokens, 800, 2000, "maxCompletionTokens");
   const maxChars = bounded(o.maxRequestChars, 24_000, 32_000, "maxRequestChars");
   validateSource(s);

@@ -6,9 +6,9 @@ import { createLedger, type Source } from "../src/updates.ts";
 
 // Paid live check against the Meta Model API. Runs only with an explicit model, call
 // budget and MODEL_API_KEY loaded per command, e.g.:
-//   node --env-file="$HOME/.config/harvest-relay/meta.env" scripts/interpret-live.ts --model muse-spark-1.3 --max-calls 3 [--effort none|minimal|low]
+//   node --env-file="$HOME/.config/harvest-relay/meta.env" scripts/interpret-live.ts --model muse-spark-1.3 --max-calls 3 [--effort minimal|low] [--max-tokens 1-2000]
 // Inputs are authored synthetic messages. The key is never printed or written.
-const { values } = parseArgs({ options: { model: { type: "string" }, "max-calls": { type: "string" }, effort: { type: "string", default: "low" } } });
+const { values } = parseArgs({ options: { model: { type: "string" }, "max-calls": { type: "string" }, effort: { type: "string", default: "low" }, "max-tokens": { type: "string", default: "800" } } });
 const maxCalls = Number(values["max-calls"]);
 if (!values.model || !Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10) throw new Error("Pass --model and --max-calls (1-10)");
 const key = process.env.MODEL_API_KEY;
@@ -34,14 +34,14 @@ for (const [label, source] of cases) {
     }
     finally { ms = Math.round(performance.now() - start); }
   };
-  const result = await interpretSource(ledger, source, { enabled: true, transport, model: values.model, budget, reasoningEffort: values.effort as "none" | "minimal" | "low" });
+  const result = await interpretSource(ledger, source, { enabled: true, transport, model: values.model, budget, reasoningEffort: values.effort as "minimal" | "low", maxCompletionTokens: Number(values["max-tokens"]) });
   runs.push({ label, source: source.text, ms, result: result.status === "proposed" ? { status: result.status, interpretation: result.proposal.interpretation, clarifications: result.proposal.clarifications, questions: result.questions, discarded: result.discarded, usage: result.usage } : result, finish, completionDetails: details, raw });
   // Account or request errors (docs: do not retry 400/401/402/403/404/413) would fail every case alike.
   if (result.status === "failed" && /HTTP (400|401|402|403|404|413)\b/.test(result.reason)) break;
 }
 // Standard Muse Spark list prices per 1M tokens (dev.meta.ai pricing page, Oct 26 2026).
 const cost = (budget.usage.prompt_tokens * 1.25 + budget.usage.completion_tokens * 4.25) / 1e6;
-const report = { label: "Live Meta Model API check on authored synthetic messages. Not a held-out evaluation.", model: values.model, effort: values.effort, at: new Date().toISOString(), callsUsed: maxCalls - budget.remaining, usage: budget.usage, estimatedCostUsd: Number(cost.toFixed(6)), runs };
+const report = { label: "Live Meta Model API check on authored synthetic messages. Not a held-out evaluation.", model: values.model, effort: values.effort, maxTokens: Number(values["max-tokens"]), at: new Date().toISOString(), callsUsed: maxCalls - budget.remaining, usage: budget.usage, estimatedCostUsd: Number(cost.toFixed(6)), runs };
 mkdirSync("output", { recursive: true });
 const file = `output/live-${report.at.replace(/[:.]/g, "-")}.json`;
 writeFileSync(file, JSON.stringify(report, null, 2));

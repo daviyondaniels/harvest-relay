@@ -199,7 +199,7 @@ test("timeouts, transport errors and budgets fail closed with exactly one call a
   const large = await run(l, src(SHORT), reply(output()), { maxRequestChars: 100 });
   expect(large.result, "rejected", /size bound/);
   assert.deepEqual([large.calls.length, large.budget.remaining], [0, 5]);
-  for (const options of [{ timeoutMs: 120_000 }, { maxCompletionTokens: 5000 }, { maxRequestChars: 50_000 }, { model: "muse-spark-1.3-contributor" }, { model: "" }, { reasoningEffort: "high" as never }])
+  for (const options of [{ timeoutMs: 120_000 }, { maxCompletionTokens: 5000 }, { maxRequestChars: 50_000 }, { model: "muse-spark-1.3-contributor" }, { model: "" }, { reasoningEffort: "high" as never }, { reasoningEffort: "none" as never }])
     await assert.rejects(run(l, src(SHORT), reply(output()), options));
   assert.throws(() => createBudget(101));
 });
