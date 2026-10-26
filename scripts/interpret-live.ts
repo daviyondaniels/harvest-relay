@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { scenario, shortage } from "../evaluation/scenario.ts";
-import { createBudget, interpretSource, metaTransport, type Transport } from "../src/interpret.ts";
+import { PROMPT_VERSION, createBudget, interpretSource, metaTransport, type Transport } from "../src/interpret.ts";
 import { createLedger, type Source } from "../src/updates.ts";
 
 // Paid live check against the Meta Model API. Runs only with an explicit model, call
@@ -41,7 +41,7 @@ for (const [label, source] of cases) {
 }
 // Standard Muse Spark list prices per 1M tokens (dev.meta.ai pricing page, Oct 26 2026).
 const cost = (budget.usage.prompt_tokens * 1.25 + budget.usage.completion_tokens * 4.25) / 1e6;
-const report = { label: "Live Meta Model API check on authored synthetic messages. Not a held-out evaluation.", model: values.model, effort: values.effort, maxTokens: Number(values["max-tokens"]), at: new Date().toISOString(), callsUsed: maxCalls - budget.remaining, usage: budget.usage, estimatedCostUsd: Number(cost.toFixed(6)), runs };
+const report = { label: "Live Meta Model API check on authored synthetic messages. Not a held-out evaluation.", model: values.model, promptVersion: PROMPT_VERSION, effort: values.effort, maxTokens: Number(values["max-tokens"]), at: new Date().toISOString(), callsUsed: maxCalls - budget.remaining, usage: budget.usage, estimatedCostUsd: Number(cost.toFixed(6)), runs };
 mkdirSync("output", { recursive: true });
 const file = `output/live-${report.at.replace(/[:.]/g, "-")}.json`;
 writeFileSync(file, JSON.stringify(report, null, 2));

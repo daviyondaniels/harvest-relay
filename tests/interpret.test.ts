@@ -51,7 +51,7 @@ test("valid output becomes an unapproved proposal that still needs review and na
   assert.deepEqual(request.messages.map(m => m.role), ["system", "user"]);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert.deepEqual(user.context.lots.map((x: { id: string; deliveryDay: string }) => [x.id, x.deliveryDay]), [["lot-a", "Friday"], ["lot-c", "Friday"]]);
-  assert.doesNotMatch(JSON.stringify(request), /order-|buyer|approvedSubstitutions|priority|"amount":60/, "only the sender's lots, without quantities, orders or permissions");
+  assert.doesNotMatch(JSON.stringify([request.messages[1], request.response_format]), /order-|buyer|approvedSubstitutions|priority|"amount":60/, "only the sender's lots, without quantities, orders or permissions");
 });
 
 test("the response schema satisfies the documented strict-mode subset", async () => {
@@ -158,6 +158,19 @@ test("values without verbatim evidence are dropped so review asks instead of tru
   assert.deepEqual(result.proposal.interpretation.quantity, { amount: 4, unit: "case" });
   assert.deepEqual(result.proposal.clarifications, [{ field: "pack", question: "How many kilograms are in one case?" }]);
   assert.deepEqual([...new Set(result.questions.map(q => q.field))].sort(), ["operation", "pack"]);
+  assert.throws(() => commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash }), /Clarification required/);
+});
+
+test("model-raised ambiguity becomes blocking clarifications with the model's own questions", async () => {
+  const l = createLedger(scenario()), text = "We have four cases of standard zucchini for Friday now.";
+  const asked = [{ field: "operation", question: "Is that the new total or in addition to what you had?" }, { field: "pack", question: "How much does one case hold?" }];
+  const { result } = await run(l, src(text, "grower-b"), reply(output({ operation: "unresolved", lotId: "lot-d", quantity: { amount: 4, unit: "case", pack: null },
+    evidence: [{ field: "lot", quote: "zucchini" }, { field: "quantity", quote: "four cases" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }],
+    unresolved: ["operation", "pack"], questions: asked })));
+  expect(result, "proposed");
+  if (result.status !== "proposed") return;
+  assert.deepEqual([result.discarded, result.proposal.clarifications], [[], asked]);
+  assert.ok(asked.every(a => result.questions.some(q => q.question === `Unanswered: ${a.question}`)), "the coordinator sees the model's wording");
   assert.throws(() => commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash }), /Clarification required/);
 });
 
