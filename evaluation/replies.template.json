@@ -1,0 +1,32 @@
+{
+  "about": [
+    "Template for held-out grower-reply cases. Copy to evaluation/replies.local.json (excluded from git), replace the examples, and freeze the file before any run. Write cases without looking at REPLY_PROMPT in src/interpret.ts or earlier live outputs. Cases must be synthetic or used with permission; no real names or contact details.",
+    "Each case is a grower's first message, the coordinator's current reading of it, and the grower's reply. Only the reply is sent to the model to read; the reading is fixed so the run measures the reply step alone.",
+    "Standard synthetic hub: all lots grade standard, delivered Friday 2026-10-30. grower-a: lot-a tomato (kg), lot-c cucumber (kg). grower-b: lot-b tomato (kg), lot-d zucchini (kg). Replies come from the same grower as the message.",
+    "reading: operation (replace-total | add-quantity | forecast | unresolved), lotId, quantity {amount, unit: g|kg|each|case, pack?: {amount, unit: g|kg|each}}, grade, deliveryOn (YYYY-MM-DD). Use null for anything the message left open. Fields left open by the reading (for example operation unresolved, or cases without pack) are what the reply may answer.",
+    "label.answers: open fields the reply settles, with the value it states. label.open: open fields the reply does not clearly settle; they must stay open. label.corrections: fields the reading had settled that the reply explicitly changes, with the new value. Every open field must appear in answers or open; a settled field the reply merely restates is left out.",
+    "Values: operation is a string; lot a lot ID; quantity {amount, unit}; pack {amount, unit: g|kg|each}; grade a string; date YYYY-MM-DD.",
+    "Suggested coverage (aim for 3+ each, including clear replies so over-answering shows up): clear answer to every question; partial answer; vague or noncommittal reply ('yeah', 'should be fine'); explicit correction of a settled number ('sorry, 6 not 4'); restating a settled fact without changing it; unsupported or fractional units in the reply; reply about a different product or day; instruction-like text; informal or misspelled replies; replies answering in a different order or in one breath."
+  ],
+  "cases": [
+    {
+      "id": "example-partial-answer",
+      "category": "partial answer",
+      "growerId": "grower-b",
+      "message": "Got 5 cases of standard zucchini for Friday.",
+      "reading": { "operation": "unresolved", "lotId": "lot-d", "quantity": { "amount": 5, "unit": "case" }, "grade": "standard", "deliveryOn": "2026-10-30" },
+      "reply": "Each case is about 4 kg, I'll check if that's on top of the earlier ones.",
+      "label": { "answers": {}, "corrections": {}, "open": ["operation", "pack"] },
+      "note": "'about 4 kg' is an estimate, so pack stays open; the operation is explicitly unsettled."
+    },
+    {
+      "id": "example-correction",
+      "category": "explicit correction",
+      "growerId": "grower-a",
+      "message": "Another 3 cases of standard cucumbers for Friday.",
+      "reading": { "operation": "add-quantity", "lotId": "lot-c", "quantity": { "amount": 3, "unit": "case" }, "grade": "standard", "deliveryOn": "2026-10-30" },
+      "reply": "Sorry, it's 2 cases not 3. 6 kg in each.",
+      "label": { "answers": { "pack": { "amount": 6, "unit": "kg" } }, "corrections": { "quantity": { "amount": 2, "unit": "case" } }, "open": [] }
+    }
+  ]
+}
