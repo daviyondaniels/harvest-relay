@@ -1,6 +1,6 @@
 # Harvest to order — Meta hackathon prototype
 
-Lead direction selected by Dee on October 26, 2026. Working description, not a settled brand.
+Lead direction selected by the project owner on October 26, 2026. Working description, not a settled brand.
 
 Help small food-hub coordinators reconcile changing grower availability against existing buyer orders. Growers provide updates; buyers define acceptable products/grades/substitutions; the coordinator reviews changes. Reducing avoidable food loss is an intended outcome, not a demonstrated result.
 
@@ -43,4 +43,4 @@ New isolated local source, actual October 26 timestamps preserved. The official 
 
 No paid inference, billing setup, outreach, external publication, deployment or submission occurred. No eligible Meta model has yet contributed to this prototype; it is not submission-ready. Intended Meta role is interpretation and evidence-gathering, subject to a real comparison with competent manual/structured intake using the same planner.
 
-All included scenario records are authored synthetic examples. Do not add real customer records, contact details, credentials or licensed third-party datasets/manuals to a public repository. A public-source license has not been selected; publication requires a rights/license review and Dee's approval.
+All included scenario records are authored synthetic examples. Do not add real customer records, contact details, credentials or licensed third-party datasets/manuals to a public repository. A public-source license has not been selected; publication requires a rights/license review and the project owner's approval.

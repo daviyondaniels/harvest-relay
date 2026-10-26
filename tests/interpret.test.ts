@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { scenario } from "../evaluation/scenario.ts";
-import { META_CHAT_COMPLETIONS_URL, SYSTEM_PROMPT, createBudget, interpretSource, metaTransport, type ChatRequest, type InterpretOptions, type InterpretResult } from "../src/interpret.ts";
+import { META_CHAT_COMPLETIONS_URL, PROMPTS, PROMPT_VERSION, SYSTEM_PROMPT, createBudget, interpretSource, metaTransport, type ChatRequest, type InterpretOptions, type InterpretResult } from "../src/interpret.ts";
 import { commitUpdate, createLedger, reviewUpdate, type Ledger, type Source } from "../src/updates.ts";
 
 // Injected, authored provider responses only: no network, credentials or model calls.
@@ -51,7 +51,16 @@ test("valid output becomes an unapproved proposal that still needs review and na
   assert.deepEqual(request.messages.map(m => m.role), ["system", "user"]);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert.deepEqual(user.context.lots.map((x: { id: string; deliveryDay: string }) => [x.id, x.deliveryDay]), [["lot-a", "Friday"], ["lot-c", "Friday"]]);
-  assert.doesNotMatch(JSON.stringify(request), /order-|buyer|approvedSubstitutions|priority|"amount":60/, "only the sender's lots, without quantities, orders or permissions");
+  assert.doesNotMatch(JSON.stringify([request.messages[1], request.response_format]), /order-|buyer|approvedSubstitutions|priority|"amount":60/, "only the sender's lots, without quantities, orders or permissions");
+});
+
+test("v2 is the default prompt and v1 stays selectable for comparison", async () => {
+  // v2 became the default after the October 26 held-out comparison; changing it needs a new evaluation.
+  assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v2], ["v2", true]);
+  const l = createLedger(scenario());
+  assert.equal((await run(l, src(SHORT), reply(output()))).calls[0].messages[0].content, PROMPTS.v2);
+  assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v1" })).calls[0].messages[0].content, PROMPTS.v1);
+  await assert.rejects(run(l, src(SHORT), reply(output()), { promptVersion: "v9" as never }), /Unknown prompt/);
 });
 
 test("the response schema satisfies the documented strict-mode subset", async () => {
@@ -121,7 +130,7 @@ test("references outside the sender's permitted context are rejected", async () 
 test("unsupported units are rejected or left unresolved, never converted", async () => {
   const l = createLedger(scenario());
   expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 66, unit: "lb", pack: null } })))).result, "invalid", /schema/);
-  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 4, unit: "case", pack: { amount: 5, unit: "kg" } } })))).result, "invalid", /schema/);
+  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 4, unit: "case", pack: { amount: 11, unit: "lb" } } })))).result, "invalid", /schema/);
   const text = "About 66 lbs of standard tomatoes for Friday, new total.";
   const { result } = await run(l, src(text), reply(output({ quantity: null, unresolved: ["unit"], questions: [{ field: "unit", question: "How many kilograms is that?" }],
     evidence: [{ field: "operation", quote: "new total" }, { field: "lot", quote: "tomatoes" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }] })));
@@ -129,6 +138,19 @@ test("unsupported units are rejected or left unresolved, never converted", async
   if (result.status !== "proposed") return;
   assert.deepEqual([...new Set(result.questions.map(q => q.field))].sort(), ["quantity", "unit"]);
   assert.throws(() => commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash }), /Clarification required/);
+});
+
+test("case contents stated in kilograms are converted exactly in code, not by the model", async () => {
+  const l = createLedger(scenario()), text = "My new total for standard zucchini for Friday is 4 cases. Each case holds 5 kg net.";
+  const evidence = [{ field: "operation", quote: "My new total" }, { field: "lot", quote: "zucchini" }, { field: "quantity", quote: "4 cases" },
+    { field: "pack", quote: "Each case holds 5 kg net" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }];
+  const { result } = await run(l, src(text, "grower-b"), reply(output({ lotId: "lot-d", quantity: { amount: 4, unit: "case", pack: { amount: 5, unit: "kg" } }, evidence })));
+  expect(result, "proposed");
+  if (result.status !== "proposed") return;
+  assert.deepEqual([result.proposal.interpretation.quantity, result.questions], [{ amount: 4, unit: "case", pack: { amount: 5000, unit: "g" } }, []]);
+  const next = commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash });
+  assert.deepEqual(next.snapshot.lots.find(x => x.id === "lot-d")!.quantity, { amount: 4, unit: "case", pack: { amount: 5000, unit: "g" } });
+  expect((await run(l, src(text, "grower-b"), reply(output({ lotId: "lot-d", quantity: { amount: 4, unit: "case", pack: { amount: Number.MAX_SAFE_INTEGER, unit: "kg" } }, evidence })))).result, "invalid", /whole numbers/);
 });
 
 test("contradictory fields reject the whole output", async () => {
@@ -158,6 +180,19 @@ test("values without verbatim evidence are dropped so review asks instead of tru
   assert.deepEqual(result.proposal.interpretation.quantity, { amount: 4, unit: "case" });
   assert.deepEqual(result.proposal.clarifications, [{ field: "pack", question: "How many kilograms are in one case?" }]);
   assert.deepEqual([...new Set(result.questions.map(q => q.field))].sort(), ["operation", "pack"]);
+  assert.throws(() => commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash }), /Clarification required/);
+});
+
+test("model-raised ambiguity becomes blocking clarifications with the model's own questions", async () => {
+  const l = createLedger(scenario()), text = "We have four cases of standard zucchini for Friday now.";
+  const asked = [{ field: "operation", question: "Is that the new total or in addition to what you had?" }, { field: "pack", question: "How much does one case hold?" }];
+  const { result } = await run(l, src(text, "grower-b"), reply(output({ operation: "unresolved", lotId: "lot-d", quantity: { amount: 4, unit: "case", pack: null },
+    evidence: [{ field: "lot", quote: "zucchini" }, { field: "quantity", quote: "four cases" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }],
+    unresolved: ["operation", "pack"], questions: asked })));
+  expect(result, "proposed");
+  if (result.status !== "proposed") return;
+  assert.deepEqual([result.discarded, result.proposal.clarifications], [[], asked]);
+  assert.ok(asked.every(a => result.questions.some(q => q.question === `Unanswered: ${a.question}`)), "the coordinator sees the model's wording");
   assert.throws(() => commitUpdate(l, result.proposal, { reviewer: "coordinator", reviewHash: reviewUpdate(l, result.proposal).hash }), /Clarification required/);
 });
 
