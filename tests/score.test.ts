@@ -30,6 +30,8 @@ test("credits model-raised questions and dropped unsupported values, and flags u
   assert.deepEqual([wrong.grades.quantity, wrong.unsafe], ["wrong", true]);
   const grams = scoreCase(clear, proposed({ operation: "replace-total", lotId: "lot-d", quantity: { amount: 20000, unit: "g" }, grade: "standard", deliveryOn: "2026-10-30" }));
   assert.equal(grams.grades.quantity, "correct", "equal after normalization");
+  const packed: Case = { ...bare, id: "packed", label: { ...bare.label, operation: "replace-total", pack: { amount: 5, unit: "kg" }, ask: [] } };
+  assert.equal(scoreCase(packed, proposed({ operation: "replace-total", lotId: "lot-d", quantity: { amount: 4, unit: "case", pack: { amount: 5000, unit: "g" } }, grade: "standard", deliveryOn: "2026-10-30" })).grades.pack, "correct", "kg label matches converted grams");
   const timid = scoreCase(clear, proposed({ lotId: "lot-d", quantity: { amount: 20, unit: "kg" }, grade: "standard", unresolved: ["operation"] }, { questions: 2 }));
   assert.deepEqual([timid.grades.operation, timid.grades.date], ["over-asked", "omitted"]);
   const none = scoreCase(clear, { status: "invalid", reason: "Output is not JSON" });

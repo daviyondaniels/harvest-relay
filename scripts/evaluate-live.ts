@@ -13,7 +13,7 @@ import { commitUpdate, createLedger, reviewUpdate, type Ledger, type UpdatePropo
 // Everything is validated before the first call, and it refuses a budget too small to run
 // every case under every prompt, so a partial run cannot skew the comparison.
 const { values } = parseArgs({ options: {
-  cases: { type: "string" }, prompts: { type: "string", default: "v1,v2-draft" }, model: { type: "string" },
+  cases: { type: "string" }, prompts: { type: "string", default: "v1,v2" }, model: { type: "string" },
   "max-calls": { type: "string" }, effort: { type: "string", default: "minimal" }, "max-tokens": { type: "string", default: "2000" } } });
 if (!values.cases || !values.model) throw new Error("Pass --cases and --model");
 const raw = readFileSync(values.cases, "utf8");

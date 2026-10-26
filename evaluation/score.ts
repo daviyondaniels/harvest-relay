@@ -6,7 +6,7 @@ import { FIELDS, type Field, type Operation } from "../src/updates.ts";
 // one the coordinator must get from the grower; its value must stay open.
 export type Label = {
   operation: Operation; lotId: string | null; quantity: { amount: number; unit: Quantity["unit"] } | null;
-  pack: { amount: number; unit: "g" | "each" } | null; grade: string | null; deliveryOn: string | null;
+  pack: { amount: number; unit: "g" | "kg" | "each" } | null; grade: string | null; deliveryOn: string | null;
   correctsEventId: string | null; ask: Field[];
 };
 export type Setup = { growerId: string; text: string; operation: "replace-total" | "add-quantity" | "correction"; lotId: string; quantity: { amount: number; unit: Quantity["unit"] }; correctsEventId?: string };
@@ -28,7 +28,9 @@ export function validateCase(c: Case): void {
   for (const f of l.ask) if (settled[f] !== undefined && settled[f] !== null) throw new Error(`${c.id}: ${f} is both labelled and asked`);
 }
 
+const grams = (p: { amount: number; unit: string }) => p.unit === "kg" ? { amount: p.amount * 1000, unit: "g" } : { amount: p.amount, unit: p.unit };
 function same(f: Field, a: unknown, b: unknown): boolean {
+  if (f === "pack") return JSON.stringify(grams(a as Quantity)) === JSON.stringify(grams(b as Quantity));
   if (f !== "quantity") return JSON.stringify(a) === JSON.stringify(b);
   const x = a as Quantity, y = b as Quantity;
   if (x.amount === y.amount && x.unit === y.unit) return true;

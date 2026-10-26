@@ -6,7 +6,7 @@ import { createLedger, type Source } from "../src/updates.ts";
 
 // Paid live check against the Meta Model API. Runs only with an explicit model, call
 // budget and MODEL_API_KEY loaded per command, e.g.:
-//   node --env-file="$HOME/.config/harvest-relay/meta.env" scripts/interpret-live.ts --model muse-spark-1.3 --max-calls 3 [--effort minimal|low] [--max-tokens 1-2000] [--prompt v1|v2-draft]
+//   node --env-file="$HOME/.config/harvest-relay/meta.env" scripts/interpret-live.ts --model muse-spark-1.3 --max-calls 3 [--effort minimal|low] [--max-tokens 1-2000] [--prompt v1|v2]
 // Inputs are authored synthetic messages. The key is never printed or written.
 const { values } = parseArgs({ options: { model: { type: "string" }, "max-calls": { type: "string" }, effort: { type: "string", default: "low" }, "max-tokens": { type: "string", default: "800" }, prompt: { type: "string", default: PROMPT_VERSION } } });
 const maxCalls = Number(values["max-calls"]);
