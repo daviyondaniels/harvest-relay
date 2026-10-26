@@ -1,3 +1,4 @@
+import { openFields } from "../src/answers.ts";
 import { snapshotHash } from "../src/planner.ts";
 import type { ReplyResult } from "../src/interpret.ts";
 import { normalize, type Quantity } from "../src/quantity.ts";
@@ -50,7 +51,7 @@ export function validateReplyCase(l: Ledger, c: ReplyCase): void {
   const named = [...Object.keys(lb.answers), ...Object.keys(lb.corrections), ...lb.open] as Field[];
   if (named.some(f => !FIELDS.includes(f))) throw new Error(`${c.id}: unknown field in label`);
   if (new Set(named).size !== named.length) throw new Error(`${c.id}: a field may appear only once across answers, corrections and open`);
-  const open = new Set(reviewUpdate(l, readingProposal(l, c)).questions.map(q => q.field));
+  const open = openFields(l, readingProposal(l, c));
   for (const f of Object.keys(lb.corrections) as Field[]) if (open.has(f)) throw new Error(`${c.id}: ${f} is open in the reading; label it as an answer`);
   for (const f of [...Object.keys(lb.answers), ...lb.open] as Field[]) if (!open.has(f)) throw new Error(`${c.id}: ${f} is not open in the reading; label a change to it as a correction`);
   for (const f of open) if (!(f in lb.answers) && !lb.open.includes(f)) throw new Error(`${c.id}: open field ${f} must be in answers or open`);

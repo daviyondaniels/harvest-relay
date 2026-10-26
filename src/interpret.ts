@@ -1,4 +1,4 @@
-import { applyAnswers, type Answer, type Correction } from "./answers.ts";
+import { applyAnswers, openFields, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash } from "./planner.ts";
 import { integer, normalize, type Quantity } from "./quantity.ts";
 import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Field, type Interpretation, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -296,7 +296,8 @@ export function replySchema(lotIds: string[], eventIds: string[]): Record<string
 // reply; from the ledger, only the sender's own lots and recent updates.
 export function buildReplyRequest(l: Ledger, p: UpdateProposal, reply: Source, model: string, maxCompletionTokens: number, effort: Effort): ChatRequest {
   const ctx = context(l, p.source), { spans: _, ...reading } = p.interpretation;
-  const openQuestions = reviewUpdate(l, p).questions.map(q => ({ field: q.field, question: q.question }));
+  const asked = reviewUpdate(l, p).questions.map(q => ({ field: q.field, question: q.question }));
+  const openQuestions = [...asked, ...[...openFields(l, p)].filter(f => !asked.some(q => q.field === f)).map(f => ({ field: f, question: `Not stated in the message: ${f}` }))];
   return {
     model, max_completion_tokens: maxCompletionTokens, temperature: 0, reasoning_effort: effort, stream: false, n: 1,
     messages: [{ role: "system", content: REPLY_PROMPT }, { role: "user", content: JSON.stringify({ message: p.source.text, reading, openQuestions, reply: reply.text, context: ctx }) }],

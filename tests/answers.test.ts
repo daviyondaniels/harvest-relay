@@ -48,6 +48,17 @@ test("a reply that contradicts a settled fact becomes a recorded correction that
   assert.ok(next.events[0].proposal.clarifications.some(c => c.question.startsWith("Reply corrects quantity")), "the committed event keeps the correction record");
 });
 
+test("a fact the message left missing is open even before review asks about it; supplying it is an answer, not a correction", () => {
+  const l = createLedger(scenario()), text = "New total is 10 kg of standard produce; day to be confirmed.";
+  const p = { ...surplus(l), source: { id: "note-c", revision: 1, growerId: "grower-a", text },
+    interpretation: { operation: "replace-total" as const, quantity: { amount: 10, unit: "kg" as const }, grade: "standard", unresolved: [], spans: [{ start: 0, end: text.length }] } };
+  assert.ok(!reviewUpdate(l, p).questions.some(q => q.field === "date"), "review asks about the date only once the lot is known");
+  const partial = applyAnswers(l, p, reply("Cucumbers. Not sure about the day yet.", "grower-a"), [{ field: "lot", quote: "Cucumbers", value: "lot-c" }]);
+  assert.deepEqual([partial.applied, partial.corrections, partial.unanswered], [["lot"], [], ["date"]]);
+  const full = applyAnswers(l, p, reply("Cucumbers, for Friday the 30th.", "grower-a"), [{ field: "lot", quote: "Cucumbers", value: "lot-c" }, { field: "date", quote: "Friday the 30th", value: "2026-10-30" }]);
+  assert.deepEqual([full.applied, full.corrections, full.unanswered], [["lot", "date"], [], []]);
+});
+
 test("answers need a verbatim quote, the same grower, valid values and one answer per field", () => {
   const l = createLedger(scenario()), p = surplus(l);
   assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[0], quote: "new total please" }]), /Literal source evidence/);

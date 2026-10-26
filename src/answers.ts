@@ -53,6 +53,17 @@ function read(field: Field, v: unknown): unknown {
     case "pack": return pack(v);
   }
 }
+// Open: anything review asks about, plus any fact the reading leaves missing. Review asks
+// about some facts only once others are known (the date once the lot is), so a missing
+// value is open before review reaches it. Supplying a missing value is an answer; only
+// changing a value the reading has is a correction.
+export function openFields(l: Ledger, p: UpdateProposal): Set<Field> {
+  const i = p.interpretation, open = new Set(reviewUpdate(l, p).questions.map(q => q.field));
+  const missing: [Field, boolean][] = [["operation", i.operation === "unresolved"], ["lot", !i.lotId], ["quantity", !i.quantity], ["grade", !i.grade],
+    ["date", !i.deliveryOn], ["pack", i.quantity?.unit === "case" && !i.quantity.pack]];
+  for (const [f, m] of missing) if (m) open.add(f);
+  return open;
+}
 const current = (i: Interpretation, f: Field) => f === "pack" ? i.quantity?.pack : i[KEYS[f]!];
 
 export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answers: Answer[]): AnswerResult {
@@ -62,7 +73,7 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
   if (!Array.isArray(answers) || answers.length > FIELDS.length) throw new Error("Bounded answer list required");
   if (new Set(answers.map(a => a?.field)).size !== answers.length) throw new Error("At most one answer per field");
   if (answers.some(a => !FIELDS.includes(a?.field) || typeof a.quote !== "string" || a.quote.length > 500)) throw new Error("Invalid answer");
-  const review = reviewUpdate(l, p), open = new Set(review.questions.map(q => q.field));
+  const review = reviewUpdate(l, p), open = openFields(l, p);
   const i: Interpretation = structuredClone(p.interpretation), clarifications: Clarification[] = structuredClone(p.clarifications);
   const applied: Field[] = [], corrections: Correction[] = [];
   // Quantity before pack, so one reply can state both a count of cases and their contents.
@@ -86,7 +97,7 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
     }
     const asked = clarifications.filter(c => c.field === a.field && !c.answer);
     if (asked.length) for (const c of asked) c.answer = answer;
-    else clarifications.push({ field: a.field, question: review.questions.find(q => q.field === a.field)!.question, answer });
+    else clarifications.push({ field: a.field, question: review.questions.find(q => q.field === a.field)?.question ?? `Not stated in the message: ${a.field}`, answer });
     applied.push(a.field);
   }
   const proposal: UpdateProposal = { ...structuredClone(p), interpretation: i, clarifications };
