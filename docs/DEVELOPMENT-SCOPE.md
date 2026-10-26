@@ -1,6 +1,6 @@
 # Development scope and server handoff
 
-Prepared October 26, 2026. Scoping proposal, not completed features or authorization to migrate/deploy/run paid models. Dee confirmed a personal development server with an existing Claude subscription. Its OS, capacity, access method, installed Node/Claude versions and effective CLI billing remain unverified.
+Prepared October 26, 2026. Scoping proposal, not completed features or authorization to migrate/deploy/run paid models. The project owner confirmed a personal development server with an existing Claude subscription. Its OS, capacity, access method, installed Node/Claude versions and effective CLI billing remain unverified.
 
 ## Current baseline and records
 
@@ -9,7 +9,7 @@ Source baseline: fe74ec9a2cf7ee60edef62ee9a7fd36ce0f904df. Clean local working t
 Current specification: https://app.notion.com/p/40512b3c80b681bd93a9ecf51e9829a0
 Delivery tasks: https://app.asana.com/1/1207429581440502/project/1219905773502421
 
-The Notion update was completed after the original source checkpoint; any older local statements that it awaits approval are historical. Asana portfolio placement is explicitly deferred. This expanded development scope has not been pushed to Notion; request Dee's approval before doing so.
+The Notion update was completed after the original source checkpoint; any older local statements that it awaits approval are historical. Asana portfolio placement is explicitly deferred. This expanded development scope has not been pushed to Notion; request the project owner's approval before doing so.
 
 ## Recommendation
 
@@ -76,15 +76,15 @@ Keep: meaningful clarification, correct allocation/residuals, approval provenanc
 
 ## Claude handoff protocol
 
-Give Claude this scope, README, current Notion specification or an authorized export, and the Asana acceptance criteria. Do not assume CLI has this chat's memory or connector permissions. Start with milestone 0, report findings, then implement milestone 1 in a branch. Use normal permission prompts; do not bypass permissions or enable automatic deployment. Do not spawn agents, use premium/max reasoning or make paid API calls without Dee's explicit approval under the standing cost rules. Do not assume this plan selects a Claude model.
+Give Claude this scope, README, current Notion specification or an authorized export, and the Asana acceptance criteria. Do not assume CLI has this chat's memory or connector permissions. Start with milestone 0, report findings, then implement milestone 1 in a branch. Use normal permission prompts; do not bypass permissions or enable automatic deployment. Do not spawn agents, use premium/max reasoning or make paid API calls without the project owner's explicit approval under the standing cost rules. Do not assume this plan selects a Claude model.
 
 For each milestone: state files changed and behavior, run relevant checks, report actual outcomes/limitations, commit a reviewable diff and identify the next blocker. Keep code and docs in Git. Asana is task status; Notion is product/specification authority; neither replaces source control. No second agent should edit the same branch concurrently. Recovery is the previous clean commit/bundle, preserving newer work on a separate branch before any rollback.
 
 ## Server decision conditions and remaining questions
 
-Confirmed by Dee: personal development server; existing Claude subscription. Still needed: OS, RAM/free disk, access method and installed versions. Anthropic documents 4 GB+ RAM for Claude Code; 8 GB+ is a proposed comfort target for CLI + builds + browser testing, not a measured requirement for this app. No GPU is proposed because the current plan uses hosted Meta inference rather than local model serving.
+Confirmed by the project owner: personal development server; existing Claude subscription. Still needed: OS, RAM/free disk, access method and installed versions. Anthropic documents 4 GB+ RAM for Claude Code; 8 GB+ is a proposed comfort target for CLI + builds + browser testing, not a measured requirement for this app. No GPU is proposed because the current plan uses hosted Meta inference rather than local model serving.
 
-Claude Remote Control can let Dee steer a server-local session from Claude web/mobile, with filesystem/execution on the server. The process must stay running, and subscription/authentication requirements apply. It uses outbound HTTPS and does not require opening an inbound Remote Control port. That does not publish the application's own UI or provide this ChatGPT conversation access to the server.
+Claude Remote Control can let the project owner steer a server-local session from Claude web/mobile, with filesystem/execution on the server. The process must stay running, and subscription/authentication requirements apply. It uses outbound HTTPS and does not require opening an inbound Remote Control port. That does not publish the application's own UI or provide this ChatGPT conversation access to the server.
 
 Verify effective billing: an ANTHROPIC_API_KEY environment variable can take precedence over a subscription and incur API charges. Check only whether it is set; never print or paste its value. Existing subscription use does not establish unlimited availability or zero marginal cost.
 
