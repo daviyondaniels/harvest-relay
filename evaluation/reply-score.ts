@@ -18,7 +18,9 @@ export type ReplyCase = { id: string; category: string; growerId: string; messag
 // missed: the reply settles it, but no answer or correction was proposed. over-answered:
 // an open field was filled although the reply does not settle it. spurious: a settled
 // fact was changed although the reply does not correct it. kept-open: correctly left open.
-export type ReplyGrade = "correct" | "wrong" | "missed" | "over-answered" | "spurious" | "kept-open" | "n/a";
+// flagged: the reply settles it, but the value was reported unclear and a question raised
+// (safe, costs a follow-up). over-flagged: an unnecessary question on a settled fact.
+export type ReplyGrade = "correct" | "wrong" | "missed" | "flagged" | "over-answered" | "spurious" | "over-flagged" | "kept-open" | "n/a";
 const SCORED: Field[] = ["operation", "lot", "quantity", "pack", "grade", "date"];
 
 const kg = (p: unknown) => { const x = p as { amount: number; unit: string }; return x?.unit === "kg" ? { amount: x.amount * 1000, unit: "g" } : x; };
@@ -62,14 +64,14 @@ const valueOf = (i: Interpretation, f: Field) => ({ operation: i.operation, lot:
 
 export function scoreReply(c: ReplyCase, r: ReplyResult) {
   if (r.status !== "proposed") return { id: c.id, category: c.category, status: r.status, reason: r.reason, grades: {} as Partial<Record<Field, ReplyGrade>>, unsafe: false };
-  const lb = c.label, i = r.proposal.interpretation, corrected = new Set(r.corrections.map(x => x.field)), applied = new Set(r.applied);
+  const lb = c.label, i = r.proposal.interpretation, corrected = new Set(r.corrections.map(x => x.field)), applied = new Set(r.applied), unclear = new Set(r.unclear ?? []);
   const grades: Partial<Record<Field, ReplyGrade>> = {};
   for (const f of SCORED) {
     const want = f in lb.answers ? lb.answers[f] : f in lb.corrections ? lb.corrections[f] : undefined;
     const changed = f in lb.answers ? applied.has(f) : corrected.has(f);
-    grades[f] = want !== undefined ? (changed ? (same(f, valueOf(i, f), want) ? "correct" : "wrong") : "missed")
+    grades[f] = want !== undefined ? (changed ? (same(f, valueOf(i, f), want) ? "correct" : "wrong") : unclear.has(f) ? "flagged" : "missed")
       : lb.open.includes(f) ? (applied.has(f) ? "over-answered" : "kept-open")
-      : corrected.has(f) ? "spurious" : "n/a";
+      : corrected.has(f) ? "spurious" : unclear.has(f) ? "over-flagged" : "n/a";
   }
   // Unsafe: an incorrect or unsupported value would reach the approval step. A missed
   // correction counts when review raises no question, since the old value then goes to
@@ -81,6 +83,6 @@ export function scoreReply(c: ReplyCase, r: ReplyResult) {
 export function summarizeReplies(scores: ReturnType<typeof scoreReply>[]) {
   const count = (g: ReplyGrade) => scores.reduce((n, s) => n + Object.values(s.grades).filter(x => x === g).length, 0);
   return { cases: scores.length, proposed: scores.filter(s => s.status === "proposed").length, noProposal: scores.filter(s => s.status !== "proposed").length,
-    unsafe: scores.filter(s => s.unsafe).length, correct: count("correct"), wrong: count("wrong"), missed: count("missed"),
-    overAnswered: count("over-answered"), spurious: count("spurious"), keptOpen: count("kept-open") };
+    unsafe: scores.filter(s => s.unsafe).length, correct: count("correct"), wrong: count("wrong"), missed: count("missed"), flagged: count("flagged"),
+    overAnswered: count("over-answered"), spurious: count("spurious"), overFlagged: count("over-flagged"), keptOpen: count("kept-open") };
 }

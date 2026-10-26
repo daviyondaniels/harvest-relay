@@ -75,7 +75,7 @@ test("answers need a verbatim quote, the same grower, valid values and one answe
 
 // Model path: one value property per answer, everything else null.
 const blank = { operation: null, lotId: null, quantity: null, pack: null, grade: null, deliveryOn: null, correctsEventId: null };
-const modelReply = (answers: object[]) => ({ choices: [{ message: { content: JSON.stringify({ answers: answers.map(a => ({ ...blank, ...a })) }) }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
+const modelReply = (answers: object[], unclear: string[] = []) => ({ choices: [{ message: { content: JSON.stringify({ unclear, answers: answers.map(a => ({ ...blank, ...a })) }) }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
 async function run(body: unknown, text = REPLY, options: Partial<InterpretOptions> = {}) {
   const l = createLedger(scenario()), p = surplus(l), calls: ChatRequest[] = [], budget = createBudget(3);
   const result = await interpretReply(l, p, reply(text), { enabled: true, model: "muse-spark-1.3", budget, transport: async r => { calls.push(r); return body; }, ...options });
@@ -115,6 +115,38 @@ test("malformed, unquoted or overreaching model answers are rejected or flagged,
   assert.deepEqual(result.corrections.map(c => [c.field, c.from, c.to]), [["quantity", { amount: 4, unit: "case" }, { amount: 500, unit: "case" }]]);
   assert.ok(result.questions.length > 0, "case contents are still open, so review stays blocked");
   assert.equal(l.version, 0, "the ledger is unchanged");
+});
+
+test("an answer may name the update's own lot; one about a different lot is dropped and its field stays open", async () => {
+  const same = await run(modelReply(GOOD.map(a => ({ ...a, lotId: "lot-d" }))));
+  assert.equal(same.result.status, "proposed");
+  if (same.result.status !== "proposed") return;
+  assert.deepEqual([same.result.applied, same.result.dropped, same.result.questions], [["operation", "pack"], [], []]);
+  const text = "That's the new total. My tomato cases are 5 kg each.";
+  const other = await run(modelReply([GOOD[0], { field: "pack", quote: "My tomato cases are 5 kg each", pack: { amount: 5, unit: "kg" }, lotId: "lot-b" }]), text);
+  assert.equal(other.result.status, "proposed");
+  if (other.result.status !== "proposed") return;
+  assert.deepEqual([other.result.applied, other.result.dropped, other.result.unanswered], [["operation"], ["pack"], ["pack"]]);
+  assert.equal(other.result.proposal.interpretation.quantity!.pack, undefined, "zucchini case contents are not taken from the tomato answer");
+});
+
+test("an unclear reply re-opens the field with a blocking question, even for a settled fact", async () => {
+  const text = "That's the new total. Each case is 1.5 kg.";
+  const open = await run(modelReply([GOOD[0]], ["pack"]), text);
+  assert.equal(open.result.status, "proposed");
+  if (open.result.status !== "proposed") return;
+  assert.deepEqual([open.result.unclear, open.result.unanswered], [["pack"], ["pack"]]);
+  assert.ok(open.result.questions.some(q => /could not be read/.test(q.question)));
+  // A fractional correction to a settled quantity: without the flag the old value would go to approval unquestioned.
+  const l = createLedger(scenario()), p = surplus(l);
+  const settled = { ...p, interpretation: { ...p.interpretation, operation: "replace-total" as const, quantity: { amount: 4, unit: "case" as const, pack: { amount: 5000, unit: "g" as const } } } };
+  assert.deepEqual(reviewUpdate(l, settled).questions, []);
+  const r = applyAnswers(l, settled, reply("Correction: it's 3.5 cases, not 4."), [], ["quantity"]);
+  assert.deepEqual([r.unclear, r.unanswered, r.proposal.interpretation.quantity], [["quantity"], ["quantity"], settled.interpretation.quantity]);
+  assert.throws(() => approve(l, r.proposal), /could not be read/);
+  assert.throws(() => applyAnswers(l, p, reply(REPLY), [ANSWERS[0]], ["operation"]), /distinct, known and unanswered/);
+  const both = await run(modelReply([GOOD[0]], ["operation"]));
+  assert.equal(both.result.status, "invalid");
 });
 
 test("reply schema satisfies the strict-mode subset", () => {

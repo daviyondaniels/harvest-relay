@@ -10,7 +10,7 @@ import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Clarific
 // evidence is kept. It takes effect only through approval of the new review hash.
 export type Answer = { field: Field; quote: string; value: unknown };
 export type Correction = { field: Field; from: unknown; to: unknown; quote: string };
-export type AnswerResult = { proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unanswered: Field[] };
+export type AnswerResult = { proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unclear: Field[]; unanswered: Field[] };
 
 const KEYS: Partial<Record<Field, keyof Interpretation>> = { operation: "operation", lot: "lotId", quantity: "quantity", unit: "quantity", grade: "grade", date: "deliveryOn", "correction-target": "correctsEventId" };
 const UNITS = ["g", "kg", "each", "case"];
@@ -66,13 +66,17 @@ export function openFields(l: Ledger, p: UpdateProposal): Set<Field> {
 }
 const current = (i: Interpretation, f: Field) => f === "pack" ? i.quantity?.pack : i[KEYS[f]!];
 
-export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answers: Answer[]): AnswerResult {
+// unclear: fields the reply addresses but that could not be read (for example a fractional
+// amount). Each adds a blocking question, whether the field was open or settled, so a
+// correction that cannot be represented is never dropped silently.
+export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answers: Answer[], unclear: Field[] = []): AnswerResult {
   validateSource(reply);
   if (reply.growerId !== p.source.growerId) throw new Error("A reply must come from the grower who sent the update");
   if (reply.id === p.source.id) throw new Error("A reply must be a separate source from the update it answers");
   if (!Array.isArray(answers) || answers.length > FIELDS.length) throw new Error("Bounded answer list required");
   if (new Set(answers.map(a => a?.field)).size !== answers.length) throw new Error("At most one answer per field");
   if (answers.some(a => !FIELDS.includes(a?.field) || typeof a.quote !== "string" || a.quote.length > 500)) throw new Error("Invalid answer");
+  if (!Array.isArray(unclear) || unclear.some(f => !FIELDS.includes(f)) || new Set(unclear).size !== unclear.length || unclear.some(f => answers.some(a => a.field === f))) throw new Error("Unclear fields must be distinct, known and unanswered");
   const review = reviewUpdate(l, p), open = openFields(l, p);
   const i: Interpretation = structuredClone(p.interpretation), clarifications: Clarification[] = structuredClone(p.clarifications);
   const applied: Field[] = [], corrections: Correction[] = [];
@@ -102,6 +106,7 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
     else clarifications.push({ field: a.field, question: review.questions.find(q => q.field === a.field)?.question ?? `Not stated in the message: ${a.field}`, answer });
     applied.push(a.field);
   }
+  for (const f of unclear) clarifications.push({ field: f, question: `The reply addresses ${f} but could not be read as a supported value; confirm with the grower` });
   const proposal: UpdateProposal = { ...structuredClone(p), interpretation: i, clarifications };
-  return { proposal, applied, corrections, unanswered: [...new Set(reviewUpdate(l, proposal).questions.map(q => q.field))] };
+  return { proposal, applied, corrections, unclear: [...unclear], unanswered: [...new Set(reviewUpdate(l, proposal).questions.map(q => q.field))] };
 }

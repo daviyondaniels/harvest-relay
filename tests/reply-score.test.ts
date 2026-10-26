@@ -12,7 +12,10 @@ const l = createLedger(scenario());
 const base: ReplyCase = { id: "c1", category: "clear answer", growerId: "grower-b", message: "Got 5 cases of standard zucchini for Friday.",
   reading: { operation: "unresolved", lotId: "lot-d", quantity: { amount: 5, unit: "case" }, grade: "standard", deliveryOn: "2026-10-30" },
   reply: "That's all we have now, 4 kg a case.", label: { answers: { operation: "replace-total", pack: { amount: 4, unit: "kg" } }, corrections: {}, open: [] } };
-const result = (c: ReplyCase, answers: Parameters<typeof applyAnswers>[3]): ReplyResult => ({ status: "proposed", questions: [], ...applyAnswers(l, readingProposal(l, c), replySource(c), answers) });
+const result = (c: ReplyCase, answers: Parameters<typeof applyAnswers>[3], unclear: Parameters<typeof applyAnswers>[4] = []): ReplyResult => {
+  const r = applyAnswers(l, readingProposal(l, c), replySource(c), answers, unclear);
+  return { status: "proposed", dropped: [], questions: r.unanswered.map(field => ({ field, question: "?" })), ...r };
+};
 
 test("grades answers, corrections and fields that must stay open", () => {
   const good = scoreReply(base, result(base, [{ field: "operation", quote: "That's all we have now", value: "replace-total" }, { field: "pack", quote: "4 kg a case", value: { amount: 4, unit: "kg" } }]));
@@ -30,7 +33,10 @@ test("grades answers, corrections and fields that must stay open", () => {
   const spurious = scoreReply(base, result(base, [...answersOnly, { field: "grade", quote: "all we have", value: "processing" }]));
   assert.deepEqual([spurious.grades.grade, spurious.unsafe], ["spurious", true]);
   assert.deepEqual(summarizeReplies([good, wrong, guessed, scoreReply(base, { status: "invalid", reason: "Output is not JSON" })]),
-    { cases: 4, proposed: 3, noProposal: 1, unsafe: 2, correct: 2, wrong: 1, missed: 1, overAnswered: 1, spurious: 0, keptOpen: 1 });
+    { cases: 4, proposed: 3, noProposal: 1, unsafe: 2, correct: 2, wrong: 1, missed: 1, flagged: 0, overAnswered: 1, spurious: 0, overFlagged: 0, keptOpen: 1 });
+  const flagged = scoreReply(fix, result(fix, answersOnly, ["quantity"]));
+  assert.deepEqual([flagged.grades.quantity, flagged.unsafe], ["flagged", false], "a flagged correction raises a question instead of passing silently");
+  assert.equal(scoreReply(base, result(base, answersOnly, ["grade"])).grades.grade, "over-flagged");
 });
 
 test("labels must cover every open field and name corrections only for settled ones, and the template validates", () => {
