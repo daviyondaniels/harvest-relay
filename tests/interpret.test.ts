@@ -54,6 +54,26 @@ test("valid output becomes an unapproved proposal that still needs review and na
   assert.doesNotMatch(JSON.stringify([request.messages[1], request.response_format]), /order-|buyer|approvedSubstitutions|priority|"amount":60/, "only the sender's lots, without quantities, orders or permissions");
 });
 
+test("v3 changes only lot identity, and a named lot with a different grade or day gets the specific question", async () => {
+  const v2 = PROMPTS.v2.split("\n"), v3 = PROMPTS.v3.split("\n");
+  assert.deepEqual(v2.filter(x => !v3.includes(x)).map(x => x.slice(0, 5)), ["lotId"], "only the lot rule is replaced");
+  assert.ok(v3.filter(x => !v2.includes(x)).every(x => /lot/.test(x)));
+  assert.equal(PROMPT_VERSION, "v2", "v3 is not the default until evaluated");
+  const l = createLedger(scenario()), text = "New total for Friday: 19 kg of tomatoes, processing grade this time.";
+  const evidence = [{ field: "operation", quote: "New total" }, { field: "lot", quote: "tomatoes" }, { field: "quantity", quote: "19 kg" }, { field: "grade", quote: "processing grade" }, { field: "date", quote: "Friday" }];
+  // v3-style output: lot named by product, grade as stated.
+  const named = (await run(l, src(text), reply(output({ quantity: { amount: 19, unit: "kg", pack: null }, grade: "processing", evidence })), { promptVersion: "v3" }));
+  expect(named.result, "proposed");
+  if (named.result.status !== "proposed") return;
+  assert.deepEqual(named.result.questions.map(q => q.field), ["grade"]);
+  assert.match(named.result.questions[0].question, /different grade needs its own lot/);
+  assert.match(named.calls[0].messages[0].content, /identifies which of the sender's lots/);
+  // v1/v2-style output for the same message: no lot, so only the vague question.
+  const unnamed = await run(l, src(text), reply(output({ lotId: null, quantity: { amount: 19, unit: "kg", pack: null }, grade: "processing", evidence: evidence.filter(e => e.field !== "lot"), unresolved: ["lot"] })));
+  if (unnamed.result.status !== "proposed") return assert.fail("expected a proposal");
+  assert.deepEqual([...new Set(unnamed.result.questions.map(q => q.field))], ["lot"]);
+});
+
 test("v2 is the default prompt and v1 stays selectable for comparison", async () => {
   // v2 became the default after the October 26 held-out comparison; changing it needs a new evaluation.
   assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v2], ["v2", true]);
