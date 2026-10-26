@@ -21,9 +21,9 @@ export type Approval = { reviewHash: string; reviewer: string };
 export type Effect = "replace-total" | "add-quantity" | "forecast";
 export type UpdateEvent = {
   id: string; proposal: UpdateProposal; approval: Approval; effect: Effect; lotId: string;
-  // appliedFrom is the quantity the effect started from; corrections inherit their target's.
-  lotBefore: Quantity; appliedFrom: Quantity; lotAfter: Quantity; beforeHash: string; afterHash: string;
+  lotBefore: Quantity; lotAfter: Quantity; beforeHash: string; afterHash: string;
 };
+export type Change = { effect: Effect; lotId: string; before: Quantity; after: Quantity };
 export type Forecast = { eventId: string; lotId: string; amount: number; unit: BaseUnit; deliveryOn: string };
 // Forecasts sit beside, never inside, the snapshot the planner allocates from.
 export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[] };
@@ -51,11 +51,42 @@ function spans(text: string, xs: Span[]): void {
       x.start < 0 || x.end > text.length || x.start >= x.end || !text.slice(x.start, x.end).trim())) throw new Error("Literal source evidence required");
 }
 const optional = (v: unknown) => v === undefined || (typeof v === "string" && !!v.trim() && v.length <= 160);
-const latest = (l: Ledger, lotId: string) => l.events.findLast(e => e.lotId === lotId && e.effect !== "forecast");
+
+type Step = { id: string; effect: Effect; corrects?: string; quantity: Quantity; lotBefore: Quantity };
+const inventory = (l: Ledger, lotId: string): Step[] => l.events.filter(e => e.lotId === lotId && e.effect !== "forecast")
+  .map(e => ({ id: e.id, effect: e.effect, corrects: e.proposal.interpretation.correctsEventId, quantity: e.proposal.interpretation.quantity!, lotBefore: e.lotBefore }));
+// Maps each original update to the newest step (itself or a correction) now in force for it.
+function inForce(steps: Step[]): Map<string, Step> {
+  const root = new Map<string, string>(), current = new Map<string, Step>();
+  for (const s of steps) { const r = s.corrects === undefined ? s.id : root.get(s.corrects)!; root.set(s.id, r); current.set(r, s); }
+  return current;
+}
+// A lot's quantity is its initial quantity folded over every original update, each
+// with its in-force correction, so a correction to an older update carries through
+// later additions while a later new total still overrides it.
+function replay(steps: Step[]): Quantity {
+  const current = inForce(steps);
+  let q = steps[0].lotBefore;
+  for (const s of steps) {
+    const x = current.get(s.id);
+    if (!x) continue;
+    const change = normalize(x.quantity);
+    q = s.effect === "replace-total" ? x.quantity : { amount: normalize(q).amount + change.amount, unit: change.unit };
+  }
+  return structuredClone(q);
+}
+function outcome(l: Ledger, p: UpdateProposal): Change {
+  const i = p.interpretation, lot = l.snapshot.lots.find(x => x.id === i.lotId)!, target = l.events.find(e => e.id === i.correctsEventId);
+  const effect = target ? target.effect : i.operation as Effect, before = structuredClone(lot.quantity);
+  const after = effect === "forecast" ? before
+    : replay([...inventory(l, lot.id), { id: `event-${l.events.length + 1}`, effect, corrects: i.correctsEventId, quantity: i.quantity!, lotBefore: before }]);
+  return { effect, lotId: lot.id, before, after };
+}
 
 // Throws for malformed, duplicate or stale input; returns questions for anything a
-// person must still resolve. Any question blocks commit.
-export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string; questions: Question[] } {
+// person must still resolve. Any question blocks commit. With no questions, the
+// change shows the coordinator the lot quantity the commit would produce.
+export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string; questions: Question[]; change?: Change } {
   validateSnapshot(ledger.snapshot);
   if (typeof p?.id !== "string" || !p.id.trim() || p.id.length > 160) throw new Error("Proposal identity required");
   source(p.source);
@@ -104,9 +135,9 @@ export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string;
     if (!target) ask("correction-target", "Identify the committed update being corrected");
     else if (target.effect === "forecast") ask("correction-target", "Forecasts are not corrected in place; record a new forecast");
     else if (target.lotId !== i.lotId) ask("correction-target", "Corrected update belongs to a different lot");
-    else if (latest(ledger, target.lotId) !== target) ask("correction-target", "Later updates changed this lot; state the current total instead");
+    else if (![...inForce(inventory(ledger, target.lotId)).values()].some(s => s.id === target.id)) ask("correction-target", "A newer correction already replaced that update; correct the one in force");
   } else if (i.correctsEventId !== undefined) ask("correction-target", "Only a correction may reference an earlier update");
-  return { hash: digest(p), questions };
+  return questions.length ? { hash: digest(p), questions } : { hash: digest(p), questions, change: outcome(ledger, p) };
 }
 
 // Approval is local review provenance, not authentication. Span checks do not
@@ -116,16 +147,10 @@ export function commitUpdate(ledger: Ledger, p: UpdateProposal, approval: Approv
   const review = reviewUpdate(ledger, p);
   if (review.questions.length) throw new Error(`Clarification required: ${review.questions.map(q => q.question).join("; ")}`);
   if (typeof approval?.reviewer !== "string" || !approval.reviewer.trim() || approval.reviewer.length > 160 || approval.reviewHash !== review.hash) throw new Error("Named approval of exact proposal required");
-  const i = p.interpretation, snapshot = structuredClone(ledger.snapshot), lot = snapshot.lots.find(l => l.id === i.lotId)!;
-  const target = i.operation === "correction" ? ledger.events.find(e => e.id === i.correctsEventId)! : undefined;
-  const effect = target ? target.effect : i.operation as Effect, change = normalize(i.quantity!);
-  // A correction re-applies the corrected update's operation from that update's starting point.
-  const lotBefore = structuredClone(lot.quantity), appliedFrom = target ? target.appliedFrom : lotBefore;
-  const lotAfter: Quantity = effect === "replace-total" ? structuredClone(i.quantity!)
-    : effect === "add-quantity" ? { amount: normalize(appliedFrom).amount + change.amount, unit: change.unit } : lotBefore;
-  const id = `event-${ledger.events.length + 1}`;
+  const { effect, lotId, before: lotBefore, after: lotAfter } = review.change!, id = `event-${ledger.events.length + 1}`;
+  const snapshot = structuredClone(ledger.snapshot), lot = snapshot.lots.find(l => l.id === lotId)!;
   if (effect !== "forecast") { lot.quantity = lotAfter; snapshot.version += 1; validateSnapshot(snapshot); }
-  const event: UpdateEvent = { id, proposal: p, approval, effect, lotId: lot.id, lotBefore, appliedFrom, lotAfter, beforeHash: snapshotHash(ledger.snapshot), afterHash: snapshotHash(snapshot) };
-  const forecasts = effect === "forecast" ? [...ledger.forecasts, { eventId: id, lotId: lot.id, ...change, deliveryOn: lot.deliveryOn }] : ledger.forecasts;
+  const event: UpdateEvent = { id, proposal: p, approval, effect, lotId, lotBefore, lotAfter, beforeHash: snapshotHash(ledger.snapshot), afterHash: snapshotHash(snapshot) };
+  const forecasts = effect === "forecast" ? [...ledger.forecasts, { eventId: id, lotId, ...normalize(p.interpretation.quantity!), deliveryOn: lot.deliveryOn }] : ledger.forecasts;
   return structuredClone({ version: ledger.version + 1, snapshot, events: [...ledger.events, event], forecasts });
 }

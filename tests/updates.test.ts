@@ -66,14 +66,25 @@ test("unresolved meaning or details block inventory changes and leave the ledger
   assert.deepEqual(l, before);
 });
 
-test("corrections must target the latest inventory update for the same lot", () => {
+test("corrections to older updates replay later history; later new totals still win", () => {
   let l = createLedger(scenario());
-  l = approve(l, shortage(l));
-  l = approve(l, tomatoes(l, "msg-5", "Now 20 kg standard tomatoes for Friday.", "replace-total", 20, { lotId: "lot-a", growerId: "grower-a" }));
-  const late = tomatoes(l, "msg-6", "Sorry, 35 kg of tomatoes, not 30.", "correction", 35, { lotId: "lot-a", growerId: "grower-a", correctsEventId: "event-1" });
-  assert.match(reviewUpdate(l, late).questions[0].question, /Later updates/);
-  const elsewhere = tomatoes(l, "msg-7", "Sorry, 35 kg of tomatoes, not 30.", "correction", 35, { correctsEventId: "event-2" });
-  assert.match(reviewUpdate(l, elsewhere).questions.map(q => q.question).join(), /different lot/);
+  l = approve(l, tomatoes(l, "msg-5", "Picked another 10 kg of standard tomatoes for Friday.", "add-quantity", 10));
+  l = approve(l, tomatoes(l, "msg-6", "And 3 kg more standard tomatoes for Friday.", "add-quantity", 3));
+  const fix = tomatoes(l, "msg-7", "Sorry, the first pick was 5 kg, not 10.", "correction", 5, { correctsEventId: "event-1" });
+  assert.deepEqual(reviewUpdate(l, fix).change, { effect: "add-quantity", lotId: "lot-b", before: { amount: 53000, unit: "g" }, after: { amount: 48000, unit: "g" } });
+  l = approve(l, fix);
+  assert.equal(grams(l, "lot-b"), 48000);
+  checked(l);
+
+  l = approve(l, tomatoes(l, "msg-8", "Lot B is now 50 kg standard tomatoes for Friday.", "replace-total", 50));
+  const stale = tomatoes(l, "msg-9", "First pick was 6 kg actually.", "correction", 6, { correctsEventId: "event-1" });
+  assert.match(reviewUpdate(l, stale).questions[0].question, /newer correction/);
+  const recorded = approve(l, { ...stale, interpretation: { ...stale.interpretation, correctsEventId: "event-3" } });
+  assert.deepEqual([recorded.events.at(-1)!.lotBefore, recorded.events.at(-1)!.lotAfter], [{ amount: 50, unit: "kg" }, { amount: 50, unit: "kg" }], "superseded by a later total: logged with no inventory effect");
+  assert.equal(recorded.events.length, 5);
+
+  const elsewhere = tomatoes(recorded, "msg-10", "Sorry, 35 kg of tomatoes, not 30.", "correction", 35, { lotId: "lot-a", growerId: "grower-a", correctsEventId: "event-2" });
+  assert.match(reviewUpdate(recorded, elsewhere).questions.map(q => q.question).join(), /different lot/);
 });
 
 test("clarification questions and answers stay linked to the original evidence and its hash", () => {
@@ -152,23 +163,22 @@ test("generated update sequences keep deterministic allocation and complete resi
   const rand = (max: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % max; };
   const products: Record<string, string> = { "lot-a": "tomatoes", "lot-b": "tomatoes", "lot-c": "cucumbers", "lot-d": "zucchini" };
   let l = createLedger(scenario());
-  const expected = new Map(l.snapshot.lots.map(x => [x.id, normalize(x.quantity).amount]));
-  const before = new Map<string, number>();
+  // Independent model: each lot's original updates, each holding the kg and event ID now in force.
+  const initial = new Map(l.snapshot.lots.map(x => [x.id, normalize(x.quantity).amount]));
+  const history = new Map(l.snapshot.lots.map(x => [x.id, [] as { replace: boolean; kg: number; inForce: string }[]]));
+  const expected = (lotId: string) => history.get(lotId)!.reduce((g, u) => u.replace ? u.kg * 1000 : g + u.kg * 1000, initial.get(lotId)!);
   for (let step = 0; step < 150; step++) {
-    const lot = l.snapshot.lots[rand(4)], kg = rand(60), target = l.events.findLast(e => e.lotId === lot.id && e.effect !== "forecast");
-    const ops: Operation[] = ["replace-total", "add-quantity", "forecast", "unresolved", ...(target ? ["correction" as const] : [])];
-    const operation = ops[rand(ops.length)];
+    const lot = l.snapshot.lots[rand(4)], kg = rand(60), updates = history.get(lot.id)!;
+    const ops: Operation[] = ["replace-total", "add-quantity", "forecast", "unresolved", ...(updates.length ? ["correction" as const] : [])];
+    const operation = ops[rand(ops.length)], target = operation === "correction" ? updates[rand(updates.length)] : undefined;
     const text = `Update ${step}: ${kg} kg standard ${products[lot.id]} for Friday.`;
-    const p = tomatoes(l, `gen-${step}`, text, operation, kg, { lotId: lot.id, growerId: lot.growerId, correctsEventId: operation === "correction" ? target!.id : undefined });
+    const p = tomatoes(l, `gen-${step}`, text, operation, kg, { lotId: lot.id, growerId: lot.growerId, correctsEventId: target?.inForce });
     if (operation === "unresolved") { const prior = structuredClone(l); assert.throws(() => approve(l, p), /Clarification/); assert.deepEqual(l, prior); continue; }
     l = approve(l, p);
-    const event = l.events.at(-1)!;
-    before.set(event.id, expected.get(lot.id)!);
-    const start = operation === "correction" ? before.get(target!.id)! : expected.get(lot.id)!;
-    if (event.effect === "replace-total") expected.set(lot.id, kg * 1000);
-    if (event.effect === "add-quantity") expected.set(lot.id, start + kg * 1000);
-    if (operation === "correction") before.set(event.id, before.get(target!.id)!);
-    for (const [id, amount] of expected) assert.equal(grams(l, id), amount, `step ${step} ${id}`);
+    const id = l.events.at(-1)!.id;
+    if (target) { target.kg = kg; target.inForce = id; }
+    else if (operation !== "forecast") updates.push({ replace: operation === "replace-total", kg, inForce: id });
+    for (const x of l.snapshot.lots) assert.equal(grams(l, x.id), expected(x.id), `step ${step} ${x.id}`);
     const plan = checked(l);
     assert.deepEqual(proposeAllocations({ ...l.snapshot, lots: [...l.snapshot.lots].reverse(), orders: [...l.snapshot.orders].reverse() }).allocations, plan.allocations);
   }
