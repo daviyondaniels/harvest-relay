@@ -31,11 +31,14 @@ function prepare(c: Case): Ledger {
   let l = createLedger(scenario());
   for (const [n, u] of (c.setup ?? []).entries()) {
     const lot = l.snapshot.lots.find(x => x.id === u.lotId);
-    if (!lot) throw new Error(`${c.id}: setup names unknown lot ${u.lotId}`);
+    if (!lot) throw new Error(`${c.id}: setup ${n + 1} names unknown lot ${u.lotId}`);
+    if (!["replace-total", "add-quantity", "correction"].includes(u.operation)) throw new Error(`${c.id}: setup ${n + 1} operation must be replace-total, add-quantity or correction`);
+    if ((u.operation === "correction") !== (typeof u.correctsEventId === "string")) throw new Error(`${c.id}: setup ${n + 1} needs correctsEventId exactly when it is a correction`);
     const id = `${c.id}-setup-${n + 1}`;
     const p: UpdateProposal = { id, baseVersion: l.version, baseHash: snapshotHash(l.snapshot), source: { id, revision: 1, growerId: u.growerId, text: u.text }, clarifications: [],
-      interpretation: { operation: u.operation, lotId: u.lotId, quantity: u.quantity, grade: lot.grade, deliveryOn: lot.deliveryOn, unresolved: [], spans: [{ start: 0, end: u.text.length }] } };
-    l = commitUpdate(l, p, { reviewer: "evaluation-setup", reviewHash: reviewUpdate(l, p).hash });
+      interpretation: { operation: u.operation, lotId: u.lotId, quantity: u.quantity, grade: lot.grade, deliveryOn: lot.deliveryOn, unresolved: [], spans: [{ start: 0, end: u.text.length }], ...(u.correctsEventId ? { correctsEventId: u.correctsEventId } : {}) } };
+    try { l = commitUpdate(l, p, { reviewer: "evaluation-setup", reviewHash: reviewUpdate(l, p).hash }); }
+    catch (e) { throw new Error(`${c.id}: setup ${n + 1} could not be committed: ${e instanceof Error ? e.message : e}`); }
   }
   return l;
 }

@@ -9,7 +9,7 @@ export type Label = {
   pack: { amount: number; unit: "g" | "each" } | null; grade: string | null; deliveryOn: string | null;
   correctsEventId: string | null; ask: Field[];
 };
-export type Setup = { growerId: string; text: string; operation: "replace-total" | "add-quantity"; lotId: string; quantity: { amount: number; unit: Quantity["unit"] } };
+export type Setup = { growerId: string; text: string; operation: "replace-total" | "add-quantity" | "correction"; lotId: string; quantity: { amount: number; unit: Quantity["unit"] }; correctsEventId?: string };
 export type Case = { id: string; category: string; growerId: string; text: string; setup?: Setup[]; label: Label; note?: string };
 
 // correct: right value. asked: needed question raised by the model. caught: model asserted
