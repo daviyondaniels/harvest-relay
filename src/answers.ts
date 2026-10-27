@@ -1,3 +1,4 @@
+import { canonicalGrade } from "./grades.ts";
 import { digest } from "./planner.ts";
 import type { Quantity } from "./quantity.ts";
 import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Clarification, type Field, type Interpretation, type Ledger, type Source, type UpdateProposal } from "./updates.ts";
@@ -38,7 +39,8 @@ function pack(v: unknown): NonNullable<Quantity["pack"]> {
 function read(field: Field, v: unknown): unknown {
   switch (field) {
     case "operation": if (v === "unresolved" || !OPERATIONS.includes(v as never)) throw new Error("Invalid operation answer"); return v;
-    case "lot": case "grade": case "correction-target": return name(v);
+    case "lot": case "correction-target": return name(v);
+    case "grade": return canonicalGrade(name(v));
     case "date": {
       const d = name(v);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) !== d) throw new Error("Invalid date answer");

@@ -1,19 +1,19 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { scenario } from "../evaluation/scenario.ts";
-import { scoreCase, summarize, validateCase, type Case } from "../evaluation/score.ts";
-import { snapshotHash } from "../src/planner.ts";
+import { prepareLedger, scoreCase, summarize, validateCase, type Case } from "../evaluation/score.ts";
 import { PROMPTS, createBudget, interpretSource, metaTransport, type PromptVersion, type Transport, type Usage } from "../src/interpret.ts";
-import { commitUpdate, createLedger, reviewUpdate, type Ledger, type UpdateProposal } from "../src/updates.ts";
 
 // Paid prompt comparison on a labelled case file, e.g.:
 //   node --env-file="$HOME/.config/harvest-relay/meta.env" scripts/evaluate-live.ts \
 //     --cases evaluation/heldout.local.json --model muse-spark-1.3 --max-calls 40
 // Everything is validated before the first call, and it refuses a budget too small to run
 // every case under every prompt, so a partial run cannot skew the comparison.
+// SHA-256 of case files whose results have been read during analysis. HTO09 (October 26,
+// v1 vs v2) shaped v3, so it cannot fairly judge v3. heldout-2 (October 27, v2 vs v3).
+const RETIRED_SETS = ["4261ca02d6b6bc27b1963060239a36bce40951687eb674ed63c047e71f8bb9d6", "951c5fe74454da48f68d013dea33a937c944432db3ee6f4f71738934bb2dd36a"];
 const { values } = parseArgs({ options: {
-  cases: { type: "string" }, prompts: { type: "string", default: "v1,v2" }, model: { type: "string" },
+  cases: { type: "string" }, prompts: { type: "string", default: "v2,v3" }, model: { type: "string" },
   "max-calls": { type: "string" }, effort: { type: "string", default: "minimal" }, "max-tokens": { type: "string", default: "2000" } } });
 if (!values.cases || !values.model) throw new Error("Pass --cases and --model");
 const raw = readFileSync(values.cases, "utf8");
@@ -22,27 +22,13 @@ if (!Array.isArray(cases) || !cases.length || cases.length > 60) throw new Error
 cases.forEach(validateCase);
 if (new Set(cases.map(c => c.id)).size !== cases.length) throw new Error("Duplicate case IDs");
 if (cases.some(c => c.id.startsWith("example-"))) throw new Error("Template examples are not evaluation cases");
+if (RETIRED_SETS.includes(createHash("sha256").update(raw).digest("hex"))) throw new Error("This case set has been read during analysis and can no longer judge a prompt change; write a new one");
 const prompts = values.prompts.split(",") as PromptVersion[];
 if (prompts.some(p => !Object.hasOwn(PROMPTS, p))) throw new Error(`Prompts must be from: ${Object.keys(PROMPTS).join(", ")}`);
 const maxCalls = Number(values["max-calls"]), needed = cases.length * prompts.length;
 if (!Number.isSafeInteger(maxCalls) || maxCalls < needed || maxCalls > 120) throw new Error(`This comparison needs exactly ${needed} calls; pass --max-calls between ${needed} and 120`);
 
-function prepare(c: Case): Ledger {
-  let l = createLedger(scenario());
-  for (const [n, u] of (c.setup ?? []).entries()) {
-    const lot = l.snapshot.lots.find(x => x.id === u.lotId);
-    if (!lot) throw new Error(`${c.id}: setup ${n + 1} names unknown lot ${u.lotId}`);
-    if (!["replace-total", "add-quantity", "correction"].includes(u.operation)) throw new Error(`${c.id}: setup ${n + 1} operation must be replace-total, add-quantity or correction`);
-    if ((u.operation === "correction") !== (typeof u.correctsEventId === "string")) throw new Error(`${c.id}: setup ${n + 1} needs correctsEventId exactly when it is a correction`);
-    const id = `${c.id}-setup-${n + 1}`;
-    const p: UpdateProposal = { id, baseVersion: l.version, baseHash: snapshotHash(l.snapshot), source: { id, revision: 1, growerId: u.growerId, text: u.text }, clarifications: [],
-      interpretation: { operation: u.operation, lotId: u.lotId, quantity: u.quantity, grade: lot.grade, deliveryOn: lot.deliveryOn, unresolved: [], spans: [{ start: 0, end: u.text.length }], ...(u.correctsEventId ? { correctsEventId: u.correctsEventId } : {}) } };
-    try { l = commitUpdate(l, p, { reviewer: "evaluation-setup", reviewHash: reviewUpdate(l, p).hash }); }
-    catch (e) { throw new Error(`${c.id}: setup ${n + 1} could not be committed: ${e instanceof Error ? e.message : e}`); }
-  }
-  return l;
-}
-const ledgers = new Map(cases.map(c => [c.id, prepare(c)]));
+const ledgers = new Map(cases.map(c => [c.id, prepareLedger(c)]));
 const key = process.env.MODEL_API_KEY;
 if (!key) throw new Error("MODEL_API_KEY not loaded; use node --env-file");
 
