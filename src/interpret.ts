@@ -1,4 +1,5 @@
 import { applyAnswers, openFields, type Answer, type Correction } from "./answers.ts";
+import { canonicalGrade } from "./grades.ts";
 import { snapshotHash } from "./planner.ts";
 import { integer, normalize, type Quantity } from "./quantity.ts";
 import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Field, type Interpretation, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -19,11 +20,13 @@ const LIMIT = { text: 160, quote: 500, question: 300, evidence: 12, questions: 5
 // independently written HTO09 cases: unsafe 3 -> 1, missed questions 2 -> 1, no added
 // unnecessary questions, same cost. That set has since been read, so it cannot fairly
 // judge later prompt versions.
-// v3 (unevaluated draft) changes only lot identity. v1 and v2 tie a lot to product, grade
+// v3 (the default) changes only lot identity. v1 and v2 tie a lot to product, grade
 // and delivery day, so a message stating a different grade or day, or leaving one open,
 // got no lot and only a vague "which lot?" question (4 of 5 unnecessary questions in the
 // HTO09 run). v3 names the lot by product and reports grade and day as stated, so review
-// raises its specific grade or date conflict question instead.
+// raises its specific grade or date conflict question instead. On the fresh heldout-2
+// cases, v2 vs v3: unsafe 0 and 0, over-asked 9 -> 3, wrong 0 -> 2; both wrong values
+// were "std" copied verbatim, which canonicalGrade (grades.ts) now maps before review.
 export const PROMPTS = {
   v1: [
     "You interpret one grower message for a food-hub coordinator and output only the JSON object required by the response schema.",
@@ -79,7 +82,7 @@ export const REPLY_PROMPT = [
   "lotId may accompany an answer for another field only to say which lot the reply is about; otherwise leave it null.",
   "If the reply corrects a fact the original message already settled (for example \"sorry, it's 6 not 4\"), report the corrected value with its field and a quote of the correction; the coordinator approves every correction."
 ].join("\n");
-export const PROMPT_VERSION: PromptVersion = "v2";
+export const PROMPT_VERSION: PromptVersion = "v3";
 export const SYSTEM_PROMPT = PROMPTS[PROMPT_VERSION];
 
 type Effort = typeof EFFORTS[number];
@@ -237,7 +240,7 @@ function toProposal(l: Ledger, s: Source, raw: string, lotIds: string[], eventId
     operation: keep("operation") ? operation : "unresolved",
     ...(keep("lot") ? { lotId: lotId! } : {}),
     ...(keep("quantity") ? { quantity: { amount: quantity!.amount, unit: quantity!.unit, ...(keep("pack") ? { pack: quantity!.pack! } : {}) } } : {}),
-    ...(keep("grade") ? { grade: grade! } : {}),
+    ...(keep("grade") ? { grade: canonicalGrade(grade!) } : {}),
     ...(keep("date") ? { deliveryOn: deliveryOn! } : {}),
     ...(keep("correction-target") ? { correctsEventId: correctsEventId! } : {}),
     unresolved, spans

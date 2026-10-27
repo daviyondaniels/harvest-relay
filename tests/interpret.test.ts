@@ -58,8 +58,7 @@ test("v3 changes only lot identity, and a named lot with a different grade or da
   const v2 = PROMPTS.v2.split("\n"), v3 = PROMPTS.v3.split("\n");
   assert.deepEqual(v2.filter(x => !v3.includes(x)).map(x => x.slice(0, 5)), ["lotId"], "only the lot rule is replaced");
   assert.ok(v3.filter(x => !v2.includes(x)).every(x => /lot/.test(x)));
-  assert.equal(PROMPT_VERSION, "v2", "v3 is not the default until evaluated");
-  const l = createLedger(scenario()), text = "New total for Friday: 19 kg of tomatoes, processing grade this time.";
+    const l = createLedger(scenario()), text = "New total for Friday: 19 kg of tomatoes, processing grade this time.";
   const evidence = [{ field: "operation", quote: "New total" }, { field: "lot", quote: "tomatoes" }, { field: "quantity", quote: "19 kg" }, { field: "grade", quote: "processing grade" }, { field: "date", quote: "Friday" }];
   // v3-style output: lot named by product, grade as stated.
   const named = (await run(l, src(text), reply(output({ quantity: { amount: 19, unit: "kg", pack: null }, grade: "processing", evidence })), { promptVersion: "v3" }));
@@ -74,11 +73,12 @@ test("v3 changes only lot identity, and a named lot with a different grade or da
   assert.deepEqual([...new Set(unnamed.result.questions.map(q => q.field))], ["lot"]);
 });
 
-test("v2 is the default prompt and v1 stays selectable for comparison", async () => {
-  // v2 became the default after the October 26 held-out comparison; changing it needs a new evaluation.
-  assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v2], ["v2", true]);
+test("v3 is the default prompt and earlier versions stay selectable for comparison", async () => {
+  // v3 became the default after the October 27 heldout-2 comparison; changing it needs a new evaluation.
+  assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v3], ["v3", true]);
   const l = createLedger(scenario());
-  assert.equal((await run(l, src(SHORT), reply(output()))).calls[0].messages[0].content, PROMPTS.v2);
+  assert.equal((await run(l, src(SHORT), reply(output()))).calls[0].messages[0].content, PROMPTS.v3);
+  assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v2" })).calls[0].messages[0].content, PROMPTS.v2);
   assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v1" })).calls[0].messages[0].content, PROMPTS.v1);
   await assert.rejects(run(l, src(SHORT), reply(output()), { promptVersion: "v9" as never }), /Unknown prompt/);
 });
