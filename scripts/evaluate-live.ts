@@ -13,8 +13,8 @@ import { commitUpdate, createLedger, reviewUpdate, type Ledger, type UpdatePropo
 // Everything is validated before the first call, and it refuses a budget too small to run
 // every case under every prompt, so a partial run cannot skew the comparison.
 // SHA-256 of case files whose results have been read during analysis. HTO09 (October 26,
-// v1 vs v2) shaped v3, so it cannot fairly judge v3.
-const RETIRED_SETS = ["4261ca02d6b6bc27b1963060239a36bce40951687eb674ed63c047e71f8bb9d6"];
+// v1 vs v2) shaped v3, so it cannot fairly judge v3. heldout-2 (October 27, v2 vs v3).
+const RETIRED_SETS = ["4261ca02d6b6bc27b1963060239a36bce40951687eb674ed63c047e71f8bb9d6", "951c5fe74454da48f68d013dea33a937c944432db3ee6f4f71738934bb2dd36a"];
 const { values } = parseArgs({ options: {
   cases: { type: "string" }, prompts: { type: "string", default: "v2,v3" }, model: { type: "string" },
   "max-calls": { type: "string" }, effort: { type: "string", default: "minimal" }, "max-tokens": { type: "string", default: "2000" } } });
