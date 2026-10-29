@@ -31,7 +31,7 @@ test("unit conversion requires explicit pack size and never guesses weight from 
   for (const amount of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER]) {
     assert.throws(() => normalize({ amount, unit: "kg" }));
   }
-  assert.throws(() => normalize({ amount: 4, unit: "lb" } as unknown as Quantity), /Unsupported/);
+  assert.throws(() => normalize({ amount: 4, unit: "oz" } as unknown as Quantity), /Unsupported/);
   const s = scenario(); s.lots[0].quantity = { amount: 60000, unit: "each" };
   const plan = proposeAllocations(s); verifyPlan(s, plan);
   assert.ok(!plan.allocations.some(x => x.lotId === "lot-a"));
@@ -107,4 +107,20 @@ test("deterministic generated cases conserve every lot and order across permissi
     assert.deepEqual(s, before);
     assert.deepEqual(proposeAllocations({ ...s, lots: [...s.lots].reverse(), orders: [...s.orders].reverse() }).allocations, p.allocations);
   }
+});
+
+test("a capped substitute is allocated no more than its cap, with residuals still accounted", () => {
+  // order-c wants 30 kg of cucumber, has 20, and may take zucchini; 30 kg of zucchini is on hand.
+  const s = scenario(), o = s.orders[2];
+  s.lots[3].quantity.amount = 30;
+  const given = (p: ReturnType<typeof proposeAllocations>) => p.allocations.filter(a => a.orderId === o.id && a.kind === "approved-substitution").reduce((n, a) => n + a.amount, 0);
+  assert.equal(given(proposeAllocations(s)), 10_000);
+  const capped = structuredClone(s);
+  capped.orders[2].approvedSubstitutions[0].maxAmount = 4000;
+  const plan = proposeAllocations(capped);
+  verifyPlan(capped, plan);
+  assert.equal(given(plan), 4000, "the cap binds");
+  assert.deepEqual(plan.unfilled.map(u => [u.orderId, u.amount]), [["order-c", 6000]]);
+  assert.deepEqual(proposeAllocations(capped), plan);
+  assert.throws(() => { const bad = structuredClone(capped); bad.orders[2].approvedSubstitutions[0].maxAmount = 0; proposeAllocations(bad); }, /cap/);
 });

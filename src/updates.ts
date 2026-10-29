@@ -1,4 +1,5 @@
-import { digest, snapshotHash, validateSnapshot, type Snapshot } from "./planner.ts";
+import { digest, snapshotHash, validateSnapshot, type Lot, type Snapshot } from "./planner.ts";
+import { NAME_MAX } from "./hub.ts";
 import { integer, normalize, type BaseUnit, type Quantity } from "./quantity.ts";
 
 // Immutable intake record: one source ID and revision always denote the same text.
@@ -23,17 +24,24 @@ export type UpdateEvent = {
   id: string; proposal: UpdateProposal; approval: Approval; effect: Effect; lotId: string;
   lotBefore: Quantity; lotAfter: Quantity; beforeHash: string; afterHash: string;
 };
-export type Change = { effect: Effect; lotId: string; before: Quantity; after: Quantity };
+// For a forecast, after equals before (confirmed supply does not move) and expected is the
+// amount the grower said might come.
+export type Change = { effect: Effect; lotId: string; before: Quantity; after: Quantity; expected?: Quantity };
 export type Forecast = { eventId: string; lotId: string; amount: number; unit: BaseUnit; deliveryOn: string };
+export type Evidence = { messageId: string; channel: "text" | "call"; quote: string };
+// What the coordinator recorded from a grower's or buyer's reply, beside the grower update events.
+export type LedgerRecord =
+  | { id: string; kind: "substitute-accepted"; orderId: string; substitute: { product: string; acceptedGrades: string[]; maxAmount?: number }; change?: "raised" | "uncapped" | "grade-added"; previousMax?: number; evidence: Evidence; recordedBy: string; beforeHash: string; afterHash: string }
+  | { id: string; kind: "lot-added"; lot: Lot; evidence: Evidence; recordedBy: string; beforeHash: string; afterHash: string };
 // Forecasts sit beside, never inside, the snapshot the planner allocates from.
-export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[] };
+export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[]; records: LedgerRecord[] };
 
 export const OPERATIONS: Operation[] = ["replace-total", "add-quantity", "correction", "forecast", "unresolved"];
 export const FIELDS: Field[] = ["operation", "lot", "quantity", "unit", "pack", "grade", "date", "correction-target"];
 
 export function createLedger(s: Snapshot): Ledger {
   validateSnapshot(s);
-  return { version: 0, snapshot: structuredClone(s), events: [], forecasts: [] };
+  return { version: 0, snapshot: structuredClone(s), events: [], forecasts: [], records: [] };
 }
 export function locate(text: string, quote: string): Span {
   const start = quote ? text.indexOf(quote) : -1;
@@ -80,7 +88,7 @@ function outcome(l: Ledger, p: UpdateProposal): Change {
   const effect = target ? target.effect : i.operation as Effect, before = structuredClone(lot.quantity);
   const after = effect === "forecast" ? before
     : replay([...inventory(l, lot.id), { id: `event-${l.events.length + 1}`, effect, corrects: i.correctsEventId, quantity: i.quantity!, lotBefore: before }]);
-  return { effect, lotId: lot.id, before, after };
+  return { effect, lotId: lot.id, before, after, ...(effect === "forecast" ? { expected: structuredClone(i.quantity!) } : {}) };
 }
 
 // Throws for malformed, duplicate or stale input; returns questions for anything a
@@ -153,11 +161,11 @@ export function reviewUpdate(ledger: Ledger, p: UpdateProposal): { hash: string;
 export function commitUpdate(ledger: Ledger, p: UpdateProposal, approval: Approval): Ledger {
   const review = reviewUpdate(ledger, p);
   if (review.questions.length) throw new Error(`Clarification required: ${review.questions.map(q => q.question).join("; ")}`);
-  if (typeof approval?.reviewer !== "string" || !approval.reviewer.trim() || approval.reviewer.length > 160 || approval.reviewHash !== review.hash) throw new Error("Named approval of exact proposal required");
+  if (typeof approval?.reviewer !== "string" || !approval.reviewer.trim() || approval.reviewer.length > NAME_MAX || approval.reviewHash !== review.hash) throw new Error("Named approval of exact proposal required");
   const { effect, lotId, before: lotBefore, after: lotAfter } = review.change!, id = `event-${ledger.events.length + 1}`;
   const snapshot = structuredClone(ledger.snapshot), lot = snapshot.lots.find(l => l.id === lotId)!;
   if (effect !== "forecast") { lot.quantity = lotAfter; snapshot.version += 1; validateSnapshot(snapshot); }
   const event: UpdateEvent = { id, proposal: p, approval, effect, lotId, lotBefore, lotAfter, beforeHash: snapshotHash(ledger.snapshot), afterHash: snapshotHash(snapshot) };
   const forecasts = effect === "forecast" ? [...ledger.forecasts, { eventId: id, lotId, ...normalize(p.interpretation.quantity!), deliveryOn: lot.deliveryOn }] : ledger.forecasts;
-  return structuredClone({ version: ledger.version + 1, snapshot, events: [...ledger.events, event], forecasts });
+  return structuredClone({ version: ledger.version + 1, snapshot, events: [...ledger.events, event], forecasts, records: ledger.records });
 }

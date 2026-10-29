@@ -9,7 +9,7 @@ export type Order = {
   id: string; buyerId: string; product: string; acceptedGrades: string[];
   quantity: Quantity; deliveryOn: string; priority: number;
   // These permissions must already be supplied/confirmed by the customer.
-  approvedSubstitutions: { product: string; acceptedGrades: string[] }[];
+  approvedSubstitutions: { product: string; acceptedGrades: string[]; maxAmount?: number }[];
 };
 export type Snapshot = { version: number; lots: Lot[]; orders: Order[] };
 export type Allocation = {
@@ -52,7 +52,7 @@ export function validateSnapshot(s: Snapshot): void {
   for (const order of s.orders) {
     identifier(order.buyerId, "buyer ID"); integer(order.priority, "priority"); grades(order.acceptedGrades);
     if (!Array.isArray(order.approvedSubstitutions) || order.approvedSubstitutions.length > 20) throw new Error("Explicit bounded substitution list required");
-    for (const sub of order.approvedSubstitutions) { identifier(sub.product, "substitute product"); grades(sub.acceptedGrades); }
+    for (const sub of order.approvedSubstitutions) { identifier(sub.product, "substitute product"); grades(sub.acceptedGrades); if (sub.maxAmount !== undefined && (!Number.isSafeInteger(sub.maxAmount) || sub.maxAmount <= 0)) throw new Error("Invalid substitute cap"); }
   }
 }
 
@@ -73,6 +73,7 @@ export function proposeAllocations(s: Snapshot): Plan {
   const lots = [...s.lots].sort(byId);
   const remaining = new Map(lots.map(l => [l.id, normalize(l.quantity).amount]));
   const need = new Map(orders.map(o => [o.id, normalize(o.quantity).amount]));
+  const used = new Map<string, number>(); // substitute amount given so far, per order and substitute product
   const allocations: Allocation[] = [];
   for (const kind of ["requested", "approved-substitution"] as const) {
     for (const order of orders) {
@@ -84,8 +85,11 @@ export function proposeAllocations(s: Snapshot): Plan {
           ? lot.product === order.product && order.acceptedGrades.includes(lot.grade)
           : lot.product !== order.product && order.approvedSubstitutions.some(sub => sub.product === lot.product && sub.acceptedGrades.includes(lot.grade));
         if (!eligible) continue;
-        const amount = Math.min(need.get(order.id)!, remaining.get(lot.id)!);
-        if (amount === 0) continue;
+        const cap = kind === "requested" ? Infinity : order.approvedSubstitutions.find(sub => sub.product === lot.product)?.maxAmount ?? Infinity;
+        const key = `${order.id}\n${lot.product}`;
+        const amount = Math.min(need.get(order.id)!, remaining.get(lot.id)!, cap - (used.get(key) ?? 0));
+        if (amount <= 0) continue;
+        if (kind === "approved-substitution") used.set(key, (used.get(key) ?? 0) + amount);
         allocations.push({ orderId: order.id, lotId: lot.id, amount, unit: oq.unit, kind });
         remaining.set(lot.id, remaining.get(lot.id)! - amount);
         need.set(order.id, need.get(order.id)! - amount);
@@ -104,7 +108,7 @@ export function verifyPlan(s: Snapshot, plan: Plan): void {
   validateSnapshot(s);
   if (plan.status !== "proposal" || plan.snapshotHash !== snapshotHash(s)) throw new Error("Stale or invalid plan");
   const lotTotals = new Map(s.lots.map(l => [l.id, 0]));
-  const orderTotals = new Map(s.orders.map(o => [o.id, 0]));
+  const orderTotals = new Map(s.orders.map(o => [o.id, 0])), subTotals = new Map<string, number>();
   for (const a of plan.allocations) {
     integer(a.amount, "allocation");
     if (!a.amount) throw new Error("Zero allocation");
@@ -116,6 +120,11 @@ export function verifyPlan(s: Snapshot, plan: Plan): void {
     const lt = lotTotals.get(l.id)! + a.amount, ot = orderTotals.get(o.id)! + a.amount;
     integer(lt, "lot total"); integer(ot, "order total");
     if (lt > normalize(l.quantity).amount || ot > normalize(o.quantity).amount) throw new Error("Over-allocation");
+    if (a.kind === "approved-substitution") {
+      const cap = o.approvedSubstitutions.find(p => p.product === l.product)?.maxAmount, key = `${o.id}\n${l.product}`, ut = (subTotals.get(key) ?? 0) + a.amount;
+      if (cap !== undefined && ut > cap) throw new Error("Over the agreed substitute amount");
+      subTotals.set(key, ut);
+    }
     lotTotals.set(l.id, lt); orderTotals.set(o.id, ot);
   }
   const expectedUnfilled = s.orders.map(o => ({ orderId: o.id, amount: normalize(o.quantity).amount - orderTotals.get(o.id)!, unit: normalize(o.quantity).unit })).filter(x => x.amount > 0);

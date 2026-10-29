@@ -14,7 +14,7 @@ export type Correction = { field: Field; from: unknown; to: unknown; quote: stri
 export type AnswerResult = { proposal: UpdateProposal; applied: Field[]; corrections: Correction[]; unclear: Field[]; unanswered: Field[] };
 
 const KEYS: Partial<Record<Field, keyof Interpretation>> = { operation: "operation", lot: "lotId", quantity: "quantity", unit: "quantity", grade: "grade", date: "deliveryOn", "correction-target": "correctsEventId" };
-const UNITS = ["g", "kg", "each", "case"];
+const UNITS = ["g", "kg", "lb", "each", "case"];
 
 function whole(v: unknown): number {
   if (!Number.isSafeInteger(v) || (v as number) < 0) throw new Error("Answer quantities must be nonnegative whole numbers");
@@ -30,10 +30,11 @@ function shape(v: unknown, keys: string[]): Record<string, unknown> {
   return o;
 }
 // Case contents may be stated in kg; converted to grams exactly, as for model output.
+// Pounds stay pounds, never converted.
 function pack(v: unknown): NonNullable<Quantity["pack"]> {
   const o = shape(v, ["amount", "unit"]), amount = whole(o.amount);
   if (o.unit === "kg") { if (!Number.isSafeInteger(amount * 1000)) throw new Error("Answer quantities must be nonnegative whole numbers"); return { amount: amount * 1000, unit: "g" }; }
-  if (o.unit !== "g" && o.unit !== "each") throw new Error("Case contents must be g, kg or each");
+  if (o.unit !== "g" && o.unit !== "lb" && o.unit !== "each") throw new Error("Case contents must be g, kg, lb or each");
   return { amount, unit: o.unit };
 }
 function read(field: Field, v: unknown): unknown {
@@ -75,6 +76,14 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
   validateSource(reply);
   if (reply.growerId !== p.source.growerId) throw new Error("A reply must come from the grower who sent the update");
   if (reply.id === p.source.id) throw new Error("A reply must be a separate source from the update it answers");
+  return apply(l, p, reply, answers, unclear, "Reply");
+}
+// The coordinator's own reading of words already in the message: the same checks and
+// correction record as a reply, with the message itself as the quoted evidence.
+export function amendFromMessage(l: Ledger, p: UpdateProposal, answers: Answer[]): AnswerResult {
+  return apply(l, p, p.source, answers, [], "Coordinator reading of the message");
+}
+function apply(l: Ledger, p: UpdateProposal, reply: Source, answers: Answer[], unclear: Field[], by: string): AnswerResult {
   if (!Array.isArray(answers) || answers.length > FIELDS.length) throw new Error("Bounded answer list required");
   if (new Set(answers.map(a => a?.field)).size !== answers.length) throw new Error("At most one answer per field");
   if (answers.some(a => !FIELDS.includes(a?.field) || typeof a.quote !== "string" || a.quote.length > 500)) throw new Error("Invalid answer");
@@ -100,7 +109,7 @@ export function applyAnswers(l: Ledger, p: UpdateProposal, reply: Source, answer
     const answer = { source: structuredClone(reply), span };
     if (correcting) {
       corrections.push({ field: a.field, from, to: value, quote: a.quote });
-      clarifications.push({ field: a.field, question: `Reply corrects ${a.field} from ${JSON.stringify(from)} to ${JSON.stringify(value)}`.slice(0, 500), answer });
+      clarifications.push({ field: a.field, question: `${by} corrects ${a.field} from ${JSON.stringify(from)} to ${JSON.stringify(value)}`.slice(0, 500), answer });
       continue;
     }
     const asked = clarifications.filter(c => c.field === a.field && !c.answer);

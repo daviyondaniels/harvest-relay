@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { prepareLedger, scoreCase, summarize, validateCase, type Case } from "../evaluation/score.ts";
+import { prepareLedger, scoreCase, summarize, validateCase, type Case, type Hub } from "../evaluation/score.ts";
 import { PROMPTS, createBudget, interpretSource, metaTransport, type PromptVersion, type Transport, type Usage } from "../src/interpret.ts";
 
 // Paid prompt comparison on a labelled case file, e.g.:
@@ -17,7 +17,8 @@ const { values } = parseArgs({ options: {
   "max-calls": { type: "string" }, effort: { type: "string", default: "minimal" }, "max-tokens": { type: "string", default: "2000" } } });
 if (!values.cases || !values.model) throw new Error("Pass --cases and --model");
 const raw = readFileSync(values.cases, "utf8");
-const cases = (JSON.parse(raw) as { cases: Case[] }).cases;
+const parsed = JSON.parse(raw) as { cases: Case[]; hub?: Hub }, cases = parsed.cases, hub = parsed.hub ?? "standard";
+if (hub !== "standard" && hub !== "demo") throw new Error('hub must be "standard" or "demo"');
 if (!Array.isArray(cases) || !cases.length || cases.length > 60) throw new Error("Case file needs 1-60 cases");
 cases.forEach(validateCase);
 if (new Set(cases.map(c => c.id)).size !== cases.length) throw new Error("Duplicate case IDs");
@@ -28,7 +29,7 @@ if (prompts.some(p => !Object.hasOwn(PROMPTS, p))) throw new Error(`Prompts must
 const maxCalls = Number(values["max-calls"]), needed = cases.length * prompts.length;
 if (!Number.isSafeInteger(maxCalls) || maxCalls < needed || maxCalls > 120) throw new Error(`This comparison needs exactly ${needed} calls; pass --max-calls between ${needed} and 120`);
 
-const ledgers = new Map(cases.map(c => [c.id, prepareLedger(c)]));
+const ledgers = new Map(cases.map(c => [c.id, prepareLedger(c, hub)]));
 const key = process.env.MODEL_API_KEY;
 if (!key) throw new Error("MODEL_API_KEY not loaded; use node --env-file");
 

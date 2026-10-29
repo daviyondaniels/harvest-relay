@@ -2,13 +2,14 @@ import type { InterpretResult } from "../src/interpret.ts";
 import { snapshotHash } from "../src/planner.ts";
 import { normalize, type Quantity } from "../src/quantity.ts";
 import { FIELDS, commitUpdate, createLedger, reviewUpdate, type Field, type Ledger, type Operation, type UpdateProposal } from "../src/updates.ts";
+import { demoSnapshot } from "../src/demo.ts";
 import { scenario } from "./scenario.ts";
 
 // Held-out labels describe what the message itself settles. A field listed in `ask` is
 // one the coordinator must get from the grower; its value must stay open.
 export type Label = {
   operation: Operation; lotId: string | null; quantity: { amount: number; unit: Quantity["unit"] } | null;
-  pack: { amount: number; unit: "g" | "kg" | "each" } | null; grade: string | null; deliveryOn: string | null;
+  pack: { amount: number; unit: "g" | "kg" | "lb" | "each" } | null; grade: string | null; deliveryOn: string | null;
   correctsEventId: string | null; ask: Field[];
 };
 export type Setup = { growerId: string; text: string; operation: "replace-total" | "add-quantity" | "correction"; lotId: string; quantity: { amount: number; unit: Quantity["unit"] }; correctsEventId?: string };
@@ -67,9 +68,11 @@ export function summarize(scores: ReturnType<typeof scoreCase>[]) {
   };
 }
 
-// The ledger a case is interpreted against: the standard hub plus its committed setup updates.
-export function prepareLedger(c: Case): Ledger {
-  let l = createLedger(scenario());
+// The ledger a case is interpreted against: the standard hub (kg), or the demo hub (lb) when
+// the case file says hub "demo", plus the case's committed setup updates.
+export type Hub = "standard" | "demo";
+export function prepareLedger(c: Case, hub: Hub = "standard"): Ledger {
+  let l = createLedger(hub === "demo" ? demoSnapshot() : scenario());
   for (const [n, u] of (c.setup ?? []).entries()) {
     const lot = l.snapshot.lots.find(x => x.id === u.lotId);
     if (!lot) throw new Error(`${c.id}: setup ${n + 1} names unknown lot ${u.lotId}`);
