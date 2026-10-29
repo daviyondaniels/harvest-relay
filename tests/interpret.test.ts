@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { scenario } from "../evaluation/scenario.ts";
-import { META_CHAT_COMPLETIONS_URL, PROMPTS, PROMPT_VERSION, SYSTEM_PROMPT, createBudget, interpretSource, metaTransport, type ChatRequest, type InterpretOptions, type InterpretResult } from "../src/interpret.ts";
+import { META_CHAT_COMPLETIONS_URL, PROMPTS, PROMPT_VERSION, SYSTEM_PROMPT, createBudget, interpretSource, responseSchema, metaTransport, type ChatRequest, type InterpretOptions, type InterpretResult } from "../src/interpret.ts";
 import { commitUpdate, createLedger, reviewUpdate, type Ledger, type Source } from "../src/updates.ts";
 
 // Injected, authored provider responses only: no network, credentials or model calls.
@@ -73,11 +73,12 @@ test("v3 changes only lot identity, and a named lot with a different grade or da
   assert.deepEqual([...new Set(unnamed.result.questions.map(q => q.field))], ["lot"]);
 });
 
-test("v3 is the default prompt and earlier versions stay selectable for comparison", async () => {
-  // v3 became the default after the October 27 heldout-2 comparison; changing it needs a new evaluation.
-  assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v3], ["v3", true]);
+test("v4 is the default prompt and earlier versions stay selectable for comparison", async () => {
+  // v4 only adds pounds to v3 (the evaluated default until then); it has not been evaluated yet.
+  assert.deepEqual([PROMPT_VERSION, SYSTEM_PROMPT === PROMPTS.v4], ["v4", true]);
   const l = createLedger(scenario());
-  assert.equal((await run(l, src(SHORT), reply(output()))).calls[0].messages[0].content, PROMPTS.v3);
+  assert.equal((await run(l, src(SHORT), reply(output()))).calls[0].messages[0].content, PROMPTS.v4);
+  assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v3" })).calls[0].messages[0].content, PROMPTS.v3);
   assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v2" })).calls[0].messages[0].content, PROMPTS.v2);
   assert.equal((await run(l, src(SHORT), reply(output()), { promptVersion: "v1" })).calls[0].messages[0].content, PROMPTS.v1);
   await assert.rejects(run(l, src(SHORT), reply(output()), { promptVersion: "v9" as never }), /Unknown prompt/);
@@ -149,9 +150,9 @@ test("references outside the sender's permitted context are rejected", async () 
 
 test("unsupported units are rejected or left unresolved, never converted", async () => {
   const l = createLedger(scenario());
-  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 66, unit: "lb", pack: null } })))).result, "invalid", /schema/);
-  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 4, unit: "case", pack: { amount: 11, unit: "lb" } } })))).result, "invalid", /schema/);
-  const text = "About 66 lbs of standard tomatoes for Friday, new total.";
+  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 66, unit: "oz", pack: null } })))).result, "invalid", /schema/);
+  expect((await run(l, src(SHORT), reply(output({ quantity: { amount: 4, unit: "case", pack: { amount: 11, unit: "oz" } } })))).result, "invalid", /schema/);
+  const text = "About 66 oz of standard tomatoes for Friday, new total.";
   const { result } = await run(l, src(text), reply(output({ quantity: null, unresolved: ["unit"], questions: [{ field: "unit", question: "How many kilograms is that?" }],
     evidence: [{ field: "operation", quote: "new total" }, { field: "lot", quote: "tomatoes" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }] })));
   expect(result, "proposed");
@@ -281,4 +282,17 @@ test("the Meta transport sends the documented request shape and keeps the key ou
   assert.doesNotMatch(JSON.stringify(limited), /test-key-123/);
   expect(await interpretSource(l, src(SHORT), { enabled: true, model: "muse-spark-1.3", budget, transport: metaTransport("k", fake(200, reply(output()), { "content-length": "999999" })) }), "failed", /size bound/);
   assert.throws(() => metaTransport(" "));
+});
+
+test("v4 adds pounds to v3 and nothing else", async () => {
+  const v3 = PROMPTS.v3.split("\n"), v4 = PROMPTS.v4.split("\n");
+  assert.equal(v3.length, v4.length);
+  assert.ok(v4.filter(x => !v3.includes(x)).every(x => /\blb\b/.test(x)));
+  assert.match(PROMPTS.v4, /Use only units g, kg, lb, each or case\. Write pounds \(lb, lbs, pound, pounds\) as lb\./);
+  const quantity = (responseSchema(["lot-a"], []) as any).properties.quantity.anyOf.find((x: any) => x.type === "object");
+  assert.ok(quantity.properties.unit.enum.includes("lb") && quantity.properties.pack.anyOf.find((x: any) => x.type === "object").properties.unit.enum.includes("lb"));
+  const { result } = await run(createLedger(scenario()), src("Only 30 lb of standard tomatoes for Friday, replacing the earlier total."),
+    reply(output({ quantity: { amount: 30, unit: "lb", pack: null }, evidence: [{ field: "quantity", quote: "Only 30 lb" }] })), { promptVersion: "v4" });
+  expect(result, "proposed");
+  if (result.status === "proposed") assert.deepEqual(result.proposal.interpretation.quantity, { amount: 30, unit: "lb" });
 });

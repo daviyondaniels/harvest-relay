@@ -1,7 +1,7 @@
-export type BaseUnit = "g" | "each";
+export type BaseUnit = "g" | "lb" | "each";
 export type Quantity = {
   amount: number;
-  unit: "g" | "kg" | "each" | "case";
+  unit: "g" | "kg" | "lb" | "each" | "case";
   pack?: { amount: number; unit: BaseUnit };
 };
 export type Normalized = { amount: number; unit: BaseUnit };
@@ -17,9 +17,10 @@ export function normalize(q: Quantity): Normalized {
   switch (q.unit) {
     case "g": unit = "g"; break;
     case "kg": amount *= 1000; unit = "g"; break;
+    case "lb": unit = "lb"; break;
     case "each": unit = "each"; break;
     case "case":
-      if (!q.pack || !["g", "each"].includes(q.pack.unit)) throw new Error("Clarify the confirmed contents of one case");
+      if (!q.pack || !["g", "lb", "each"].includes(q.pack.unit)) throw new Error("Clarify the confirmed contents of one case");
       integer(q.pack.amount, "pack amount");
       if (q.pack.amount === 0) throw new Error("Pack amount must be positive");
       amount *= q.pack.amount;

@@ -29,6 +29,15 @@ test("a partial reply leaves the rest open and blocks commit", () => {
   assert.throws(() => approve(l, r.proposal), /Clarification required/);
 });
 
+test("case contents and quantities in lb are kept as lb; other units are refused", () => {
+  const l = createLedger(scenario());
+  const r = applyAnswers(l, surplus(l), reply("Each case is 6 lb."), [{ field: "pack", quote: "Each case is 6 lb", value: { amount: 6, unit: "lb" } }]);
+  assert.deepEqual(r.proposal.interpretation.quantity, { amount: 4, unit: "case", pack: { amount: 6, unit: "lb" } });
+  const q = applyAnswers(l, surplus(l), reply("It's 30 lb."), [{ field: "quantity", quote: "30 lb", value: { amount: 30, unit: "lb" } }]);
+  assert.deepEqual(q.proposal.interpretation.quantity, { amount: 30, unit: "lb" });
+  assert.throws(() => applyAnswers(l, surplus(l), reply("Each case is 6 oz."), [{ field: "pack", quote: "Each case is 6 oz", value: { amount: 6, unit: "oz" } }]), /Case contents must be/);
+});
+
 test("a reply that contradicts a settled fact becomes a recorded correction that takes effect only on approval", () => {
   const l = createLedger(scenario()), p = surplus(l);
   const agree = applyAnswers(l, p, reply("Yes, four cases. That's the new total."), [{ field: "quantity", quote: "four cases", value: { amount: 4, unit: "case" } }, { field: "operation", quote: "That's the new total", value: "replace-total" }]);
@@ -68,7 +77,7 @@ test("answers need a verbatim quote, the same grower, valid values and one answe
   assert.throws(() => applyAnswers(l, p, reply(REPLY, "grower-a"), ANSWERS), /same grower|who sent the update/);
   assert.throws(() => applyAnswers(l, p, { ...reply(REPLY), id: p.source.id }, ANSWERS), /separate source/);
   assert.throws(() => applyAnswers(l, p, reply(REPLY), [ANSWERS[0], ANSWERS[0]]), /one answer per field/);
-  assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[1], value: { amount: 5, unit: "lb" } }]), /g, kg or each/);
+  assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[1], value: { amount: 5, unit: "oz" } }]), /g, kg, lb or each/);
   assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[0], value: "unresolved" }]), /Invalid operation/);
   assert.throws(() => applyAnswers(l, p, reply("each case is 2.5 kg"), [{ field: "pack", quote: "2.5 kg", value: { amount: 2.5, unit: "kg" } }]), /whole numbers/);
 });

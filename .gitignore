@@ -2,3 +2,8 @@ node_modules/
 output/
 .env*
 !.env.example
+.next/
+next-env.d.ts
+data/*.db*
+*.tsbuildinfo
+data/demo-extras.json

@@ -1,0 +1,183 @@
+{
+  "about": [
+    "Pounds and case evaluation set for the order-resolution demo hub (v4). Authored synthetic messages; no real names or contact details, so it is committed.",
+    "hub: demo. Each case is one grower message interpreted against demoSnapshot() in src/demo.ts, whose lots are in pounds, all grade standard, delivered Friday 2026-10-30. grower-a: lot-a tomato (120 lb), lot-c cucumber (40 lb). grower-b: lot-b tomato (80 lb), lot-d zucchini (0 lb).",
+    "Same label format as heldout.template.json. A field in ask must be asked of the grower and its value left null; operation is unresolved exactly when operation is in ask.",
+    "A small sanity check on pounds and cases for a prompt version, not a held-out comparison. Eight cases need 8 calls per prompt."
+  ],
+  "hub": "demo",
+  "cases": [
+    {
+      "id": "lb-replace-total-tomato",
+      "category": "explicit new total in pounds",
+      "growerId": "grower-a",
+      "text": "We're down to 90 lb of standard tomatoes for Friday, that's everything we have.",
+      "label": {
+        "operation": "replace-total",
+        "lotId": "lot-a",
+        "quantity": {
+          "amount": 90,
+          "unit": "lb"
+        },
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": []
+      }
+    },
+    {
+      "id": "lb-add-tomato",
+      "category": "explicit addition in pounds",
+      "growerId": "grower-b",
+      "text": "Picked another 25 lb of standard tomatoes for Friday's drop.",
+      "label": {
+        "operation": "add-quantity",
+        "lotId": "lot-b",
+        "quantity": {
+          "amount": 25,
+          "unit": "lb"
+        },
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": []
+      }
+    },
+    {
+      "id": "lb-replace-total-cucumber",
+      "category": "explicit new total in pounds",
+      "growerId": "grower-a",
+      "text": "Standard cucumbers for Friday are 55 lb total now, replacing the 40 lb we had down.",
+      "label": {
+        "operation": "replace-total",
+        "lotId": "lot-c",
+        "quantity": {
+          "amount": 55,
+          "unit": "lb"
+        },
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": []
+      }
+    },
+    {
+      "id": "lb-case-add-with-contents",
+      "category": "added cases with stated pounds per case",
+      "growerId": "grower-b",
+      "text": "Adding three more cases of standard zucchini for Friday, 12 lb in each case.",
+      "label": {
+        "operation": "add-quantity",
+        "lotId": "lot-d",
+        "quantity": {
+          "amount": 3,
+          "unit": "case"
+        },
+        "pack": {
+          "amount": 12,
+          "unit": "lb"
+        },
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": []
+      }
+    },
+    {
+      "id": "lb-case-total-with-contents",
+      "category": "case total with stated pounds per case",
+      "growerId": "grower-a",
+      "text": "Our standard cucumbers for Friday are now 5 cases at 8 lb a case, that replaces the old number.",
+      "label": {
+        "operation": "replace-total",
+        "lotId": "lot-c",
+        "quantity": {
+          "amount": 5,
+          "unit": "case"
+        },
+        "pack": {
+          "amount": 8,
+          "unit": "lb"
+        },
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": []
+      }
+    },
+    {
+      "id": "lb-case-total-no-contents",
+      "category": "cases with unstated contents",
+      "growerId": "grower-b",
+      "text": "We have six cases of standard zucchini for Friday, that's the new total.",
+      "label": {
+        "operation": "replace-total",
+        "lotId": "lot-d",
+        "quantity": {
+          "amount": 6,
+          "unit": "case"
+        },
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": [
+          "pack"
+        ]
+      }
+    },
+    {
+      "id": "lb-ambiguous-unit",
+      "category": "ambiguous unit",
+      "growerId": "grower-a",
+      "text": "Got 40 bunches of standard cucumbers for Friday, that's the new total.",
+      "label": {
+        "operation": "replace-total",
+        "lotId": "lot-c",
+        "quantity": null,
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": null,
+        "ask": [
+          "quantity",
+          "unit"
+        ]
+      }
+    },
+    {
+      "id": "lb-correction",
+      "category": "correction of an earlier update in pounds",
+      "growerId": "grower-a",
+      "setup": [
+        {
+          "growerId": "grower-a",
+          "text": "Tomatoes are 110 lb standard for Friday.",
+          "operation": "replace-total",
+          "lotId": "lot-a",
+          "quantity": {
+            "amount": 110,
+            "unit": "lb"
+          }
+        }
+      ],
+      "text": "Sorry, I gave you the wrong tomato number earlier, it's 95 lb of standard for Friday.",
+      "label": {
+        "operation": "correction",
+        "lotId": "lot-a",
+        "quantity": {
+          "amount": 95,
+          "unit": "lb"
+        },
+        "pack": null,
+        "grade": "standard",
+        "deliveryOn": "2026-10-30",
+        "correctsEventId": "event-1",
+        "ask": []
+      }
+    }
+  ]
+}
