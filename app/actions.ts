@@ -6,17 +6,17 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, type Option } from "../src/orders.ts";
-import { lockPlan } from "../src/pack.ts";
+import { conflicts, confirmPlan, decideCut, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
-import { DEMO_MODEL, DEMO_SETTINGS, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
+import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
-import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_PROBLEM, RESERVED_NAME, checkName } from "./lib/names.ts";
-import { buyer, grower } from "./lib/format.ts";
-import { signNotice, type Notice } from "./lib/notice.ts";
+import { buyer, grower, weight } from "./lib/format.ts";
+import { cutPage, signNotice, type Notice } from "./lib/notice.ts";
 
 // Form handlers for the workspace. Each one acts on the stored version the page showed;
 // any error comes back to the same page as a message, and the stored state is unchanged.
@@ -119,14 +119,16 @@ function back(item: string, notice: Notice, on?: string): never {
 }
 // on: the form, so the page shows the notice there; done: the result said once it worked;
 // named: the form records the coordinator's name, so it is refused without one.
-type Step = { on: string; done: string; named?: boolean };
+// after: reads the changed workbench, and may replace the result (an approval that opens a conflict says so).
+type Step = { on: string; done: string; named?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
 async function run(f: FormData, change: (w: Workbench, item: string, who: string) => Workbench | Promise<Workbench>, step: Step): Promise<never> {
   const item = str(f, "item");
   let notice: Notice;
   try {
     const who = step.named ? await named() : await actor();
-    await act(Number(str(f, "version")), w => change(w, item, who));
-    notice = { text: step.done, ok: true, on: step.on };
+    let next: Workbench | undefined;
+    await act(Number(str(f, "version")), async w => (next = await change(w, item, who)));
+    notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
   } catch (e) { notice = await failed(e, step.on); }
   back(item, notice, step.on);
 }
@@ -177,7 +179,12 @@ export async function refreshAction(f: FormData) { return run(f, (w, i, who) => 
 export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply.", named: true }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one
 // change, against that review's hash.
-export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", named: true }); }
+export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", named: true, after: openedConflict }); }
+// An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
+function openedConflict(w: Workbench, item: string): Partial<Notice> {
+  const lotId = w.ledger.events.find(e => e.id === w.items.find(i => i.id === item)?.eventId)?.lotId, c = conflicts(w.ledger).find(x => x.lotId === lotId);
+  return c ? { text: `Supply change approved. ${weight(c.excess, c.unit)} of what you promised can't be filled — decide who takes the cut.`, res: c.lotId } : {};
+}
 
 // Live Meta reading. Off unless the server sets a call allowance and has the key; the
 // allowance is per server process, so a restart is the only way to grant more.
@@ -355,27 +362,92 @@ export async function logCallAction(f: FormData) {
   redirect(`/review?${new URLSearchParams({ item, ...signNotice({ text: "Call logged. Review it below.", ok: true, on: "call" }, { page: "/review", id: item }) })}#item`);
 }
 
-// Locks the plan for packing. The gate is recomputed by lockPlan from the stored state, so
-// the page's view of what is blocking is never trusted; the form only says whether the
-// coordinator chose Ship short, and the version check refuses a page that is out of date.
-export async function lockAction(f: FormData) {
+// Buyer names stand in for order IDs in a refusal; the coordinator knows orders by buyer.
+const byBuyer = (w: Workbench, e: unknown) => {
+  const buyerOf = new Map(w.ledger.snapshot.orders.map(o => [o.id, BUYERS[o.buyerId] ?? o.buyerId]));
+  return e instanceof Error ? new Error(e.message.replace(/\border-[\w-]+/g, id => buyerOf.get(id) ?? id)) : e;
+};
+const toPack = (n: Notice) => { revalidatePath("/", "layout"); redirect(`/pack?${new URLSearchParams(signNotice(n, { page: "/pack" }))}`); };
+
+// Confirms today's plan: every allocation becomes a promise. The gate is recomputed by
+// confirmPlan from the stored state, so the page's view of what is blocking is never trusted;
+// the form only says whether the coordinator chose Ship short, and the version check refuses
+// a page that is out of date.
+export async function confirmAction(f: FormData) {
   let error: string | undefined;
   try {
     const choice = str(f, "shipShort");
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
-    const who = await actor();
+    const who = await named();
+    await act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } });
+  } catch (e) { error = e instanceof Error ? e.message : "The plan could not be confirmed"; if (e instanceof NameNeeded) toPack({ text: error, field: "who" }); }
+  toPack(error ? { text: error } : { text: "Plan confirmed. Print the sheets below.", ok: true, on: "lock" });
+}
+
+// Demo only: Birch Hollow's late harvest message arrives after the plan is confirmed, in the Review
+// inbox unread. Refused before a confirm and once it has been received. The coordinator reads it by hand.
+export async function lateMessageAction(f: FormData) {
+  let notice: Notice;
+  try {
+    await actor();
     await act(Number(str(f, "version")), w => {
-      try { return lockPlan(w, who, now(), { shipShort: choice === "yes" }); }
-      catch (e) {
-        // The domain names orders by id; the coordinator knows them by buyer.
-        const buyerOf = new Map(w.ledger.snapshot.orders.map(o => [o.id, BUYERS[o.buyerId] ?? o.buyerId]));
-        if (e instanceof Error) throw new Error(e.message.replace(/\border-[\w-]+/g, id => buyerOf.get(id) ?? id));
-        throw e;
-      }
+      const refusal = lateRefusal(w);
+      if (refusal) throw new Error(refusal);
+      const next = receive(w, LATE.source, now());
+      notice = { text: "Birch Hollow's late message is in Review.", ok: true, on: "late", res: next.items.at(-1)!.id };
+      return next;
     });
-  } catch (e) { error = e instanceof Error ? e.message : "The plan could not be locked"; }
+  } catch (e) { notice = { text: e instanceof Error ? e.message : "The message could not be delivered" }; }
+  toPack(notice!);
+}
+
+// Marks one order packed, or handed off. The domain refuses a stage that does not follow.
+export async function stageAction(f: FormData) {
+  let error: string | undefined, said = "Saved. The sheet shows the new stage.";
+  try {
+    const stage = str(f, "stage"), order = str(f, "order");
+    if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
+    const who = await named();
+    await act(Number(str(f, "version")), w => {
+      try { const next = markStage(w, order, stage, who, now()); said = `${buyer(w.ledger.snapshot.orders.find(o => o.id === order)?.buyerId ?? order)}'s order is marked ${stage === "packed" ? "packed" : "handed off"}.`; return next; } catch (e) { throw byBuyer(w, e); }
+    });
+  } catch (e) { error = e instanceof Error ? e.message : "The stage could not be saved"; if (e instanceof NameNeeded) toPack({ text: error, field: "who" }); }
+  toPack(error ? { text: error } : { text: said, ok: true, on: "stage", res: str(f, "order") });
+}
+
+// The coordinator's recorded choice of who takes the cut on a lot. The excess is the one the form
+// showed, so a form from before another drop is refused by decideCut. Comes back to the page it was
+// sent from (an allowlist, with the item or order that page had open).
+export async function decideCutAction(f: FormData) {
+  const lot = str(f, "lot"), { page, key: ctxKey } = cutPage(str(f, "page")), ctx = str(f, "ctx").slice(0, 200);
+  const choice = str(f, "choice"), excess = Number(str(f, "excess"));
+  let notice: Notice, kept: Record<string, string> = {};
+  try {
+    const who = await named();
+    if (!choice) throw new FieldError("Choose who takes the cut.", "cut");
+    await act(Number(str(f, "version")), w => {
+      const c = conflicts(w.ledger).find(x => x.lotId === lot), ids = c?.promises.map(p => p.orderId) ?? [];
+      const amount = (orderId: string) => { const v = str(f, `cut-${orderId}`); if (!/^\d{0,9}$/.test(v)) throw new FieldError("Enter whole numbers of pounds for the split.", "cut"); return Number(v); };
+      const cuts = choice === "split" ? ids.map(orderId => ({ orderId, amount: amount(orderId) })) : ids.includes(choice) ? [{ orderId: choice, amount: excess }] : undefined;
+      if (!cuts) throw new FieldError("Choose who takes the cut.", "cut");
+      const next = decideCut(w, lot, cuts, excess, who, now()), taken = cuts.filter(x => x.amount > 0), product = c!.product, unit = c!.unit;
+      const done = `${taken.map(x => `${buyer(w.ledger.snapshot.orders.find(o => o.id === x.orderId)?.buyerId ?? x.orderId)} takes the ${weight(x.amount, unit)} cut`).join(", ")}. Find more ${product} on Orders.`;
+      notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
+      return next;
+    });
+  } catch (e) {
+    notice = await failed(e, "cut", lot);
+    if (e instanceof Error && /^Supply changed since this was shown/.test(e.message)) notice.text = "Supply changed since this was shown. Look at the current numbers and choose again.";
+    notice.field ??= "cut";
+    // A refusal keeps what was chosen and typed, and a split that misses the total says what it came to.
+    const typed = [...f.keys()].filter(k => /^cut-/.test(k) && /^\d{1,9}$/.test(str(f, k)));
+    kept = { choice, ...Object.fromEntries(typed.map(k => [k, str(f, k)])) };
+    const sum = typed.reduce((n, k) => n + Number(str(f, k)), 0);
+    if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = `You entered ${sum} lb; the cuts must total ${excess} lb.`;
+  }
   revalidatePath("/", "layout");
-  redirect(`/pack?${new URLSearchParams(signNotice(error ? { text: error } : { text: "Plan locked. Print the sheets below.", ok: true, on: "lock" }, { page: "/pack" }))}`);
+  const q = ctxKey && ctx ? { [ctxKey]: ctx } : {};
+  redirect(`${page}?${new URLSearchParams({ ...q, ...kept, ...signNotice(notice!, { page, id: ctx || undefined }) })}`);
 }
 
 // The header's "not you?" and "Who is working?": remembers the name for the forms that

@@ -11,7 +11,7 @@ export type Measures = {
 };
 
 export function measures(w: Workbench): Measures {
-  const short = new Set([...w.resolutions.map(r => r.orderId), ...shortages(w.ledger).map(s => s.orderId), ...(w.lock?.shippedShort.map(s => s.orderId) ?? [])]);
+  const short = new Set([...w.resolutions.map(r => r.orderId), ...shortages(w.ledger).map(s => s.orderId), ...(w.ledger.commitments?.shippedShort.map(s => s.orderId) ?? [])]);
   // A grower resolved it by a recorded yes (a lot was added), or by a linked reply whose approved
   // event raised the confirmed amount of a lot of the order's product. Forecasts and cuts do not count.
   const lotProduct = new Map(w.ledger.snapshot.lots.map(l => [l.id, l.product]));
@@ -33,5 +33,5 @@ export function measures(w: Workbench): Measures {
     const sent = w.outbox.filter(m => ids.has(m.resolutionId) && m.to.kind === "buyer").map(m => Date.parse(m.sentAt)).sort((a, b) => a - b)[0];
     if (item && sent !== undefined) minutes.push({ orderId, minutes: (sent - Date.parse(item.receivedAt)) / 60000 });
   }
-  return { shortsDetected: short.size, resolvedBy: { grower, substitute, notice, shipShort: w.lock?.shippedShort.length ?? 0 }, minutesToBuyerNotice: minutes };
+  return { shortsDetected: short.size, resolvedBy: { grower, substitute, notice, shipShort: w.ledger.commitments?.shippedShort.length ?? 0 }, minutesToBuyerNotice: minutes };
 }

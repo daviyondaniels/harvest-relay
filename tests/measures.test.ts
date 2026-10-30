@@ -58,14 +58,15 @@ test("a notice counts, and the minutes are not rounded", () => {
   assert.equal(m.minutesToBuyerNotice[0].minutes, 7.5);
 });
 
-test("ship-short counts the lock's shipped-short orders, and an order only on the lock is still a short", () => {
+test("ship-short counts the commitments' shipped-short orders, and an order only there is still a short", () => {
   const w = morning();
-  const lock = { shippedShort: [{ orderId: "order-b", amount: 60, unit: "lb", buyerTold: false }] } as never;
-  assert.equal(measures({ ...w, lock }).resolvedBy.shipShort, 1);
-  // Lock-only: make the order covered by raising its supply, then only the lock names it.
+  const commitments = { promised: [], confirmed: { by: "x", at: "x", promised: [] }, log: [], shippedShort: [{ orderId: "order-b", amount: 60, unit: "lb", buyerTold: false }] } as never;
+  const withShort = (x: typeof w) => ({ ...x, ledger: { ...x.ledger, commitments } });
+  assert.equal(measures(withShort(w)).resolvedBy.shipShort, 1);
+  // Commitments-only: make the order covered by raising its supply, then only the commitments name it.
   const covered = { ...w, ledger: { ...w.ledger, snapshot: { ...w.ledger.snapshot, lots: w.ledger.snapshot.lots.map(l => l.id === "lot-b" ? { ...l, quantity: { amount: 500, unit: "lb" as const } } : l) } } };
   assert.equal(measures(covered).shortsDetected, 0);
-  assert.equal(measures({ ...covered, lock }).shortsDetected, 1);
+  assert.equal(measures(withShort(covered)).shortsDetected, 1);
 });
 
 // An ask to grower-b, answered by a reply read as `op`, approved.

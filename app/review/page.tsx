@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { conflicts } from "../../src/commitments.ts";
 import { normalize, type Quantity } from "../../src/quantity.ts";
 import { FIELDS, type Field, type Span } from "../../src/updates.ts";
 import { BY_HAND, madeShort, needingRefresh, suggestReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
@@ -7,6 +8,7 @@ import { SEED } from "../../src/seed.ts";
 import { approveAction, askAction, confirmLotAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
 import { FIELD, OPERATION, buyer, forecastTag, day, evidence, grower, quantity, status, time, weight } from "../lib/format.ts";
 import { Result } from "../result.tsx";
+import { Conflicts } from "../conflict.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
@@ -61,7 +63,7 @@ function FieldSelect({ only, bad, on }: { only?: Field[]; bad: Bad; on: string }
 const shown = (v: unknown) => v && typeof v === "object" && "amount" in v ? quantity(v as Quantity) : typeof v === "string" ? v : "nothing";
 
 export default async function Review({ searchParams }: { searchParams: Promise<Params> }) {
-  const params = await searchParams, wanted = typeof params.item === "string" ? params.item : undefined, notice = readNotice(params, { page: "/review", id: wanted });
+  const params = await searchParams, wanted = typeof params.item === "string" ? params.item : undefined, raw = readNotice(params, { page: "/review", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
   const { state: w, version } = await current();
   const { previews } = overview(w), counts = questionCounts(previews);
   const items = queueOrder(w.items, counts), isDone = (i: InboxItem) => i.state === "approved" || i.state === "dismissed";
@@ -89,13 +91,13 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
           </details>}
         </QueueFold>
       </nav>
-      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} sig={String(params.sig)} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
+      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} page="/review" id={it.id} params={params} level={3} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
         : <p className="muted">No messages yet.</p>}
     </div>
   );
 }
 
-function Item({ it, p, version, notice, sig, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; sig: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
+function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; cuts: ReactNode; sig: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
   const closed = it.state === "approved" || it.state === "dismissed";
   const i = it.proposal?.interpretation, lot = w.ledger.snapshot.lots.find(l => l.id === i?.lotId);
   const quotes = (f: Field) => (it.proposal?.clarifications ?? []).filter(c => c.field === f && c.answer).map(c => c.answer!.source.text.slice(c.answer!.span.start, c.answer!.span.end));
@@ -119,7 +121,7 @@ function Item({ it, p, version, notice, sig, live, hasScript, w }: { it: InboxIt
   const bad: Bad = notice && !notice.ok && notice.field && notice.field !== "who" && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && notice.field !== "who" && !bad ? notice : undefined;
   // Where focus goes: the field with the problem, else the result's heading.
-  const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? "change" : notice && notice.field !== "who" ? "msg" : undefined;
+  const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : notice && notice.field !== "who" ? "msg" : undefined;
   return <>
     <section className="panel" id="item" aria-labelledby="msg">
       {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} />}
@@ -242,6 +244,7 @@ function Item({ it, p, version, notice, sig, live, hasScript, w }: { it: InboxIt
       <h2 id="change" tabIndex={-1}>Change preview</h2>
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
       <ChangeTag it={it} p={p} event={event} />
+      {it.state === "approved" && event && event.effect !== "forecast" && cuts}
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
       {!closed && <Impact p={p} names={names} />}
       {!closed && it.proposal && p.needsRefresh ? (

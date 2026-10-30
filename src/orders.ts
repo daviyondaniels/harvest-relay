@@ -1,5 +1,6 @@
 import type { Contact } from "./demo.ts";
-import { proposeAllocations, snapshotHash, validateSnapshot, type Lot } from "./planner.ts";
+import { planOf } from "./commitments.ts";
+import { snapshotHash, validateSnapshot, type Lot } from "./planner.ts";
 import { NAME_MAX } from "./hub.ts";
 import { normalize, type BaseUnit } from "./quantity.ts";
 import type { Evidence, Ledger, LedgerRecord } from "./updates.ts";
@@ -74,7 +75,7 @@ export type Option =
   | { kind: "notify-short"; amount: number; unit: BaseUnit };
 
 export function shortages(l: Ledger): Shortage[] {
-  return proposeAllocations(l.snapshot).unfilled.map(u => {
+  return planOf(l).unfilled.map(u => {
     const o = l.snapshot.orders.find(x => x.id === u.orderId)!;
     return { orderId: o.id, buyerId: o.buyerId, product: o.product, deliveryOn: o.deliveryOn, unit: u.unit, short: u.amount };
   }).sort((a, b) => a.orderId < b.orderId ? -1 : a.orderId > b.orderId ? 1 : 0);
@@ -94,7 +95,7 @@ export function options(l: Ledger, orderId: string, contacts: Contact[]): Option
   for (const kind of ["member", "outside"] as const)
     for (const c of contacts) if (c.kind === kind && !withLot.has(c.id)) out.push({ kind: "ask-grower", contactId: c.id, hasLot: false, contactKind: kind, amount: short, unit });
   const spare = new Map<string, { product: string; grade: string; sum: number }>(), byId = new Map(l.snapshot.lots.map(x => [x.id, x]));
-  for (const u of proposeAllocations(l.snapshot).unallocated) {
+  for (const u of planOf(l).unallocated) {
     const lot = byId.get(u.lotId)!;
     if (!u.confirmed || u.unit !== unit || lot.deliveryOn !== order.deliveryOn || lot.product === order.product || order.approvedSubstitutions.some(s => s.product === lot.product && s.maxAmount === undefined)) continue;
     const key = JSON.stringify([lot.product, lot.grade]), g = spare.get(key) ?? { product: lot.product, grade: lot.grade, sum: 0 };

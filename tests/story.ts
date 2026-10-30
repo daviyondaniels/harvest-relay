@@ -6,7 +6,7 @@ import { options, shortages, type Option } from "../src/orders.ts";
 import { SEED } from "../src/seed.ts";
 import { createLedger, type Source } from "../src/updates.ts";
 import { approve, createWorkbench, interpret, preview, receive, type Workbench } from "../src/workbench.ts";
-import { factsFor, startResolution } from "../src/resolve.ts";
+import { factsFor, recordBuyerReply, sendMessage, startResolution } from "../src/resolve.ts";
 
 // Order resolution on the demo hub: after the morning's three updates, order-b is 60 lb short.
 export const T = (m: number) => new Date(Date.UTC(2026, 9, 28, 14, m)).toISOString();
@@ -50,3 +50,16 @@ export const notice = (o: Option) => o.kind === "notify-short";
 export const MORE: Source = { id: "msg-tomato-more", revision: 1, growerId: "grower-b", text: "We can bring another 30 lb of standard tomatoes Friday." };
 export const more = (w: Workbench) => propose(w.ledger, "p-more", MORE, { operation: "add-quantity", lotId: "lot-b", quantity: { amount: 30, unit: "lb" }, grade: "standard", deliveryOn: "2026-10-30", quotes: ["another 30 lb of standard tomatoes", "Friday"] });
 
+// The story end state: order-b covered by 30 lb more tomatoes and zucchini by call note.
+export function resolved(): Workbench {
+  let w = morning();
+  w = start(w, pick(w, askB), 10);
+  w = sendMessage(w, "res-1", CONTACTS, ME, T(11));
+  w = receive(w, MORE, T(20));
+  const id = w.items.at(-1)!.id;
+  w = interpret(w, id, more(w), "test reading", ME, T(21));
+  w = approve(w, id, ME, preview(w, id).reviewHash!, T(22));
+  w = start(w, pick(w, zucchini), 30);
+  w = sendMessage(w, "res-2", CONTACTS, ME, T(31));
+  return recordBuyerReply(w, "res-2", { channel: "call", text: "Called kitchen manager, zucchini is fine for the rest.", accept: true }, ME, T(40));
+}

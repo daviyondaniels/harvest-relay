@@ -1,8 +1,8 @@
 import { amendFromMessage, applyAnswers, type Answer, type Correction } from "./answers.ts";
-import { proposeAllocations, snapshotHash, verifyPlan, type Plan, type Snapshot } from "./planner.ts";
+import { snapshotHash, type Plan, type Snapshot } from "./planner.ts";
 import { normalize, type BaseUnit, type Quantity } from "./quantity.ts";
 import { NAME_MAX } from "./hub.ts";
-import type { Lock } from "./pack.ts";
+import { planOf } from "./commitments.ts";
 import type { OutboxMessage, Resolution } from "./resolve.ts";
 import { commitUpdate, locate, reviewUpdate, validateSource, type Change, type Field, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
 
@@ -24,7 +24,7 @@ export type InboxItem = {
   lastChange?: { before: number; after: number; unit: BaseUnit }; // the change the coordinator last saw, in base units
 };
 // calls counts logged calls, so each gets a fresh call-n source ID.
-export type Workbench = { ledger: Ledger; items: InboxItem[]; resolutions: Resolution[]; outbox: OutboxMessage[]; calls: number; lock?: Lock };
+export type Workbench = { ledger: Ledger; items: InboxItem[]; resolutions: Resolution[]; outbox: OutboxMessage[]; calls: number };
 
 // actor: a person's name; label: who or what read a message (a model reading's label).
 const LIMIT = { items: 500, decisions: 200, note: 500, actor: NAME_MAX, label: 160 };
@@ -188,9 +188,9 @@ export type MadeShort = { orderId: string; unit: BaseUnit; short: number; added:
 export function madeShort(w: Workbench, id: string): MadeShort[] {
   const e = item(w, id).eventId ? w.ledger.events.find(x => x.id === item(w, id).eventId) : undefined;
   if (!e || e.effect === "forecast") return [];
-  const now = proposeAllocations(w.ledger.snapshot), s: Snapshot = structuredClone(w.ledger.snapshot);
+  const now = planOf(w.ledger), s: Snapshot = structuredClone(w.ledger.snapshot);
   s.lots.find(l => l.id === e.lotId)!.quantity = structuredClone(e.lotBefore);
-  const was = proposeAllocations(s);
+  const was = planOf({ ...w.ledger, snapshot: s });
   return now.unfilled.flatMap(u => { const before = was.unfilled.find(x => x.orderId === u.orderId)?.amount ?? 0; return u.amount > before ? [{ orderId: u.orderId, unit: u.unit, short: u.amount, added: u.amount - before }] : []; })
     .sort((a, b) => a.orderId < b.orderId ? -1 : a.orderId > b.orderId ? 1 : 0);
 }
@@ -296,8 +296,7 @@ function fill(plan: Plan, orderId: string) {
   return { direct: of("requested"), substitute: of("approved-substitution"), short: plan.unfilled.find(u => u.orderId === orderId)?.amount ?? 0 };
 }
 export function preview(w: Workbench, id: string): Preview {
-  const i = item(w, id), l = w.ledger, before = proposeAllocations(l.snapshot);
-  verifyPlan(l.snapshot, before);
+  const i = item(w, id), l = w.ledger, before = planOf(l);
   let after = before, base: Omit<Preview, "orders" | "unallocated"> = { stale: false, needsRefresh: false, questions: [] };
   if (i.proposal && !closed(i)) {
     const stale = i.proposal.baseVersion !== l.version, saw = new Set(i.lastQuestions ?? []);
@@ -310,7 +309,7 @@ export function preview(w: Workbench, id: string): Preview {
       if (r.change && r.change.effect !== "forecast") {
         const s: Snapshot = structuredClone(l.snapshot);
         s.lots.find(x => x.id === r.change!.lotId)!.quantity = r.change.after;
-        after = proposeAllocations(s); verifyPlan(s, after);
+        after = planOf({ ...l, snapshot: s });
       }
     } catch (e) { base = { stale, needsRefresh: stale, questions: [], error: e instanceof Error ? e.message : "Review failed" }; }
   }

@@ -56,7 +56,7 @@ v3 adopted with grade aliases (no calls): `PROMPT_VERSION` is v3. `src/grades.ts
 
 Application layer, October 28 (no UI yet, no calls): `src/workbench.ts` keeps an inbox of grower messages over the ledger. Each action (receive, interpret, ask, reply, correct from the message's own words, confirm lot, leave pending, return for clarification, dismiss with a reason, refresh after inventory moved, approve) returns a new state and appends a timestamped, named decision; a rejected action leaves the state unchanged. Approval goes only through `commitUpdate`, so blocking questions, the exact review hash and stale-inventory checks are the ledger's own; refreshing rebases the proposal, which changes its hash and voids earlier approvals. `preview` shows the review questions, the supply change and, separately, the proposed allocation difference per order (direct, substitute, short) and unallocated supply; it never authorizes substitutions or contacts anyone. `amendFromMessage` (in `src/answers.ts`) lets the coordinator correct a reading only with quotes from the message, recorded like a reply correction. `src/store.ts` persists the workbench as one versioned row in Node's built-in SQLite (experimental in Node 24; it prints a warning) with compare-and-swap saves. Verified: npm test (55 tests; the cucumber story from blocked "four cases" to "add 12 kg -> 32 kg", order-c short 10 kg -> 0 and 2 kg unallocated; stale approval refused then refreshed; corrections recorded; pending/returned/dismissed history), npm run typecheck. Next: Next.js workspace and overview dashboard over this layer.
 
-Web app, October 28: `app/` (Next.js 16.4.3, React 19.3.1, pinned exactly; `npm run build`, `npm run start` on 127.0.0.1:3600). Overview dashboard (supply against orders per product, forecasts never allocated, waiting-for-review list, orders and lots, recorded changes, JSON export of one consistent snapshot) and the review workspace (queue; message with highlighted evidence, clarification thread, reading, blocking questions grouped by field, ask/reply/correct/confirm/pending/return/dismiss, history; change preview with the supply change separate from the proposed allocation, named approval, refresh when stale). Every action names the stored version its page showed. Live Meta reading is off unless the server sets `HARVEST_LIVE_CALLS` and has the key. Demo readings are recorded once with `scripts/record-seed.ts` (7 calls, run October 28 at prompt v3; `data/seed-readings.json`) and replayed through the same validation.
+Web app, October 28: `app/` (Next.js 16.4.3, React 19.3.1, pinned exactly; `npm run build`, `npm run start` on 127.0.0.1:3600). Overview dashboard (supply against orders per product, forecasts never allocated, waiting-for-review list, orders and lots, recorded changes, JSON export of one consistent snapshot) and the review workspace (queue; message with highlighted evidence, clarification thread, reading, blocking questions grouped by field, ask/reply/correct/confirm/pending/return/dismiss, history; change preview with the supply change separate from the proposed allocation, named approval, refresh when stale). Every action names the stored version its page showed. Live Meta reading is off unless the server sets `HARVEST_LIVE_CALLS` and has the key. Demo readings are recorded once with `scripts/record-seed.ts` (7 calls, run October 28 at prompt v3, since re-recorded at v4; `data/seed-readings.json`) and replayed through the same validation.
 
 Not safe to host as is (automated security review, confirmed): actions have no authentication, the reviewer is a typed name (provenance, not identity, as the scope states), and anyone who can reach the app can reset the demo or use the live-call allowance. Next.js checks that server-action requests come from the same origin, and the app listens on 127.0.0.1 only. Before any shared or public hosting: per-visitor sandboxes or authentication, a rate limit and spending cap on live calls, and an explicit `serverActions.allowedOrigins`. Hosting needs the project owner's approval.
 
@@ -69,25 +69,50 @@ Evidence and claims: `docs/EVIDENCE.md`.
 - An option is open while its message is drafted or awaiting an answer. A sent notice is closed, and so is an ask whose linked reply was approved or dismissed, so the coordinator can send a corrected notice after the shortfall grows, or ask the same grower again. A second open offer of the same substitute is refused.
 - Messages come from templates by default. A Muse Spark draft is optional. A checker compares every draft with the facts it was written for. It blocks only model drafts: one that fails is replaced by the template. A coordinator's own edit that fails the check is shown with a warning and can still be sent (E12).
 - Replies and call notes are recorded. A grower's reply is read like any other update and needs named approval. Log a call records a phone call. A buyer's answer is recorded as a quoted text or a call note.
-- The packing lock holds the plan while the snapshot is unchanged and lapses when it changes. Ship short is recorded as not told to the buyer.
-- Pick lists per grower and order sheets per buyer come from the lock.
+- Confirm today's plan (formerly Lock) holds the plan. Ship short is recorded as not told to the buyer. Milestone 4 (scope) below says what a confirm does now.
+- Pick lists per grower and order sheets per buyer are drawn from the live plan, which keeps confirmed promises first. A changed line says what it was.
 - Measures: shorts caught; grower asks whose reply added supply (not necessarily enough to cover the order); substitutes agreed; shortfall notices sent; orders shipped short; minutes from the update that caused a short to the first message to the buyer. These are counts of actions, not of resolved orders: one order can appear under several.
-- `tests/story.test.ts` walks the demo path: Riverbend 60 lb short, Birch Hollow asked and replies 30 lb, zucchini offered and accepted by call note, plan locked, sheets built. Printing them is a browser action and is not tested. Two outbox messages, both passing the checker.
+- `tests/story.test.ts` walks the demo path: Riverbend 60 lb short, Birch Hollow asked and replies 30 lb, zucchini offered and accepted by a recorded buyer reply, plan confirmed, and the buyer's order sheet shows nothing short. Printing them is a browser action and is not tested. Two outbox messages, both passing the checker.
 
 **What is simulated**
 - Nothing is delivered. Messages go to an outbox only.
 - One coordinator, demo data, and scripted replies.
-- The in-app demo needs a precondition after **Reset demo**: `HARVEST_DEV=1 node scripts/demo-precondition.ts` approves the three morning messages with hand readings, leaving Riverbend 60 lb short. It is a development helper, not part of the app.
-- Demo step 2 (Birch Hollow's reply read automatically) needs `data/demo-extras.json`, which comes from a paid recording that is awaiting approval. Without it, the reply arrives unread and must be read and approved in Review by the coordinator.
-- Seed readings are not yet re-recorded at prompt v4. Recording needs a paid run that is awaiting approval (about 20 calls, roughly $0.08).
+- After **Reset demo** the morning messages are read from the recorded seed readings (they match the current prompt, v4) and wait in Review for approval. `HARVEST_DEV=1 node scripts/demo-precondition.ts` is a development shortcut that approves the three with hand readings, leaving Riverbend 60 lb short. It is not part of the app.
+- Demo step 2 (Birch Hollow's reply read automatically) uses `data/demo-extras.json`: 1 recorded reading and 2 recorded drafts (prompt v4, draft prompt draft-v2, recorded October 28). The file is git-ignored, so it exists only in a checkout where it was recorded. Without it, the reply arrives unread and must be read and approved in Review by the coordinator.
+- Seed readings in `data/seed-readings.json` are recorded at prompt v4 (7 readings, October 28).
 
 **Measures**
 They count what the tool can observe: shorts, how each was resolved, and minutes to the first buyer message. They are measured in the demo session only. They say nothing about food saved, time saved or money.
 
 **Known limitations**
-- The message checker finds wrong numbers, days and products. It blocks them only in model drafts; a coordinator's edit is warned, not blocked (E12). Deliberately misspelled words ("tmrw", "cucumbre", "twnty") can still pass.
+- The message checker finds wrong numbers, days and products. It blocks them only in model drafts; a coordinator's edit is warned, not blocked (E12). Shorthand and close misspellings are resolved to what they mean ("tmrw" is read as tomorrow and checked against the delivery day). Wording the checker cannot read with confidence becomes a confirmation item the coordinator must confirm before sending. Words it does not recognise at all can still pass.
 - A required product counts as present if its name appears inside another word.
 - Mitigations: the template is the default, a failing model draft falls back to it, the coordinator reviews every draft, and nothing is delivered.
 
 **Hosting blockers (unchanged)**
 Actions have no authentication, the reviewer is a typed name, and anyone who can reach the app can reset the demo or use the live-call allowance. Before any shared or public hosting: per-visitor sandboxes or authentication, a rate limit and spending cap on live calls, and an explicit `serverActions.allowedOrigins`. Hosting needs the project owner's approval.
+
+## Milestone 4 (scope): Commitments, October 29
+
+**What works**
+- Confirm today's plan turns every allocation in the live plan into a promise to a buyer, approved substitutes included. It is refused while a conflict is open. With orders still to resolve it needs Ship short, which records those orders as shipped short, with the amount short, and not told to the buyer. Any other order still short whose buyer has not been told is recorded the same way. Confirm again replaces the promises with the current plan.
+- Before the first confirm there are no promises, and the plan is the same as before commitments existed (tested).
+- When the plan is built, promised allocations are placed first and the rest of the plan is built around them. Promises are kept beside the snapshot, so a promise does not change the ledger version or the snapshot hash.
+- Each order has a stage: Planned, Promised, Packed, Handed off. Mark packed needs a promise with no open conflict on it. Mark handed off needs packed. Each is a named, timestamped entry.
+- A conflict appears when an approved update leaves a lot holding less than was promised from it. The conflict panel names the grower, the product and the amount that can no longer be filled, and says that everyone else's product is unchanged. It suggests the cut from the lowest-priority promised orders on that lot (then by order ID), one after another until the excess is covered. Packed and handed-off orders are never suggested. With "Settle the cut" the coordinator chooses one order to take the cut, or splits it in whole pounds. The cuts must total the excess exactly and no cut may exceed that order's promise on the lot. The choice is recorded with who made it and whether it was the suggestion. While a conflict is open, the plan uses the suggested cut (or a provisional one when none can be suggested), so it stays valid.
+- After a cut, the order is short again and the Orders tab offers the usual ways to cover it.
+- The Pack tab and the sheets show which lines changed since the confirm (was and now) and say "Changed since confirmed" until the coordinator confirms again.
+- The demo has a button, "Late grower message (demo)", on the Pack tab after a confirm. It delivers Birch Hollow's message (70 lb of standard tomatoes for Friday, not 110) to Review, unread. It is refused before a confirm and once the message has arrived.
+- `tests/story.test.ts` covers the late drop: after a confirm and the approved update there is one conflict on lot-b with an excess of 40 lb; the suggestion is order-b; Northside's tomato lines are unchanged; after the cut order-b is short 40 lb again and its changed line goes from 50 lb to 10 lb. `tests/commitments.test.ts` has 15 tests of the domain functions.
+
+**What is simulated**
+- Nothing is delivered. A promise is a record in the app. No buyer is told or sees it.
+- The late message has no recorded reading. The coordinator reads it by hand in Review, then approves it.
+- One coordinator, with a name typed in the app.
+
+**Known limits**
+- Orders are fixed. They cannot be added, edited or cancelled in the app.
+- There is no un-promising. A promise changes only through a cut, or by confirming the plan again.
+- One coordinator. The name is self-declared and is provenance, not identity.
+- Only a drop in supply creates a conflict, and a cut is in whole pounds.
+- Hosting blockers are unchanged (see Milestone 4: Order resolution above).

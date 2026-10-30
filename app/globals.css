@@ -310,11 +310,15 @@ label.check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.92
 label.check input { width: auto; margin-top: 3px; }
 .lapsed b { color: var(--beet); }
 .sheets { display: grid; gap: 14px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 14px; }
 .sheet { gap: 10px; break-inside: avoid; page-break-inside: avoid; }
 .sheet h4 { font-size: 1.05rem; margin: 0; }
 .sheet .flag.told { color: var(--ink); border-color: var(--line); font-weight: 600; }
-.sheet td.num, .sheet .card-head span { white-space: nowrap; }
+.sheet .card-head span, .sheet .amt { white-space: nowrap; }
+.sheet .was { display: block; }
+.sheet table { width: 100%; }
+.sheet td { overflow-wrap: anywhere; vertical-align: top; }
+.sheet { min-width: 0; }
 .locked { display: grid; gap: 10px; padding: 12px 14px; border-radius: var(--r-s); background: var(--leaf-wash); }
 .locked p { margin: 0; }
 .sheet-hub { margin: 0; color: var(--ink-soft); }
@@ -346,6 +350,8 @@ label.check input { width: auto; margin-top: 3px; }
   .workspace { grid-template-columns: 230px minmax(0, 1fr); }
   .workspace.item-first { grid-template-areas: "queue item" "preview preview"; }
   .preview { grid-column: 1 / -1; position: static; }
+  /* A long queue must not sit over the preview and its controls (2.4.11): it scrolls with the page here. */
+  .queue { position: static; }
 }
 @media (max-width: 760px) {
   .workspace.item-first { grid-template-areas: "item" "preview" "queue"; }
@@ -369,3 +375,13 @@ label.check input { width: auto; margin-top: 3px; }
 /* Review: finished items fold away under "Done today" */
 .done-today > summary { padding: 8px 4px; color: var(--ink-soft); cursor: pointer; }
 .done-today .queue-list { margin-top: 8px; }
+
+/* Conflict panel: the cut choice and the split amounts. */
+.conflict fieldset { border: 1px solid var(--line, currentColor); border-radius: var(--r-s); padding: 8px 12px 12px; display: grid; gap: 8px; }
+.conflict legend { font-weight: 600; padding: 0 4px; }
+.conflict label.check { min-height: 24px; align-items: center; }
+.conflict .split { display: grid; gap: 8px; margin-left: 28px; }
+.conflict .split input { min-height: 32px; max-width: 8rem; }
+
+/* Links on their own line in a sentence keep a 24 px target (2.5.8). */
+.pending-cover a, .history li a, .what a { display: inline-block; min-height: 24px; padding: 2px 0; line-height: 1.3; }

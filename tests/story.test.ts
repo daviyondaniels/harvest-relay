@@ -4,19 +4,22 @@ import { CONTACTS } from "../src/demo.ts";
 import { PROMPT_VERSION } from "../src/interpret.ts";
 import { checkDraft } from "../src/messages.ts";
 import { measures } from "../src/measures.ts";
-import { lockPlan, lockState, orderSheets } from "../src/pack.ts";
+import { changedSinceConfirm, conflicts, confirmPlan, decideCut } from "../src/commitments.ts";
+import { propose } from "../evaluation/scenario.ts";
+import { options } from "../src/orders.ts";
+import { orderSheets } from "../src/pack.ts";
 import { recommend } from "../src/orders.ts";
 import { orderStatus, recordBuyerReply, sendMessage, unresolved } from "../src/resolve.ts";
-import { BUYER_REPLIES, DEMO_MODEL, scriptedRequestReply, type Extras } from "../src/seed.ts";
+import { BUYER_REPLIES, DEMO_MODEL, LATE, scriptedRequestReply, type Extras } from "../src/seed.ts";
 import { approve, preview } from "../src/workbench.ts";
-import { ME, T, askB, known, morning, pick, short, start, zucchini } from "./story.ts";
+import { ME, T, askB, known, morning, pick, resolved, short, start, take, zucchini } from "./story.ts";
 
 // A hand-written reading of the grower's reply, shaped like the replay recordings in seed.test.ts.
 const reading = JSON.stringify({ operation: "add-quantity", lotId: "lot-b", quantity: { amount: 30, unit: "lb", pack: null }, grade: "standard", deliveryOn: "2026-10-30", correctsEventId: null,
   evidence: [{ field: "quantity", quote: "another 30 lb of standard tomatoes" }, { field: "operation", quote: "another" }, { field: "grade", quote: "standard" }, { field: "date", quote: "Friday" }, { field: "lot", quote: "tomatoes" }], unresolved: [], questions: [] });
 const extras: Extras = { model: DEMO_MODEL, promptVersion: PROMPT_VERSION, recordedAt: "2026-10-28T15:00:00Z", drafts: {}, readings: { "msg-tomato-more": reading } };
 
-test("the demo path: ask, grower reply, zucchini offer, call note, lock, sheets", async () => {
+test("the demo path: ask, grower reply, zucchini offer, call note, confirm, sheets", async () => {
   let w = morning();
   assert.equal(short(w), 60);
   assert.deepEqual(unresolved(w), ["order-b"]);
@@ -44,10 +47,9 @@ test("the demo path: ask, grower reply, zucchini offer, call note, lock, sheets"
     assert.deepEqual(check, { ok: true, problems: [], confirm: [] }, m.text);
   }
 
-  w = lockPlan(w, ME, T(50), { shipShort: false });
-  assert.equal(lockState(w), "valid");
-  assert.deepEqual(w.lock!.shippedShort, []);
-  const sheet = orderSheets(w.lock!).find(s => s.orderId === "order-b")!;
+  w = confirmPlan(w, ME, T(50), { shipShort: false });
+  assert.deepEqual(w.ledger.commitments!.shippedShort, []);
+  const sheet = orderSheets(w.ledger).find(s => s.orderId === "order-b")!;
   assert.equal(sheet.short, 0);
 
   const tomato = w.items.find(i => i.source.id === "msg-tomato")!;
@@ -87,4 +89,24 @@ test("Final review: once the buyer has declined the zucchini offer, Orders does 
   w = recordBuyerReply(w, "res-2", { ...BUYER_REPLIES["buyer-b"], accept: false }, ME, T(40));
   const next = recommend(w, "order-b", CONTACTS);
   assert.ok(next && !(next.kind === "offer-substitute" && next.product === "zucchini"), "the declined offer is not recommended again");
+});
+
+test("after confirming, Birch Hollow's late drop is one conflict, settled by the suggested cut", () => {
+  let w = confirmPlan(resolved(), ME, T(50), { shipShort: false });
+  const northside = () => orderSheets(w.ledger).find(s => s.orderId === "order-a")!.lines.filter(x => x.product === "tomatoes").map(x => [x.lotId, x.amount]);
+  const before = northside();
+  assert.deepEqual(conflicts(w.ledger), []);
+  w = take(w, { ...LATE.source }, w => propose(w.ledger, "p-late", LATE.source,
+    { operation: "replace-total", lotId: "lot-b", quantity: { amount: 70, unit: "lb" }, grade: "standard", deliveryOn: "2026-10-30", quotes: ["only have 70 lb of standard", "Friday", "not 110"] }), 55);
+  const found = conflicts(w.ledger);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].lotId, "lot-b");
+  assert.equal(found[0].excess, 40);
+  assert.deepEqual(found[0].suggestion, [{ orderId: "order-b", amount: 40 }]);
+  assert.deepEqual(northside(), before, "Northside's tomatoes are unchanged");
+  w = decideCut(w, "lot-b", found[0].suggestion!, found[0].excess, ME, T(56));
+  assert.deepEqual(conflicts(w.ledger), []);
+  assert.equal(short(w), 40, "order-b is short 40 again");
+  assert.ok(options(w.ledger, "order-b", CONTACTS).some(askB), "asks for the shortfall are offered");
+  assert.deepEqual(changedSinceConfirm(w.ledger).filter(c => c.orderId === "order-b" && c.lotId === "lot-b"), [{ orderId: "order-b", lotId: "lot-b", was: 50, now: 10, unit: "lb" }]);
 });
