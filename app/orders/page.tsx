@@ -5,14 +5,14 @@ import { failedTheCheck } from "../../src/draft.ts";
 import { hubDay } from "../../src/hub.ts";
 import { template, type Confirm } from "../../src/messages.ts";
 import { options, permissionSource, recommend, type Option } from "../../src/orders.ts";
-import { proposeAllocations } from "../../src/planner.ts";
+import { planOf, stageOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { PendingCover } from "../pending-cover.tsx";
 import { canSend, factsFor, openFor, orderStatus, toConfirm, type Resolution } from "../../src/resolve.ts";
 import { BUYER_REPLIES, REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
 import { buyerReplyAction, confirmDraftAction, discardDraftAction, editDraftAction, liveAllowance, museDraftAction, requestedCallAction, scriptedRequestReplyAction, sendAction, startResolutionAction, supplyReplyAction } from "../actions.ts";
-import { ORDER_STATUS, buyer, day, grower, quantity, time, weight } from "../lib/format.ts";
+import { ORDER_STATUS, STAGE, buyer, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
 import { current, extras } from "../lib/hub.ts";
 import { Problem, invalid, type Bad } from "../lib/field-error.tsx";
 import { rememberedName } from "../lib/name.ts";
@@ -20,6 +20,7 @@ import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
 import { NameNeeded } from "../name-needed.tsx";
 import { Result } from "../result.tsx";
+import { Conflicts } from "../conflict.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Orders" };
@@ -83,7 +84,7 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
 }
 
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, notice = readNotice(params, { page: "/orders", id: wanted });
+  const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, raw = readNotice(params, { page: "/orders", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
   const { state: w, version } = await current();
   const orders = w.ledger.snapshot.orders, statuses = new Map(orders.map(o => [o.id, orderStatus(w, o.id)]));
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
@@ -102,17 +103,18 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
           ); })}
         </QueueFold>
       </nav>
-      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} live={await liveAllowance()} me={await rememberedName()} /> : <p className="muted">No orders yet.</p>}
+      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={await rememberedName()} /> : <p className="muted">No orders yet.</p>}
     </div>
   );
 }
 
-async function Order({ w, orderId, version, notice, sig, live, me }: { w: Workbench; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string }) {
+async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string }) {
   const o = w.ledger.snapshot.orders.find(x => x.id === orderId)!, st = ORDER_STATUS[orderStatus(w, orderId)];
-  const plan = proposeAllocations(w.ledger.snapshot), lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l]));
+  const plan = planOf(w.ledger), lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l]));
   const mine = plan.allocations.filter(a => a.orderId === orderId), unit = normalize(o.quantity).unit;
   const direct = mine.filter(a => a.kind === "requested").reduce((n, a) => n + a.amount, 0);
   const subs = mine.filter(a => a.kind === "approved-substitution"), gap = plan.unfilled.find(u => u.orderId === orderId)?.amount ?? 0;
+  const stage = stageOf(w.ledger, orderId), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0));
   const offered = options(w.ledger, orderId, CONTACTS).map((opt, index) => ({ opt, index }));
   const resolutions = w.resolutions.filter(r => r.orderId === orderId);
   // A problem from a card's form is shown on that card while the card still shows the form;
@@ -145,8 +147,11 @@ async function Order({ w, orderId, version, notice, sig, live, me }: { w: Workbe
       <div className="section-head row">
         <h1 id="order" tabIndex={-1}>{buyer(o.buyerId)}</h1>
         <span className={`chip ${st.tone}`}>{st.label}</span>
+        <span className={`chip ${STAGE[stage.stage].tone}`}>{STAGE[stage.stage].label}</span>
         {unsent(w, orderId) && <span className="chip quiet">Draft not sent</span>}
       </div>
+      {cuts}
+      {promised.length > 0 && <p className="muted small">{promised.join(". ")}.</p>}
       <p className="lot">
         <b>Wants</b><span>{quantity(o.quantity)} {o.product}</span><span>{o.acceptedGrades.join(" or ")}</span><span>{day(o.deliveryOn)}</span>
       </p>

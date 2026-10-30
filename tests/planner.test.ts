@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { scenario, shortage, surplus } from "../evaluation/scenario.ts";
-import { proposeAllocations, verifyPlan, snapshotHash } from "../src/planner.ts";
+import { proposeAllocations, verifyPlan, snapshotHash, type Promised, type Snapshot } from "../src/planner.ts";
+import { demoSnapshot } from "../src/demo.ts";
 import { normalize, type Quantity } from "../src/quantity.ts";
 import { commitUpdate, createLedger, reviewUpdate } from "../src/updates.ts";
 
@@ -123,4 +124,98 @@ test("a capped substitute is allocated no more than its cap, with residuals stil
   assert.deepEqual(plan.unfilled.map(u => [u.orderId, u.amount]), [["order-c", 6000]]);
   assert.deepEqual(proposeAllocations(capped), plan);
   assert.throws(() => { const bad = structuredClone(capped); bad.orders[2].approvedSubstitutions[0].maxAmount = 0; proposeAllocations(bad); }, /cap/);
+});
+
+// Promised allocations are placed first; the priority/ID rule then plans the rest.
+const promiseSnap = (lotAmount: number): Snapshot => {
+  const lb = (amount: number) => ({ amount, unit: "lb" as const }), base = { acceptedGrades: ["standard"], deliveryOn: "2026-10-30", approvedSubstitutions: [] };
+  return { version: 0,
+    lots: [{ id: "lot-x", growerId: "grower-a", product: "tomato", grade: "standard", quantity: lb(lotAmount), deliveryOn: "2026-10-30", confirmed: true }],
+    orders: [{ id: "order-hi", buyerId: "buyer-a", product: "tomato", quantity: lb(100), priority: 2, ...base }, { id: "order-lo", buyerId: "buyer-b", product: "tomato", quantity: lb(60), priority: 1, ...base }] };
+};
+const promiseLo = (amount: number): Promised => ({ orderId: "order-lo", lotId: "lot-x", amount, unit: "lb", kind: "requested" });
+const got = (plan: ReturnType<typeof proposeAllocations>, orderId: string) => plan.allocations.filter(a => a.orderId === orderId).reduce((n, a) => n + a.amount, 0);
+
+test("with no promises the plan is unchanged", () => {
+  const s = demoSnapshot(), plain = proposeAllocations(s), none = proposeAllocations(s, []);
+  assert.deepEqual(none, plain);
+  assert.equal("promisesHash" in plain, false); assert.equal("promisesHash" in none, false);
+});
+
+test("promised supply stays with its order even when priority would move it", () => {
+  const s = promiseSnap(100), copy = structuredClone(s), plan = proposeAllocations(s, [promiseLo(60)]);
+  assert.equal(got(plan, "order-lo"), 60); assert.equal(got(plan, "order-hi"), 40);
+  assert.deepEqual(plan.unfilled.map(u => [u.orderId, u.amount]), [["order-hi", 60]]);
+  assert.ok(plan.promisesHash);
+  verifyPlan(s, plan, [promiseLo(60)]);
+  assert.deepEqual(s, copy);
+});
+
+test("extra supply goes to remaining need only", () => {
+  const plan = proposeAllocations(promiseSnap(160), [promiseLo(60)]);
+  assert.equal(got(plan, "order-hi"), 100); assert.equal(got(plan, "order-lo"), 60);
+  verifyPlan(promiseSnap(160), plan, [promiseLo(60)]);
+});
+
+test("a zero-amount promise places nothing", () => {
+  const plan = proposeAllocations(promiseSnap(100), [promiseLo(0)]);
+  assert.equal(got(plan, "order-hi"), 100); assert.equal(got(plan, "order-lo"), 0);
+});
+
+test("promises above the lot or the order are refused", () => {
+  assert.throws(() => proposeAllocations(promiseSnap(50), [promiseLo(60)]), /Promises exceed the lot/);
+  assert.throws(() => proposeAllocations(promiseSnap(100), [promiseLo(61)]), /Promises exceed the order/);
+  assert.throws(() => proposeAllocations(promiseSnap(100), [promiseLo(40), promiseLo(30)]), /Promises exceed the order/);
+});
+
+test("ineligible promises are refused", () => {
+  assert.throws(() => proposeAllocations(promiseSnap(100), [{ ...promiseLo(10), lotId: "nope" }]), /Ineligible promise/);
+  assert.throws(() => proposeAllocations(promiseSnap(100), [{ ...promiseLo(10), kind: "approved-substitution" }]), /Ineligible promise/);
+});
+
+test("two promises on one lot that together exceed it are refused", () => {
+  const hi: Promised = { ...promiseLo(30), orderId: "order-hi" };
+  assert.throws(() => proposeAllocations(promiseSnap(50), [hi, promiseLo(30)]), /Promises exceed the lot/);
+  assert.doesNotThrow(() => proposeAllocations(promiseSnap(60), [hi, promiseLo(30)]));
+});
+
+test("a promise is ineligible when the date, unit or grade does not match", () => {
+  const dated = promiseSnap(100); dated.lots[0].deliveryOn = "2026-10-31";
+  assert.throws(() => proposeAllocations(dated, [promiseLo(10)]), /Ineligible promise/);
+  assert.throws(() => proposeAllocations(promiseSnap(100), [{ ...promiseLo(10), unit: "case" as never }]), /Ineligible promise/);
+  const graded = promiseSnap(100); graded.lots[0].grade = "premium";
+  assert.throws(() => proposeAllocations(graded, [promiseLo(10)]), /Ineligible promise/);
+});
+
+test("verifyPlan leaves its inputs unchanged", () => {
+  const s = promiseSnap(100), promised = [promiseLo(60)], plan = proposeAllocations(s, promised);
+  const before = JSON.stringify([s, plan, promised]);
+  verifyPlan(s, plan, promised);
+  assert.throws(() => verifyPlan(s, proposeAllocations(s), promised), /Plan drops a promise/);
+  assert.equal(JSON.stringify([s, plan, promised]), before);
+});
+
+test("verifyPlan refuses a plan that drops a promise", () => {
+  const s = promiseSnap(100), promised = [promiseLo(60)], plan = proposeAllocations(s, promised);
+  const cut = structuredClone(plan), a = cut.allocations.find(x => x.orderId === "order-lo")!;
+  a.amount -= 10;
+  const un = cut.unfilled.find(u => u.orderId === "order-lo");
+  if (un) un.amount += 10; else cut.unfilled.push({ orderId: "order-lo", amount: 10, unit: "lb", reason: "x" });
+  cut.unallocated.push({ lotId: "lot-x", amount: 10, unit: "lb", confirmed: true });
+  assert.throws(() => verifyPlan(s, cut, promised), /Plan drops a promise|Residual/);
+  const lowered = { ...cut, promisesHash: plan.promisesHash };
+  assert.throws(() => verifyPlan(s, lowered, promised), /Plan drops a promise/);
+  assert.throws(() => verifyPlan(s, proposeAllocations(s), promised), /Plan drops a promise/);
+});
+
+test("a promised substitute counts toward its cap", () => {
+  const s = demoSnapshot();
+  s.orders.find(o => o.id === "order-c")!.approvedSubstitutions[0].maxAmount = 30;
+  s.lots.find(l => l.id === "lot-d")!.quantity = { amount: 40, unit: "lb" };
+  s.lots.find(l => l.id === "lot-c")!.quantity = { amount: 0, unit: "lb" }; // no cucumbers, so the cap is what binds
+  const promised: Promised[] = [{ orderId: "order-c", lotId: "lot-d", amount: 20, unit: "lb", kind: "approved-substitution" }];
+  const plan = proposeAllocations(s, promised);
+  assert.equal(plan.allocations.filter(a => a.orderId === "order-c" && a.kind === "approved-substitution").reduce((n, a) => n + a.amount, 0), 30);
+  verifyPlan(s, plan, promised);
+  assert.throws(() => proposeAllocations(s, [{ ...promised[0], amount: 31 }]), /over the agreed substitute amount/i);
 });

@@ -1,12 +1,11 @@
-import { proposeAllocations, verifyPlan } from "../../src/planner.ts";
+import { planOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { preview, type Preview, type Workbench } from "../../src/workbench.ts";
 
 // Read models for the pages, computed from the stored workbench on every request.
 export type ProductRow = { product: string; supply: number; ordered: number; direct: number; substitutedIn: number; short: number; unallocated: number; forecast: number };
 export function overview(w: Workbench) {
-  const s = w.ledger.snapshot, plan = proposeAllocations(s);
-  verifyPlan(s, plan);
+  const s = w.ledger.snapshot, plan = planOf(w.ledger);
   const products = [...new Set([...s.lots.map(l => l.product), ...s.orders.map(o => o.product)])].sort();
   const lotProduct = new Map(s.lots.map(l => [l.id, l.product]));
   const rows: ProductRow[] = products.map(product => {

@@ -72,3 +72,14 @@ export function evidence(p: UpdateProposal | undefined, sourceId: string): Span[
   }
   return merged;
 }
+
+// Stages are said in words; the chip tone only repeats them.
+export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Status> = {
+  planned: { label: "Planned", tone: "quiet" }, promised: { label: "Promised", tone: "ready" }, packed: { label: "Packed", tone: "done" }, "handed-off": { label: "Handed off", tone: "done" }
+};
+// "Promised 40 of 50 lb", and what the live plan gives the order beyond that, when it does.
+export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number): string[] {
+  const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
+  const extra = planned - s.promised;
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? [`${weight(extra, s.unit)} planned, not yet promised`] : [])];
+}

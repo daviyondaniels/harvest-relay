@@ -4,7 +4,7 @@ import { checkDraft, type Check, type Confirm, type MessageFacts } from "./messa
 import { NAME_MAX, hubDay } from "./hub.ts";
 import { normalize } from "./quantity.ts";
 import { acceptSubstitute, addLot, options, shortages, type Option } from "./orders.ts";
-import { proposeAllocations } from "./planner.ts";
+import { planOf } from "./commitments.ts";
 import type { Evidence, Source } from "./updates.ts";
 import { receive, stamp, text, type Workbench } from "./workbench.ts";
 
@@ -307,7 +307,7 @@ export function orderStatus(w: Workbench, orderId: string): OrderStatus {
   if (!gap) {
     const subs = new Set(mine.filter(r => r.status === "accepted" && r.option.kind === "offer-substitute").map(r => r.option.kind === "offer-substitute" ? r.option.product : ""));
     const lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l.product]));
-    const helped = proposeAllocations(w.ledger.snapshot).allocations.some(a => a.orderId === orderId && a.kind === "approved-substitution" && a.amount > 0 && subs.has(lots.get(a.lotId)!));
+    const helped = planOf(w.ledger).allocations.some(a => a.orderId === orderId && a.kind === "approved-substitution" && a.amount > 0 && subs.has(lots.get(a.lotId)!));
     return helped ? "substitute-agreed" : "covered";
   }
   // Telling the buyer counts only for as much as they were told; a larger shortfall is short again.

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkName } from "../app/lib/names.ts";
-import { readNotice, signNotice } from "../app/lib/notice.ts";
+import { cutPage, readNotice, signNotice } from "../app/lib/notice.ts";
 
 // Pure app helpers: the remembered-name rules and the signed page notices.
 test("names: trimmed, NFC, at most 80 characters, no hidden characters, not the reserved label", () => {
@@ -45,4 +45,10 @@ test("notices: long text is cut by whole characters, never inside one", () => {
   assert.equal(Array.from(params.msg).length, 600);
   assert.equal(params.msg, "\u{1F955}".repeat(600), "no lone surrogate at the end");
   assert.equal(readNotice(params, PLACE, 2000)?.text, params.msg, "a cut notice still reads back");
+});
+
+test("cutPage: only the allowlist's own pages are honoured; inherited keys fall back to Orders", () => {
+  assert.deepEqual(cutPage("/pack"), { page: "/pack", key: "" });
+  assert.deepEqual(cutPage("/review"), { page: "/review", key: "item" });
+  for (const p of ["constructor", "toString", "__proto__", "hasOwnProperty", "https://x.test", ""]) assert.deepEqual(cutPage(p), { page: "/orders", key: "order" }, p);
 });

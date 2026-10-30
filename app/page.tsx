@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { measures, type Measures } from "../src/measures.ts";
+import { conflicts } from "../src/commitments.ts";
 import { shortages } from "../src/orders.ts";
 import { normalize } from "../src/quantity.ts";
 import { orderStatus, unresolved } from "../src/resolve.ts";
@@ -117,6 +118,7 @@ export default async function Overview() {
   const delivery = s.orders[0]?.deliveryOn, unit: Unit = s.orders[0] ? normalize(s.orders[0].quantity).unit : "g";
   const fill = (orderId: string, kind: string) => plan.allocations.filter(a => a.orderId === orderId && a.kind === kind).reduce((n, a) => n + a.amount, 0);
   const gaps = shortages(w.ledger), toResolve = unresolved(w).flatMap(id => gaps.filter(g => g.orderId === id));
+  const settle = conflicts(w.ledger).length;
   const names = new Map(s.orders.map(o => [o.id, buyer(o.buyerId)]));
   // Work first: orders still short, then messages to review; the card shows the first four.
   const work = [...toResolve.map(g => ({ kind: "order" as const, g, st: ORDER_STATUS[orderStatus(w, g.orderId)] })), ...open.map(i => ({ kind: "update" as const, i, st: status(i, previews.get(i.id)) }))], shown = work.slice(0, 4);
@@ -137,6 +139,7 @@ export default async function Overview() {
 
       <section className="card needs" aria-labelledby="needs">
         <div className="card-head"><h2 id="needs">Needs your attention</h2></div>
+        {settle > 0 && <p className="muted"><a href="/orders">Promises to settle</a>: {settle === 1 ? "1 lot dropped below what was promised" : `${settle} lots dropped below what was promised`}.</p>}
         {shown.length > 0 ? (
           <div className="attention">
             {shown.map(x => x.kind === "order" ? (

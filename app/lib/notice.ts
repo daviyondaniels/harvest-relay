@@ -32,3 +32,11 @@ export function readNotice(p: Params, place: Place, now = Date.now()): Notice | 
   const want = Buffer.from(mac(n, place, at)), got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got) ? n : undefined;
 }
+
+// The pages a recorded cut can come back to, and the query key each uses for its open item.
+// Only the allowlist's own keys count, so "constructor" or "__proto__" can never choose a page.
+const CUT_PAGES: Record<string, string> = { "/orders": "order", "/pack": "", "/review": "item" };
+export function cutPage(p: string): { page: string; key: string } {
+  const page = Object.hasOwn(CUT_PAGES, p) ? p : "/orders";
+  return { page, key: CUT_PAGES[page] };
+}

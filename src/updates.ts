@@ -1,3 +1,4 @@
+import type { Commitments } from "./commitments.ts";
 import { digest, snapshotHash, validateSnapshot, type Lot, type Snapshot } from "./planner.ts";
 import { NAME_MAX } from "./hub.ts";
 import { integer, normalize, type BaseUnit, type Quantity } from "./quantity.ts";
@@ -34,7 +35,7 @@ export type LedgerRecord =
   | { id: string; kind: "substitute-accepted"; orderId: string; substitute: { product: string; acceptedGrades: string[]; maxAmount?: number }; change?: "raised" | "uncapped" | "grade-added"; previousMax?: number; evidence: Evidence; recordedBy: string; beforeHash: string; afterHash: string }
   | { id: string; kind: "lot-added"; lot: Lot; evidence: Evidence; recordedBy: string; beforeHash: string; afterHash: string };
 // Forecasts sit beside, never inside, the snapshot the planner allocates from.
-export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[]; records: LedgerRecord[] };
+export type Ledger = { version: number; snapshot: Snapshot; events: UpdateEvent[]; forecasts: Forecast[]; records: LedgerRecord[]; commitments?: Commitments };
 
 export const OPERATIONS: Operation[] = ["replace-total", "add-quantity", "correction", "forecast", "unresolved"];
 export const FIELDS: Field[] = ["operation", "lot", "quantity", "unit", "pack", "grade", "date", "correction-target"];
@@ -167,5 +168,5 @@ export function commitUpdate(ledger: Ledger, p: UpdateProposal, approval: Approv
   if (effect !== "forecast") { lot.quantity = lotAfter; snapshot.version += 1; validateSnapshot(snapshot); }
   const event: UpdateEvent = { id, proposal: p, approval, effect, lotId, lotBefore, lotAfter, beforeHash: snapshotHash(ledger.snapshot), afterHash: snapshotHash(snapshot) };
   const forecasts = effect === "forecast" ? [...ledger.forecasts, { eventId: id, lotId, ...normalize(p.interpretation.quantity!), deliveryOn: lot.deliveryOn }] : ledger.forecasts;
-  return structuredClone({ version: ledger.version + 1, snapshot, events: [...ledger.events, event], forecasts, records: ledger.records });
+  return structuredClone({ version: ledger.version + 1, snapshot, events: [...ledger.events, event], forecasts, records: ledger.records, ...(ledger.commitments ? { commitments: ledger.commitments } : {}) });
 }

@@ -35,7 +35,7 @@ test("Task 17: the approver name is asked for beside its field and remembered in
   assert.match(name, /NAME_COOKIE = "hr_name"/);
   assert.match(source("src/hub.ts"), /NAME_MAX = 80/, "the same limit as the name field");
   assert.match(source("app/lib/names.ts"), /import \{ NAME_MAX \} from "..\/..\/src\/hub.ts"/, "one limit for the field and every recorded name");
-  for (const f of ["src/workbench.ts", "src/resolve.ts", "src/pack.ts", "src/orders.ts", "src/updates.ts"]) assert.match(source(f), /NAME_MAX/, f);
+  for (const f of ["src/workbench.ts", "src/resolve.ts", "src/commitments.ts", "src/orders.ts", "src/updates.ts"]) assert.match(source(f), /NAME_MAX/, f);
   assert.match(name, /httpOnly: true, sameSite: "strict", path: "\/"/);
   assert.match(name, /maxAge: 12 \* 60 \* 60/, "one working day");
   assert.match(name, /HARVEST_SECURE_COOKIES === "1"/);
@@ -51,6 +51,13 @@ test("Fix round 1 / Task 18 fix 3: forms that record a name rely on the header n
     assert.match(page, /notice\?\.field === "who" && <NameNeeded key=\{String\(params\.sig\)\} text=\{notice\.text\} \/>/);
   }
   assert.match(actions, /async function named\(\): Promise<string> \{[\s\S]*?if \(!kept\) throw new NameNeeded\(NAME_AT_TOP\);/);
+  for (const fn of ["stageAction", "confirmAction"]) {
+    const body = actions.slice(actions.indexOf(`export async function ${fn}`)).split(/\nexport /)[0];
+    assert.match(body, /await named\(\)/, `${fn} records a person's name`);
+    assert.doesNotMatch(body, /await actor\(\)/, `${fn} never falls back to the reserved name`);
+    assert.match(body, /instanceof NameNeeded/, `${fn} sends a missing name to the header field`);
+  }
+  assert.match(source("app/pack/page.tsx"), /field === "who" && <NameNeeded/);
   assert.match(actions, /resId && notice\?\.field !== "who"/, "a name refusal on Orders lands at the top, by the header field");
   assert.match(source("app/who.tsx"), /window\.addEventListener\(ASK_NAME/);
   assert.match(orders, /name="words"/, "confirm posts the words shown");
@@ -276,10 +283,10 @@ test("Task 19: after an action, focus moves to the result heading or the invalid
   const review = source("app/review/page.tsx"), orders = source("app/orders/page.tsx");
   assert.match(review, /<h1 id="msg" tabIndex=\{-1\}>/);
   assert.match(review, /<h2 id="change" tabIndex=\{-1\}>/, "Approve lands on #change, and focus goes to its heading");
-  assert.match(review, /notice\?\.ok && notice\.on === "approve" \? "change"/);
+  assert.match(review, /notice\?\.ok && notice\.on === "approve" \? \(notice\.res && conflicts\(w\.ledger\)\.some\(c => c\.lotId === notice\.res\) \? `cut-\$\{notice\.res\}-head` : "change"\)/);
   assert.match(orders, /<h3 id=\{`\$\{r\.id\}-title`\} tabIndex=\{-1\}>/);
   assert.match(orders, /<h1 id="order" tabIndex=\{-1\}>/);
-  assert.match(source("app/actions.ts"), /notice = \{ text: step\.done, ok: true, on: step\.on \};/);
+  assert.match(source("app/actions.ts"), /notice = \{ text: step\.done, ok: true, on: step\.on, \.\.\.step\.after\?\.\(next!, item\) \};/);
 });
 
 test("Task 19 (R15): repeated buttons carry hidden context, and the 404 page leads back to Overview", () => {
@@ -312,10 +319,23 @@ test("Task 22 (R13): the Overview leads with work; the delivery-day counts come 
   assert.match(page, /x\.st\.label !== ORDER_STATUS\.short\.label/, "a short order says it is short once, not also as a chip");
 });
 
-test("Task 22 (R11): Pack says when the plan was locked, makes Print primary and offers the day record", () => {
+test("Task 22 (R11): Pack confirms the plan, shows stages, makes Print primary and offers the day record", () => {
   const pack = source("app/pack/page.tsx"), sheets = source("src/pack.ts");
-  assert.match(pack, /Plan locked at \{time\(w\.lock\.at\)\}\. Print the sheets\./);
-  assert.match(pack, /"Lock again"/);
+  assert.match(pack, /Confirmed by \{c\.confirmed\.by\} at \{time\(c\.confirmed\.at\)\}\./);
+  for (const t of ["Confirm today's plan", "Confirm again", "Mark packed", "Mark handed off", "Not confirmed", "Changed since confirmed", "at confirm)"]) assert.ok(pack.includes(t), t);
+  assert.doesNotMatch(pack, /Lock plan for packing|Lock again|Plan changed after locking/);
+  assert.doesNotMatch(source("app/actions.ts"), /lockAction|lockPlan/);
+  // Every new button sits inside a form.
+  for (const label of ["Mark packed", "Mark handed off", "Confirm today's plan", "Confirm again", "Late grower message (demo)"]) {
+    for (let at = pack.indexOf(label); at >= 0; at = pack.indexOf(label, at + 1)) {
+      const open = pack.lastIndexOf("<form", at);
+      assert.ok(open > 0 && pack.lastIndexOf("</form>", at) < open, `${label} at ${at} is inside a form`);
+    }
+  }
+  // After Mark packed / Mark handed off, focus goes to that order's sheet heading, not the section's.
+  assert.match(pack, /<h4 id=\{`sheet-\$\{s\.orderId\}`\} tabIndex=\{-1\}>/);
+  assert.match(pack, /shown\.on === "stage" && shown\.res \? `sheet-\$\{shown\.res\}` : "sheets"/);
+  assert.match(source("app/actions.ts"), /on: "stage", res: str\(f, "order"\)/);
   assert.match(pack, /Download day record/);
   assert.match(source("app/pack/print.tsx"), /className="primary"[\s\S]*Print sheets/);
   assert.match(pack, /HUB_NAME/);
@@ -323,7 +343,7 @@ test("Task 22 (R11): Pack says when the plan was locked, makes Print primary and
   assert.match(pack, /className="tick"/);
   assert.match(sheets, /deliveryOn/);
   assert.match(source("app/globals.css"), /\.sheet \{[^}]*break-before: page/, "each buyer and each grower starts a new page");
-  assert.doesNotMatch(pack.slice(pack.indexOf("function Sheets")).replace(/key=\{[^}]*\}/g, ""), /\{\w+\.(orderId|lotId|growerId|buyerId)\}/, "no internal ID is printed");
+  assert.doesNotMatch(pack.slice(pack.indexOf("function Sheets")).replace(/\b(key|value|id)=\{[^}]*\}/g, ""), /\{\w+\.(orderId|lotId|growerId|buyerId)\}/, "no internal ID is printed");
 });
 
 test("Task 22 (R16): the event page reads as a sentence and keeps hashes, IDs and the model under Technical record", () => {
@@ -361,4 +381,45 @@ test("Final review: recording a buyer's consent or a new lot needs the header na
   }
   assert.match(orders, /failedTheCheck\(r\.fallback\)/);
   assert.match(orders, /Couldn't get other wording just now\. The template stands\./);
+});
+
+test("Task 4: the conflict panel is a fieldset with a legend, reports errors beside it, and its action goes through act", () => {
+  const panel = source("app/conflict.tsx"), actions = source("app/actions.ts");
+  assert.match(panel, /<fieldset/);
+  assert.match(panel, /<legend>Who takes the cut\?<\/legend>/);
+  assert.match(panel, /field-error/);
+  assert.match(panel, /<Problem\b/);
+  assert.match(panel, /Settle the cut/);
+  assert.match(panel, /Everyone else's/);
+  const body = actions.slice(actions.indexOf("export async function decideCutAction")).split(/\nexport async function /)[0];
+  assert.match(body, /await act\(/);
+  assert.match(body, /decideCut\(/);
+  for (const page of ["app/orders/page.tsx", "app/pack/page.tsx", "app/review/page.tsx"]) assert.match(source(page), /<Conflicts\b/, page);
+  assert.match(source("app/page.tsx"), /Promises to settle/);
+});
+
+test("a11y: order sheets name their columns, and a changed line's note can wrap", () => {
+  const pack = source("app/pack/page.tsx"), css = source("app/globals.css");
+  for (const col of ["Amount", "Product and grade", "Grower"]) assert.match(pack, new RegExp(`<th scope="col">${col}</th>`));
+  assert.match(pack, /className="was muted small"/);
+  assert.doesNotMatch(css, /\.sheet td\.num[^{]*\{[^}]*nowrap/, "the whole amount cell must not be forced onto one line");
+});
+
+test("a11y: Review's queue is not sticky in the middle widths, and an approval that opens a conflict says so", () => {
+  const css = source("app/globals.css"), actions = source("app/actions.ts"), review = source("app/review/page.tsx");
+  assert.match(css, /@media \(max-width: 1180px\) \{[\s\S]*?\.queue \{ position: static; \}/);
+  assert.match(actions, /decide who takes the cut/);
+  assert.match(review, /`cut-\$\{notice\.res\}-head`/);
+  assert.match(source("app/conflict.tsx"), /<H id=\{`\$\{on\}-head`\} tabIndex=\{-1\}>/);
+});
+
+test("a11y: stage results name the buyer, the late-message link takes focus, a settled cut is not said twice", () => {
+  assert.match(source("app/actions.ts"), /'s order is marked \$\{stage === "packed" \? "packed" : "handed off"\}\./);
+  assert.match(source("app/pack/page.tsx"), /"late-link"/);
+  assert.match(source("app/conflict.tsx"), /<Result key=\{sig\} text=\{undefined\}/);
+});
+
+test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
+  assert.match(source("app/actions.ts"), /You entered \$\{sum\} lb; the cuts must total \$\{excess\} lb\./);
+  assert.match(source("app/conflict.tsx"), /amount to cut if splitting/);
 });
