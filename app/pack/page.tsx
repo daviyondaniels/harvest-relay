@@ -104,8 +104,8 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
 
         {c ? (
           <>
-            <p className="small">{blocking.length ? `${blocking.length} ${blocking.length === 1 ? "order was" : "orders were"} still short at confirm.` : "Every order was covered or settled."}{warnings.length > 0 && ` ${unsettledLine(warnings.length)}`}</p>
-            <details className="checklist no-print"><summary>Show checklist</summary>
+            <p className="small">{blocking.length ? `${blocking.length} ${blocking.length === 1 ? "order is" : "orders are"} still short.` : "Every order is covered or settled."}{warnings.length > 0 && ` ${unsettledLine(warnings.length)}`}</p>
+            <details className="checklist no-print" open={blocking.length > 0}><summary>Show checklist</summary>
             {checklist}
             </details>
           </>
