@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Plus_Jakarta_Sans } from "next/font/google";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { rememberedName } from "./lib/name.ts";
 import { ClearErrors } from "./clear-errors.tsx";
 import { Header, TabBar } from "./nav.tsx";
@@ -28,7 +28,7 @@ export default async function Layout({ children }: { children: ReactNode }) {
         </header>
         <main id="main" tabIndex={-1} className="page">{children}</main>
         <TabBar />
-        <ClearErrors />
+        <Suspense fallback={null}><ClearErrors /></Suspense>
       </body>
     </html>
   );

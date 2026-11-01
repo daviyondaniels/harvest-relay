@@ -231,7 +231,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
               : <><label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
                 <Problem bad={bad} on="reply" name="reply" /></>}
             {openDetails
-              ? <AnswerFields on="reply" shown={answerPreview?.reviewHash} preview={answerOutcome} details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply" || elsewhere}
+              ? <AnswerFields on="reply" shown={recordedReply ? answerPreview?.reviewHash : undefined} preview={answerOutcome} details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply" || elsewhere}
                   kept={answerKept}
                   quote={<><label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
                   extra={live > 0 ? <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button> : undefined} />
@@ -300,7 +300,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       <ChangeTag it={it} p={p} event={event} filled={!!start?.complete} />
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
       {!closed && !it.proposal && <p className="small" role="status">{handShown ? "The outcome is shown above the Save and approve button." : CHECKED}</p>}
-      {!closed && it.proposal && p.questions.length > 0 && <p className="small" role="status">{answerPreview ? "The outcome is shown above the Apply and approve button." : CHECKED}</p>}
+      {!closed && it.proposal && p.questions.length > 0 && <p className="small" role="status">{answerPreview ? (recordedReply ? "The outcome is shown above the Apply and approve button." : "The outcome is shown above Apply answers. Apply the answers, then approve the change that results.") : CHECKED}</p>}
       {!closed && it.proposal && p.questions.length === 0 && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />

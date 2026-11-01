@@ -101,3 +101,16 @@ test("Edited-value check: unedited values approve in one step, edited values are
   const none = replyAndApprove(w, "item-1", REPLY, [KIND, PACK], [], ME, T(3));
   assert.deepEqual([none.approved, none.changed], [false, true]);
 });
+
+test("Task 20 fix: a fresh reply's preview hash can never match what the action produces, so one-step approval is offered only for a recorded reply", () => {
+  const w = twoOpen(), at = T(3);
+  // What the page can render before the coordinator has typed the reply: a stand-in source.
+  const stand = { ...REPLY, id: "item-1-preview" };
+  const rendered = previewAnswers(w, "item-1", stand, [KIND, PACK], at)!.reviewHash!;
+  // What the action produces: the typed reply as its own source.
+  const real = replyAndApprove(w, "item-1", REPLY, [KIND, PACK], [], ME, at, rendered);
+  assert.equal(real.approved, false, "the stand-in's hash is not the real state's hash");
+  assert.equal(real.changed, true, "the reply is saved and the result is shown for one more press");
+  // The page therefore passes shown only for a recorded reply.
+  assert.match(readFileSync(new URL("../app/review/page.tsx", import.meta.url), "utf8"), /shown=\{recordedReply \? answerPreview\?\.reviewHash : undefined\}/);
+});
