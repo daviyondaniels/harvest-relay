@@ -177,7 +177,7 @@ test("answers are checked against the same limits as the review: case contents o
   const pack = (amount: number, unit: string) => [{ field: "pack", quote: "Each case", value: { amount, unit } }] as Answer[];
   const r = reply("Each case is whatever.");
   assert.throws(() => applyAnswers(l, p, r, pack(0, "lb")), /more than zero/);
-  assert.throws(() => applyAnswers(l, p, r, pack(2001, "lb")), /more than this hub handles\. Check it\./);
+  assert.throws(() => applyAnswers(l, p, r, pack(2001, "lb")), /more than this hub handles \(over 100,000 lb, or 2,000 per case\)\. Check it\./);
   assert.throws(() => applyAnswers(l, p, r, pack(2001, "kg")), /more than this hub handles/);
   assert.throws(() => applyAnswers(l, p, r, [{ field: "quantity", quote: "Each case", value: { amount: 99_999_999_999, unit: "lb" } }]), /more than this hub handles/);
 });

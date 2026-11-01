@@ -10,7 +10,7 @@ export type Normalized = { amount: number; unit: BaseUnit };
 // pounds or pieces as they are, grams as kilograms.
 export const MAX_AMOUNT = 100_000;
 export const MAX_PACK = 2_000;
-export const TOO_MUCH = "That amount is more than this hub handles. Check it.";
+export const TOO_MUCH = "That amount is more than this hub handles (over 100,000 lb, or 2,000 per case). Check it.";
 const PER_UNIT = { g: 1000, lb: 1, each: 1 } as const;
 export function checkAmount(amount: number, unit: BaseUnit): void {
   if (amount > MAX_AMOUNT * PER_UNIT[unit]) throw new Error(TOO_MUCH);

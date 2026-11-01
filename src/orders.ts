@@ -114,7 +114,7 @@ export type Recommendation = Option | { kind: "review-reply"; contactId: string;
 // waiting in Review comes first: read it before asking anyone else. Then a grower who holds the product and
 // was not cut recently (largest lot first); a substitute covering at least a quarter of the short (the one covering
 // most) unless the buyer already declined it for this order; another grower or outside source; telling the
-// buyer. A contact who already answered an ask for this order is not asked again for it. Ties go by id.
+// buyer. A grower whose pending update lowers the lot is not asked for it. A contact who already answered an ask for this order is not asked again for it. Ties go by id.
 export function recommend(w: Workbench, orderId: string, contacts: Contact[]): Recommendation | undefined {
   const l = w.ledger, opts = options(l, orderId, contacts);
   if (!opts.length) return undefined;
@@ -124,7 +124,7 @@ export function recommend(w: Workbench, orderId: string, contacts: Contact[]): R
   const answered = new Set(mine.filter(r => r.linkedItemId || r.status === "accepted" || r.status === "declined").map(r => (r.option as Extract<Option, { kind: "ask-grower" }>).contactId));
   const short = opts.find(o => o.kind === "notify-short")!.amount, lots = new Map(l.snapshot.lots.map(x => [x.id, x]));
   const byId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0, size = (id: string) => normalize(lots.get(id)!.quantity).amount;
-  const holders = opts.filter((o): o is Extract<Option, { hasLot: true }> => o.kind === "ask-grower" && o.hasLot && !answered.has(o.contactId));
+  const holders = opts.filter((o): o is Extract<Option, { hasLot: true }> => o.kind === "ask-grower" && o.hasLot && !answered.has(o.contactId) && !cutByPending(w, o.lotId));
   const best = holders.filter(o => !o.reducedRecently).sort((a, b) => size(b.lotId) - size(a.lotId) || byId(a.lotId, b.lotId))[0];
   if (best) return best;
   const refused = new Set(w.resolutions.filter(r => r.orderId === orderId && r.option.kind === "offer-substitute" && r.status === "declined")
@@ -135,6 +135,19 @@ export function recommend(w: Workbench, orderId: string, contacts: Contact[]): R
   const others = opts.filter((o): o is Extract<Option, { hasLot: false }> => o.kind === "ask-grower" && !o.hasLot && !answered.has(o.contactId))
     .sort((a, b) => byId(a.contactKind, b.contactKind) || byId(a.contactId, b.contactId));
   return others[0] ?? holders.sort((a, b) => byId(a.lotId, b.lotId))[0] ?? opts.find(o => o.kind === "notify-short");
+}
+
+// An update waiting in Review from the lot's own grower that would lower the lot: asking them for more now
+// would ask about a lot they have just said is smaller. It is read first (pendingCover), not asked past.
+function cutByPending(w: Workbench, lotId: string): boolean {
+  const lot = w.ledger.snapshot.lots.find(l => l.id === lotId);
+  if (!lot) return false;
+  return w.items.some(i => {
+    const p = i.proposal?.interpretation;
+    if (i.state === "approved" || i.state === "dismissed" || i.source.growerId !== lot.growerId || !p || p.lotId !== lotId || !p.quantity) return false;
+    if (p.operation !== "replace-total" && p.operation !== "correction") return false;
+    try { const a = normalize(p.quantity), b = normalize(lot.quantity); return a.unit === b.unit && a.amount < b.amount; } catch { return false; }
+  });
 }
 
 // Latest grower update (forecasts excluded) that lowered the lot.

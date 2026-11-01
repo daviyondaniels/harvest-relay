@@ -5,7 +5,8 @@
 type Params = Record<string, string | string[] | undefined>;
 export const KEEP = {
   ask: { field: 40, question: 500 },
-  reply: { reply: 2000, field: 40, value: 200, quote: 500 },
+  // value-<detail>: one value for each open detail of the reply form (src/updates.ts FIELDS).
+  reply: { reply: 2000, field: 40, value: 200, "value-operation": 200, "value-lot": 200, "value-quantity": 200, "value-unit": 200, "value-pack": 200, "value-grade": 200, "value-date": 200, "value-correction-target": 200, quote: 500 },
   correct: { field: 40, value: 200, quote: 500 },
   hold: { note: 500 },
   send: { body: 480 },

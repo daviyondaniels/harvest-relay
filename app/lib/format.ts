@@ -66,7 +66,7 @@ export function status(i: InboxItem, p: Preview | undefined): Status {
   if (i.state === "dismissed") return { label: "Dismissed", tone: "quiet" };
   if (i.state === "returned") return { label: "Returned to grower", tone: "wait" };
   if (i.state === "pending") return { label: "Pending", tone: "wait" };
-  if (!i.proposal) return { label: "Not read yet", tone: "wait" };
+  if (!i.proposal) return { label: "Not checked yet", tone: "wait" };
   // Supply moved and the rebased review differs from what was shown. A stale item whose
   // rebased review is unchanged is checked again read-only and shows as normal.
   if (p?.needsRefresh) return { label: "Supply changed", tone: "wait" };
@@ -96,5 +96,5 @@ export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Sta
 export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number): string[] {
   const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
   const extra = planned - s.promised;
-  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? [`${weight(extra, s.unit)} planned, not yet promised`] : [])];
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? ["Planned: we expect to send this, but it isn't promised to the buyer until you confirm today's plan"] : [])];
 }

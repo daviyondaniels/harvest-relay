@@ -13,7 +13,7 @@ import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
-import { ValueFields } from "../value-fields.tsx";
+import { AnswerFields, ValueFields } from "../value-fields.tsx";
 import { readKept, type KeptForm } from "../lib/kept.ts";
 import { numberSpan } from "../lib/quote.ts";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
@@ -122,7 +122,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const openDetails = byField.size ? [...byField.keys()] : undefined;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
   const decided = !!notice?.ok && (notice.on === "approve" || ((notice.on === "hold" || notice.on === "dismiss") && it.state === "dismissed"));
-  // The one form in view that asks for a name when none is saved: Save the reading for a message
+  // The one form in view that asks for a name when none is saved: Save these details for a message
   // not read yet, Refresh review, Apply answer while a detail is open, else Approve. The other
   // forms use the remembered name, or are refused and then show their own field.
   const main = !it.proposal ? "hand" : p.needsRefresh ? "refresh" : byField.size > 0 ? "reply" : "approve";
@@ -197,10 +197,17 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <form action={replyAction} className="form"><Hidden {...v} />
             <label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
             <Problem bad={bad} on="reply" name="reply" />
-            <ValueFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
-            <label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
-            <Problem bad={bad} on="reply" name="quote" />
-            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply"} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
+            {openDetails
+              ? <AnswerFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply"}
+                  kept={Object.fromEntries(openDetails.map(f => [f, kv("reply", `value-${f}`)]))}
+                  quote={<><label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
+                  extra={live > 0 ? <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button> : undefined} />
+              : <>
+                <ValueFields on="reply" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
+                <label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
+                <Problem bad={bad} on="reply" name="quote" />
+                <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply"} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
+              </>}
           </form>
         </details>}
         {i && <details open={failedOn("ask")}>
@@ -347,7 +354,7 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
-        <div><NamedSubmit label=<>Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} purpose="this reading" /></div>
+        <div><NamedSubmit label=<>Save these details <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} purpose="this reading" /></div>
       </form>
     </details>
   );
@@ -400,7 +407,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   if (it.state === "dismissed") return <div className="tag"><p className="to">No change</p><p className="what">Dismissed: {it.decisions.at(-1)?.note}</p></div>;
   if (!it.proposal) return (
     <div className="tag blocked">
-      <p className="from">Not read yet</p>
+      <p className="from">Not checked yet</p>
       <p className="to">Waiting on your answer</p>
       <p className="what">The change appears once the message has a reading.</p>
     </div>
@@ -414,7 +421,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
   if (!p.change) return (
     <div className="tag blocked">
-      <p className="from">{p.error ? "Cannot preview" : "Waiting on answers"}</p>
+      <p className="from">{p.error ? "Cannot preview" : "Needs an answer"}</p>
       <p className="to">Waiting on your answer</p>
       <p className="what">{p.error ?? "The change can't be worked out until the open details are answered."}</p>
     </div>

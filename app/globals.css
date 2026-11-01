@@ -279,6 +279,8 @@ mark { background: var(--evidence); color: inherit; padding: 0 4px; border-radiu
 .option-group { display: grid; gap: 8px; }
 .option-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); gap: 12px; }
 .option-card { display: grid; gap: 8px; align-content: start; padding: 16px; border-radius: var(--r-s); background: var(--surface-2); border: 1px solid var(--line); }
+.alternatives { display: grid; gap: 8px; }
+.alternatives h3 { font-size: 0.9rem; font-weight: 600; color: var(--muted, inherit); }
 .option-card b::first-letter { text-transform: uppercase; }
 .resolution { gap: 12px; padding: 16px; scroll-margin-top: 16px; }
 .resolution:target { outline: 2px solid var(--forest); }

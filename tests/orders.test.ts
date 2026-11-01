@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { scenario, shortage, surplus } from "../evaluation/scenario.ts";
+import { propose, scenario, shortage, surplus } from "../evaluation/scenario.ts";
 import { proposeAllocations, type Lot } from "../src/planner.ts";
 import { commitUpdate, createLedger, reviewUpdate, type Evidence, type Ledger } from "../src/updates.ts";
 import { acceptSubstitute, addLot, options, pendingCover, permissionSource, recommend as recommendFor, shortages } from "../src/orders.ts";
 import type { Contact } from "../src/demo.ts";
-import { createWorkbench } from "../src/workbench.ts";
+import { createWorkbench, interpret, receive } from "../src/workbench.ts";
 import { normalize } from "../src/quantity.ts";
 
 const evidence: Evidence = { messageId: "in-1", channel: "call", quote: "Zucchini is fine" };
@@ -206,4 +206,18 @@ test("Task 4: pendingCover keeps only updates that could raise supply, one group
   assert.equal(groups.length, 1, "one line per grower");
   assert.deepEqual(groups[0].items.map(i => i.id), [add, above, raw]);
   assert.ok(![below, forecast].some(id => groups[0].items.some(i => i.id === id)), "a lower total and a forecast cannot cover");
+});
+
+test("Ease task 11: recommend skips a grower whose pending update cuts the lot it would ask about", () => {
+  const l = approved(), base = createWorkbench(l);
+  const asks = (w: ReturnType<typeof createWorkbench>) => { const r = recommendFor(w, "order-b", contacts); return r?.kind === "ask-grower" ? r.contactId : r?.kind; };
+  assert.equal(asks(base), "grower-b", "with nothing waiting, the holder who was not cut is the pick");
+  const pending = (operation: "replace-total" | "add-quantity", kg: number) => {
+    const src = { id: `msg-${operation}`, revision: 1, growerId: "grower-b", text: `Tomatoes: ${kg} kg Friday.` };
+    const w = receive(base, src, "2026-10-28T10:00:00.000Z");
+    return interpret(w, "item-1", propose(w.ledger, "p-1", src, { operation, lotId: "lot-b", quantity: { amount: kg, unit: "kg" }, grade: "standard", deliveryOn: "2026-10-30", quotes: [`${kg} kg`, "Friday"] }), "test reading", "Hub coordinator", "2026-10-28T10:01:00.000Z");
+  };
+  assert.notEqual(asks(pending("replace-total", 10)), "grower-b", "a cut to the lot is read first, not asked past");
+  assert.equal(asks(pending("replace-total", 90)), "grower-b", "a raise is not a cut");
+  assert.equal(asks(pending("add-quantity", 5)), "grower-b", "an addition is not a cut");
 });

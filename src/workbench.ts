@@ -102,6 +102,14 @@ export function ask(w: Workbench, id: string, field: Field, question: string, ac
 export function reply(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
   return takeReply(w, id, source, (l, p) => applyAnswers(l, p, source, answers, unclear), "coordinator", actor, at);
 }
+// The coordinator's answers and the approval in one step. The approval is checked against the review
+// hash of the state the answers produce, so it approves exactly the change that state previews. When the
+// answers leave a question open, or no change can be worked out, only the reply is kept (approved: false).
+export function replyAndApprove(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string): { next: Workbench; approved: boolean } {
+  const replied = reply(w, id, source, answers, unclear, actor, at), p = preview(replied, id);
+  if (p.questions.length || p.error || !p.change || !p.reviewHash) return { next: replied, approved: false };
+  return { next: approve(replied, id, actor, p.reviewHash, at), approved: true };
+}
 // A grower reply read by the model: interpretReply has already applied its answers with
 // applyAnswers to this item's proposal. Checked again here before it is kept.
 export function replyRead(w: Workbench, id: string, source: Source, read: { proposal: UpdateProposal; corrections: Correction[] }, by: string, actor: string, at: string): Workbench {

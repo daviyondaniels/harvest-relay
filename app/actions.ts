@@ -11,7 +11,7 @@ import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
-import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_PROBLEM, checkName } from "./lib/names.ts";
@@ -49,7 +49,7 @@ function fieldOf(e: unknown, on?: string): string | undefined {
   if (/^Literal source evidence required/.test(m)) return "quote";
   if ((on === "reply" || on === "correct") && /answer|operation|unit|Case contents|more than this hub handles|more than zero|whole numbers/i.test(m)) return "value";
   if (on === "hand") {
-    if (/whole numbers/i.test(m)) return "amount";
+    if (/whole numbers|more than this hub handles|above zero/i.test(m)) return "amount";
     if (/date/i.test(m)) return "day";
     if (/unit/i.test(m)) return "unit";
   }
@@ -86,18 +86,18 @@ function field(f: FormData): Field {
   return v;
 }
 // Reads a value typed by the coordinator, in the same shapes the model must use.
-function value(fieldName: Field, raw: string): unknown {
-  if (!raw) throw new FieldError("Enter the value.", "value");
+function value(fieldName: Field, raw: string, at = "value"): unknown {
+  if (!raw) throw new FieldError("Enter the value.", at);
   if (fieldName === "operation") {
     const kind = parseOperation(raw);
-    if (!kind) throw new FieldError("Choose what changed: a new total, added to what they have, a correction or a forecast.", "value");
+    if (!kind) throw new FieldError("Choose what changed: a new total, added to what they have, a correction or a forecast.", at);
     return kind;
   }
   if (fieldName === "quantity" || fieldName === "unit" || fieldName === "pack") {
     const m = raw.toLowerCase().match(/^(\d+)\s*(g|kg|lbs?|each|cases?)$/);
-    if (!m) throw new FieldError(`Write the ${fieldName === "pack" ? "contents of one case" : "quantity"} as a whole number and a unit, like "3 kg", "30 lb" or "4 cases".`, "value");
+    if (!m) throw new FieldError(`Write the ${fieldName === "pack" ? "contents of one case" : "quantity"} as a whole number and a unit, like "3 kg", "30 lb" or "4 cases".`, at);
     const unit = m[2].startsWith("case") ? "case" : m[2] === "lbs" ? "lb" : m[2];
-    if (fieldName === "pack" && unit === "case") throw new FieldError("Write the contents of one case in g, kg, lb or each.", "value");
+    if (fieldName === "pack" && unit === "case") throw new FieldError("Write the contents of one case in g, kg, lb or each.", at);
     return { amount: Number(m[1]), unit };
   }
   return raw;
@@ -105,6 +105,17 @@ function value(fieldName: Field, raw: string): unknown {
 // from "reply": the words that answer it may be left blank, and are then picked from the reply
 // itself (lib/quote.ts: a literal stretch of it, never words of our own). From the message they are required.
 function answers(f: FormData, from: "reply" | "message", text?: string): Answer[] {
+  // One value for each open detail ("value-<detail>"), all from the same reply; else the one chosen detail.
+  const many = FIELDS.filter(x => str(f, `value-${x}`));
+  if (many.length) {
+    const given = str(f, "quote");
+    return many.map(x => {
+      const raw = str(f, `value-${x}`), v = value(x, raw, `value-${x}`), quote = given || (from === "reply" && text ? pickQuote(text, raw) : "");
+      if (!quote) throw new FieldError(`Copy the words in the ${from} that support this value.`, "quote");
+      return { field: x, quote, value: v };
+    });
+  }
+  if (!f.has("field") && FIELDS.some(x => f.has(`value-${x}`))) throw new FieldError("Enter an answer for at least one open detail.", "value");
   const name = field(f), raw = str(f, "value"), given = str(f, "quote");
   const v = value(name, raw), quote = given || (from === "reply" && text ? pickQuote(text, raw) : "");
   if (!quote) throw new FieldError(`Copy the words in the ${from} that support this value.`, "quote");
@@ -151,14 +162,24 @@ async function run(f: FormData, change: (w: Workbench, item: string, who: string
 export async function askAction(f: FormData) {
   return run(f, (w, i, who) => ask(w, i, field(f), need(f, "question", "Write the question to ask the grower."), who, now()), { on: "ask", keep: "ask", done: "Question recorded." });
 }
+// "Apply answers" adds the reply with its answers. "Apply and approve" (andApprove) then approves the result in the
+// same step, against the review hash the answered state produces; if the answers leave a question open, only
+// the reply is kept and the notice says so. It does not rebase: the answers were typed against the supply
+// the page showed, so a page that is out of date is refused like any other reply.
 export async function replyAction(f: FormData) {
+  let before = new Map<string, number>(), approvedNow = false;
+  const both = str(f, "andApprove") === "1";
   return run(f, (w, i, who) => {
     const it = w.items.find(x => x.id === i);
     if (!it) throw new Error("Unknown inbox item");
     const text = need(f, "reply", "Paste the grower's reply exactly as received.");
     const source = { id: `${it.source.id}-reply-${it.replies.length + 1}`, revision: 1, growerId: it.source.growerId, text };
-    return reply(w, i, source, answers(f, "reply", text), [], who, now());
-  }, { on: "reply", keep: "reply", done: "Reply added." });
+    if (!both) return reply(w, i, source, answers(f, "reply", text), [], who, now());
+    before = shortMap(w);
+    const r = replyAndApprove(w, i, source, answers(f, "reply", text), [], who, now());
+    approvedNow = r.approved;
+    return r.next;
+  }, { on: "reply", keep: "reply", done: "Reply added.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : { text: "Answers applied. One more detail needs an answer." } });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
 export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", keep: "correct", done: "Correction applied." }); }
@@ -172,6 +193,7 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   const lotId = need(f, "lot", "Choose the lot.");
   const amount = need(f, "amount", "Enter the amount.");
   if (!/^\d{1,9}$/.test(amount)) throw new FieldError("Enter the amount as a whole number.", "amount");
+  if (Number(amount) === 0) throw new FieldError("Enter an amount above zero.", "amount");
   const unit = str(f, "unit") as (typeof UNIT_CHOICES)[number];
   if (!UNIT_CHOICES.includes(unit)) throw new FieldError("Choose a unit.", "unit");
   const grade = need(f, "grade", "Enter the grade."), deliveryOn = need(f, "day", "Choose the delivery day.");
