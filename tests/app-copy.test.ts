@@ -136,7 +136,7 @@ test("Task 18: the header menu is a disclosure that closes on Escape and returns
   assert.match(nav, /This clears today's decisions and the remembered name\./);
   assert.match(nav, /showModal\(\)/);
   const menu = nav.slice(nav.indexOf('id="site-menu"'));
-  assert.ok(menu.indexOf("Log a call") < menu.indexOf("<ThemeToggle") && menu.indexOf("<ThemeToggle") < menu.indexOf("Reset demo"), "Reset demo is last in the menu, after the theme");
+  assert.ok(menu.indexOf("{links}") < menu.indexOf("<ThemeToggle") && menu.indexOf("<ThemeToggle") < menu.indexOf("Reset demo"), "Reset demo is last in the menu, after the theme");
   assert.doesNotMatch(source("app/layout.tsx"), /Reset demo/, "no Reset demo button in the header row");
 });
 
@@ -472,7 +472,7 @@ test("Ease task 3: the change line says before, after and by how much", () => {
 test("Ease task 3: every review form that can be refused keeps what was typed", () => {
   const actions = source("app/actions.ts");
   for (const on of ["ask", "reply", "correct", "hold", "hand"]) assert.match(actions, new RegExp(`keep: "${on}"`), on);
-  assert.match(actions, /back\(item, notice, step\.on, kept\)/);
+  assert.match(actions, /back\(item, notice, step\.on, kept, returnPage/);
   assert.match(actions, /\.\.\.kept, \.\.\.signNotice\(notice/, "kept values sit beside the signed notice, not inside it");
 });
 
@@ -516,4 +516,29 @@ test("Ease task 4: the order chip and the cover line", async () => {
     assert.ok(!(/Short/.test(orderChip(st, stage, st === "covered" || st === "substitute-agreed" ? 0 : 5, "lb").label) && /Promised/.test(orderChip(st, stage, 5, "lb").label)), "never both Short and Promised");
   assert.equal(coverLine("Alder Creek Farm", 2), "Alder Creek Farm has 2 updates to review that may cover this.");
   assert.equal(coverLine("Alder Creek Farm", 1), "Alder Creek Farm has 1 update to review that may cover this.");
+});
+
+test("Task 5: the header tabs, the Overview's folded day details, all-clear card and in-place actions", () => {
+  const nav = source("app/nav.tsx"), page = source("app/page.tsx"), css = source("app/globals.css");
+  const tabs = nav.match(/const PAGES = \[(.*?)\] as const;/)![1];
+  assert.deepEqual([...tabs.matchAll(/"([^"/][^"]*)"\]/g)].map(m => m[1]), ["Overview", "Review updates", "Orders", "Pack", "Log a call"]);
+  assert.match(nav, /aria-current=\{\(href === "\/" \? path === "\/" : path\.startsWith\(href\)\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
+  assert.doesNotMatch(page, /Open review workspace/);
+  assert.match(page, />Review updates</);
+  // The measures, gauge, donut and grower lots sit in one closed fold below Buyer orders; the export link stays out of it.
+  const fold = page.indexOf('<details className="day-details">'), end = page.indexOf("</details>", fold);
+  assert.ok(fold > page.indexOf('id="orders"') && page.indexOf("<summary>Day details</summary>") > fold);
+  assert.doesNotMatch(page.slice(fold, fold + 40), /open/);
+  for (const t of ["<DayCard", "<Gauge", "<Donut", 'id="lots"']) assert.ok(page.indexOf(t, fold) > fold && page.indexOf(t, fold) < end, t);
+  assert.ok(page.indexOf('href="/export"') > end, "the export link stays visible");
+  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed.", "Pack and hand off", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s"]) assert.ok(page.includes(t), t);
+  // Approve and Dismiss post from the Overview and come back to it; Confirm too.
+  assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{p\.reviewHash\}/);
+  assert.match(page, /action=\{dismissNoChangeAction\}/);
+  assert.match(page, /action=\{confirmAction\}/);
+  assert.match(source("app/actions.ts"), /returnPage\(str\(f, "from"\)\)/);
+  // A phone sees one card per buyer, and focus lands on the page heading after Reset demo.
+  assert.match(css, /@media \(max-width: 600px\) \{\s*table\.buyers/);
+  assert.match(page, /<h1 id="hub" tabIndex=\{-1\}>/);
+  assert.match(source("app/actions.ts"), /on: "reset"/);
 });

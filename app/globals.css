@@ -170,7 +170,7 @@ label.named { max-width: 28em; }
 
 /* Overview */
 .overview { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; }
-.main-col { grid-column: span 8; display: grid; gap: 22px; align-content: start; }
+.main-col { grid-column: 1 / -1; display: grid; gap: 22px; align-content: start; }
 .hero { display: grid; gap: 18px; align-content: start; padding: 12px 4px 0; }
 .hero-sub { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--ink-soft); }
 .stats { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -180,9 +180,6 @@ label.named { max-width: 28em; }
 .stat b { font-size: 1.35rem; font-weight: 600; }
 .stat span { font-size: 0.82rem; color: var(--ink-soft); }
 .stat.bad b { color: var(--beet); }
-.side { grid-column: span 4; }
-.mix { grid-column: span 6; }
-.lots { grid-column: span 6; }
 
 .produce { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 16px; align-items: center; }
 .produce h3 { text-transform: capitalize; }
@@ -201,8 +198,8 @@ label.named { max-width: 28em; }
 .gauge .value { font-size: 2.6rem; font-weight: 600; letter-spacing: -0.03em; margin-top: -78px; }
 .gauge .label { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px; }
 .attention { display: grid; gap: 8px; }
-.attention a { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border-radius: var(--r-s); background: var(--surface-2); text-decoration: none; }
-.attention a:hover { background: var(--leaf-wash); }
+.attention > a, .attention .item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border-radius: var(--r-s); background: var(--surface-2); text-decoration: none; }
+.attention > a:hover { background: var(--leaf-wash); }
 .attention .icon { width: 36px; height: 36px; border-radius: var(--r-s); background: var(--surface); display: grid; place-items: center; color: var(--forest); }
 .attention .icon svg { width: 18px; height: 18px; }
 .attention .text { display: grid; min-width: 0; }
@@ -340,8 +337,7 @@ label.check input { width: auto; margin-top: 3px; }
 }
 
 @media (max-width: 1180px) {
-  .main-col, .side { grid-column: 1 / -1; }
-  .mix, .lots { grid-column: span 6; }
+  .main-col { grid-column: 1 / -1; }
   .workspace { grid-template-columns: 230px minmax(0, 1fr); }
   .workspace.item-first { grid-template-areas: "queue item" "preview preview"; }
   .preview { grid-column: 1 / -1; position: static; }
@@ -357,7 +353,7 @@ label.check input { width: auto; margin-top: 3px; }
   .page { padding: 4px 16px 24px; }
   h1 { font-size: 1.6rem; }
   .overview, .workspace { grid-template-columns: minmax(0, 1fr); }
-  .main-col, .side, .mix, .lots { grid-column: 1 / -1; }
+  .main-col { grid-column: 1 / -1; }
   .queue { position: static; }
   .produce { grid-template-columns: minmax(0, 1fr); }
   .legend { grid-column: 1; }
@@ -384,3 +380,42 @@ label.check input { width: auto; margin-top: 3px; }
 /* Controls that exist only for the demo sit in a dashed box with a small "Demo" tag, so they can't be mistaken for the product. */
 .demo { position: relative; display: grid; gap: 6px; padding: 14px 10px 10px; border: 1px dashed var(--field-line); border-radius: var(--r-s); }
 .demo-tag { position: absolute; top: -0.7em; left: 8px; padding: 0 6px; background: var(--paper); font-size: 0.75rem; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Overview rows that act in place, the all-clear card, and the folded day details. */
+.attention .item { grid-template-columns: 36px minmax(0, 1fr) auto; background: var(--surface-2); }
+.attention .item .text { white-space: normal; }
+.attention .item .text > a { color: inherit; text-decoration: none; display: inline-block; min-height: 24px; }
+.attention .item .text > span { white-space: normal; overflow: visible; }
+.attention .item .text > span:not(.change):not(.bad) { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.attention .item .change { color: var(--ink); }
+.attention .item .bad { color: var(--beet); font-weight: 600; }
+.attention .item .act { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.attention .item .act label.named { flex: 1 1 12em; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.short-order a.plain { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 4px; }
+.attention .short-order { grid-template-columns: 36px minmax(0, 1fr) auto; }
+.attention .short-order > .button, .attention .short-order > a.plain { grid-column: 2 / -1; justify-self: start; }
+.clear { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; padding: 12px; border-radius: var(--r-s); background: var(--leaf-wash); }
+.clear p { margin: 0; flex: 1 1 14em; }
+.clear label.named { flex: 1 1 12em; }
+.day-details { border-top: 0; display: grid; gap: 18px; }
+.day-details > summary { min-height: 44px; display: flex; align-items: center; font-size: 1.1rem; }
+.day-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 18px; margin-top: 18px; }
+.nav a { white-space: nowrap; }
+
+/* Buyer orders: one card per buyer on a phone, so nothing scrolls sideways. */
+@media (max-width: 600px) {
+  table.buyers, table.buyers tbody, table.buyers tr, table.buyers td { display: block; }
+  table.buyers thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  table.buyers tr { border: 1px solid var(--line); border-radius: var(--r-s); padding: 10px 12px; margin-bottom: 10px; }
+  table.buyers td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; text-align: right; overflow-wrap: anywhere; }
+  table.buyers td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.8rem; text-align: left; flex: none; }
+  table.buyers td:first-child { font-size: 1rem; text-align: left; }
+  table.buyers td:first-child::before { content: none; }
+  table.buyers td.bar { display: block; }
+  .attention .item .act, .attention .short-order > .button { grid-column: 1 / -1; }
+  .attention .item .act button, .attention .short-order > .button, .attention .item .act input { min-height: 44px; }
+  .attention .short-order > a.plain { min-height: 44px; grid-column: 1 / -1; }
+  .clear button, .clear input, .clear .button { min-height: 44px; }
+  .day-details > summary { min-height: 44px; }
+}

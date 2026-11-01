@@ -16,7 +16,7 @@ import { StaleView, act, staleMessage, current, extras, recording, resetDemo } f
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_PROBLEM, checkName } from "./lib/names.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
-import { cutPage, signNotice, type Notice } from "./lib/notice.ts";
+import { cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, type KeptForm } from "./lib/kept.ts";
 import { pickQuote } from "./lib/quote.ts";
 
@@ -121,8 +121,11 @@ function need(f: FormData, k: string, ask: string): string {
 // notice at its top) otherwise. A problem with a field (a missing name included) has no
 // fragment, because a fragment blocks the autofocus, and the page moves focus to the field itself.
 // A refused form also sends back what was typed (lib/kept.ts), outside the signed notice.
-function back(item: string, notice: Notice, on?: string, kept: Record<string, string> = {}): never {
+// from: a page the form can come back to instead (the Overview; lib/notice.ts), which shows the
+// result beside the row it was done from and moves focus there.
+function back(item: string, notice: Notice, on?: string, kept: Record<string, string> = {}, from?: string): never {
   revalidatePath("/", "layout");
+  if (from) redirect(`${from}?${new URLSearchParams({ item, ...signNotice(notice, { page: from, id: item }) })}`);
   const anchor = notice.field ? "" : notice.ok && on === "approve" ? "#change" : "#item";
   redirect(`/review?${new URLSearchParams({ item, ...kept, ...signNotice(notice, { page: "/review", id: item }) })}${anchor}`);
 }
@@ -141,7 +144,7 @@ async function run(f: FormData, change: (w: Workbench, item: string, who: string
     await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase });
     notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
   } catch (e) { notice = await failed(e, step.on); if (step.keep) kept = keepTyped(f, step.keep); }
-  back(item, notice, step.on, kept);
+  back(item, notice, step.on, kept, returnPage(str(f, "from")));
 }
 
 export async function askAction(f: FormData) {
@@ -416,13 +419,16 @@ const toPack = (n: Notice) => { revalidatePath("/", "layout"); redirect(`/pack?$
 // a page that is out of date.
 export async function confirmAction(f: FormData) {
   let notice: Notice;
+  const home = returnPage(str(f, "from"));
   try {
     const choice = str(f, "shipShort");
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
     const who = await named(f);
     await act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } });
-    notice = { text: "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
+    notice = { text: home ? "Plan confirmed." : "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "lock", field: e.field } : { text: e instanceof Error ? e.message : "The plan could not be confirmed" }; }
+  // From the Overview's all-clear card it comes back there, where the card then points to Pack.
+  if (home) { revalidatePath("/", "layout"); redirect(`${home}?${new URLSearchParams({ item: "plan", ...signNotice(notice, { page: home, id: "plan" }) })}`); }
   toPack(notice);
 }
 
@@ -513,5 +519,6 @@ export async function resetAction() {
   await resetDemo();
   await forgetName();
   revalidatePath("/", "layout");
-  redirect("/");
+  // The Overview moves focus to its heading and says the demo was reset.
+  redirect(`/?${new URLSearchParams({ item: "reset", ...signNotice({ text: "Demo reset.", ok: true, on: "reset" }, { page: "/", id: "reset" }) })}`);
 }

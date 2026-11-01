@@ -7,14 +7,14 @@ import { askName } from "./name-event.ts";
 import { ThemeToggle, type Theme } from "./theme.tsx";
 
 // The header, phone first. On a phone or portrait tablet (up to 1023 px): the logo, the page
-// name with who is recording, and a Menu holding the pages, Log a call, the theme and, last
-// and set apart, Reset demo. From 1024 px: the logo, the page tabs, who is recording, Log a
-// call and a More menu for the theme and Reset demo. Reset demo is never beside Log a call
-// and asks before it acts. The menu shows the full name, which the header may cut short,
+// name with who is recording, and a Menu holding the pages (Log a call is one of them), the
+// theme and, last and set apart, Reset demo. From 1024 px: the logo, the page tabs, who is
+// recording and a More menu for the theme and Reset demo. Every tab, Log a call included,
+// marks its own page with aria-current. Reset demo asks before it acts. The menu closes on
+// Escape, on a press outside it and when focus leaves it (dismiss.ts). The menu shows the full name, which the header may cut short,
 // with a "Change name" that opens the header's name field.
-const PAGES = [["/", "Overview"], ["/review", "Review updates"], ["/orders", "Orders"], ["/pack", "Pack"]] as const;
+const PAGES = [["/", "Overview"], ["/review", "Review updates"], ["/orders", "Orders"], ["/pack", "Pack"], ["/call", "Log a call"]] as const;
 function pageName(path: string): string {
-  if (path === "/call") return "Log a call";
   if (path.startsWith("/events")) return "Recorded change";
   return PAGES.find(([href]) => href === "/" ? path === "/" : path.startsWith(href))?.[1] ?? "Harvest Relay";
 }
@@ -34,7 +34,6 @@ export function Header({ theme, who, name }: { theme: Theme; who: ReactNode; nam
     <span className="page-name" aria-hidden="true">{pageName(path)}</span>
     <nav className="nav" aria-label="Main">{links}</nav>
     <div className="who-area">{who}</div>
-    <a className="button call-link" href="/call">Log a call</a>
     <div className="menu-wrap" ref={area}>
       <button type="button" className="menu-button" ref={button} aria-expanded={open} aria-controls="site-menu" onClick={() => setOpen(o => !o)}>
         <span className="on-phone">Menu</span><span className="on-wide">More</span>
@@ -45,7 +44,6 @@ export function Header({ theme, who, name }: { theme: Theme; who: ReactNode; nam
           <button type="button" className="link" onClick={() => { setOpen(false); askName(); }}>Change name</button>
         </div>}
         <nav className="menu-nav" aria-label="Main">{links}</nav>
-        <a className="button primary menu-call" href="/call">Log a call</a>
         <p className="fine-print">Demo data: the growers, buyers and messages are made up.</p>
         <ThemeToggle initial={theme} />
         <div className="menu-apart">

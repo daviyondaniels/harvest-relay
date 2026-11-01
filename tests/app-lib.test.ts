@@ -104,3 +104,36 @@ test("kept values: typed text round trips through the redirect, cut to each fiel
   assert.equal(plain?.text, "Enter the value.", "the notice still verifies with kept values beside it");
   assert.equal(readNotice({ ...back, k_reply_value: "changed" }, { page: "/review", id: "item-1" })?.text, "Enter the value.", "kept values are display-only");
 });
+
+// Task 5: the Overview's new-since-confirm count, the ready test and the return page.
+import { becomesShort, newSinceConfirm, readyToApprove } from "../app/lib/view.ts";
+import { returnPage } from "../app/lib/notice.ts";
+import type { InboxItem, Preview, Workbench } from "../src/workbench.ts";
+
+const item = (id: string, receivedAt: string, state: string = "open") => ({ id, receivedAt, state }) as unknown as InboxItem;
+const bench = (confirmedAt: string | undefined, items: InboxItem[]) =>
+  ({ items, ledger: { commitments: confirmedAt ? { confirmed: { at: confirmedAt } } : undefined } }) as unknown as Workbench;
+
+test("Task 5: newSinceConfirm counts unread messages that arrived after the latest confirm", () => {
+  const items = [item("a", "2026-11-02T09:00:00.000Z"), item("b", "2026-11-02T11:00:00.000Z"), item("c", "2026-11-02T12:00:00.000Z", "approved"), item("d", "2026-11-02T13:00:00.000Z", "dismissed")];
+  assert.deepEqual(newSinceConfirm(bench("2026-11-02T10:00:00.000Z", items)).map(i => i.id), ["b"]);
+  assert.equal(newSinceConfirm(bench("2026-11-02T08:00:00.000Z", items)).length, 2, "approved and dismissed messages are not new");
+  assert.equal(newSinceConfirm(bench("2026-11-02T14:00:00.000Z", items)).length, 0);
+  assert.equal(newSinceConfirm(bench(undefined, items)).length, 0, "before a confirm nothing is new since it");
+});
+
+test("Task 5: only a current, fully answered review can be approved from the Overview, and becomesShort lists who gets shorter", () => {
+  const change = { effect: "replace-total", lotId: "lot-1", before: { amount: 1, unit: "lb" }, after: { amount: 2, unit: "lb" } };
+  const p = (over: object) => ({ stale: false, needsRefresh: false, questions: [], change, reviewHash: "h", orders: [], unallocated: [], ...over }) as unknown as Preview;
+  const read = { proposal: {} } as unknown as InboxItem;
+  assert.equal(readyToApprove(read, p({})), true);
+  assert.equal(readyToApprove({} as InboxItem, p({})), false, "no reading");
+  for (const over of [{ questions: [{ field: "quantity" }] }, { error: "x" }, { needsRefresh: true }, { change: undefined }, { reviewHash: undefined }]) assert.equal(readyToApprove(read, p(over)), false, JSON.stringify(over));
+  const o = (orderId: string, before: number, after: number) => ({ orderId, unit: "lb", requested: 9, before: { direct: 0, substitute: 0, short: before }, after: { direct: 0, substitute: 0, short: after } });
+  assert.deepEqual(becomesShort(p({ orders: [o("x", 0, 5), o("y", 5, 2), o("z", 3, 3), o("w", 2, 4)] })).map(x => x.orderId), ["x", "w"]);
+});
+
+test("Task 5: an action can return only to the Overview", () => {
+  assert.equal(returnPage("/"), "/");
+  for (const other of ["", "/review", "//evil.example", "https://evil.example", "constructor", "__proto__"]) assert.equal(returnPage(other), undefined, other);
+});

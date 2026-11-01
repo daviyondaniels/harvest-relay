@@ -40,3 +40,8 @@ export function cutPage(p: string): { page: string; key: string } {
   const page = Object.hasOwn(CUT_PAGES, p) ? p : "/orders";
   return { page, key: CUT_PAGES[page] };
 }
+
+// Pages an action can return to, besides its own: only the Overview, where some rows act in
+// place. Anything else is ignored, so a form can never choose where the browser goes next.
+const RETURN_PAGES = ["/"];
+export const returnPage = (p: string): string | undefined => RETURN_PAGES.includes(p) ? p : undefined;
