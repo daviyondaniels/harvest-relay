@@ -232,3 +232,127 @@ Counts are clicks plus typed fields, from `reports/tools/click_paths.py`.
 
   After each re-rating, every interface score below 4.5 gets its own follow-up task, named from the rater's evidence. The loop does not end until the target is met. Each follow-up's brief tells the implementer to read the `frontend-design` skill: a deliberate hierarchy for every page (one primary action above the fold), a consistent spacing scale, and type sizes of at least 14 px for chips and meta text.
 - Final whole-branch review on Opus, then report to the user.
+
+---
+
+## Round 3: from the round 2 re-audit
+
+Sources (git-ignored):
+- `reports/round2/audit-a-first-day.md`, scored 8/10;
+- `reports/round2/audit-b-phone-late-drop.md`, scored 8/10;
+- `reports/round2/audit-c-mistakes-keyboard.md`, scored 8/10;
+- `reports/round2/interface-rating.md`, scored 8/10, with every criterion at 3.5–4.
+
+The six interface criteria all need to reach 4.5 or above.
+
+The clicks went from 43 + 7 typed to 37 + 3 typed. Tasks 2 and 10 met their targets. These round 2 rulings set the remaining limits:
+- **Task 5 stays at 4 or more.** A grower's reply still goes through review with its preview, because that is a safety step.
+- **Task 9 stays at 3.** The late message is read and checked before approval, for the same reason.
+- **Task 4 may stay at 2.** One-tap Dismiss is only for a message that names no lot or no amount (see Task 10).
+
+### Task 9: Layout, accessibility and visual design
+
+**Files:** `app/globals.css`, `app/nav.tsx`, `app/layout.tsx`, `app/named-submit.tsx`, `app/review/page.tsx`, `app/conflict.tsx`, `app/pending-cover.tsx`, and copy tests.
+
+- **No sideways scroll at 1280, 390, 320 or 195 px** on any page:
+  - Overview: the `.sr-only` span inside `.attention .text span` escapes its box. Fix at `app/globals.css:206`, and stop the link text being cut off.
+  - Review: the `.nowrap` change line clips "What changes" at 1280 px (`:117`, `:225`). Let it wrap.
+  - Header: "not you?" won't wrap at 195 px, and the Menu button overlaps the page title (`:72-74`).
+  - Add a copy test asserting `.sr-only` is `position: absolute` everywhere it is used inside a clipping box.
+- **44 px targets at ≤ 600 px** for every interactive element:
+  - the brand link;
+  - `summary` elements, such as "Other options", Edit and Discard;
+  - text inputs, selects and textareas;
+  - inline links that act as the row's action ("Resolve", "Review it first", "Orders").
+- **Phone navigation.** At ≤ 600 px, a fixed bottom tab bar holds the five tabs, with icons and labels and `aria-current`. Nobody needs the Menu to change page. The Menu keeps theme and Reset demo. Pad the bottom of the page so the bar never covers content.
+- **Name fields.**
+  - Every `NameField` gets an accessible name that says what it is for, for example "Your name, for this approval" (visible label "Your name", with sr-only context).
+  - On the Review page, when several forms would each show a name field, show it only on the primary form in view (Approve or Apply). The others use a remembered name, or are refused beside their own field.
+  - Fix the duplicate `hold-who` id (`app/review/page.tsx:187` and `:226`): every form `on` must be unique per page.
+- **Keyboard order.** The skip link goes to the message (`#item`) or order (`#order`) panel, not the start of the queue. On Review and Orders at ≤ 1180 px, the queue comes after the panel in DOM order.
+- **Approve when blocked.** It uses `aria-disabled="true"` instead of `disabled`, so it stays focusable. Pressing it moves focus to the first open question and does not submit.
+- **Split-the-cut.** Out-of-range and non-integer values get the app's own plain message beside the fieldset. Use `noValidate` on that form, or a custom check, not Chromium's English text.
+- **Visual design.**
+  - Chip text is at least 13 px.
+  - The light done chip text and soft text on the page reach at least 5:1.
+  - Dark-theme link text on cards reaches at least 5.5:1.
+  - The `<details>` "Day details" summary shows a visible ▸/▾ marker and reads as a control.
+  - The spacing scale is used consistently: 4, 8, 12, 16, 24 and 32 px only, in the files this task touches.
+
+- [ ] Tests:
+  - copy tests for `aria-disabled`, unique form ids (scan the page sources for `on="…"` duplicates), the bottom-bar `aria-current`, and the token values;
+  - a contrast test computing ratios from `app/globals.css` (a pure helper in `tests/`).
+- [ ] Implement, run all checks plus `npx next build`, then commit.
+
+### Task 10: Overview and Pack flow
+
+**Files:** `app/page.tsx`, `app/lib/view.ts`, `app/pack/page.tsx`, `app/actions.ts` (return paths only), `app/result.tsx`, and tests.
+
+- **Dismiss from the Overview** only for a message that has been read and identifies no lot or no amount (`dismissable` in `app/lib/view.ts`).
+  - The Birch zucchini row (a real update with open questions) must not get Dismiss.
+  - Test against the seed data: the zucchini and cucumber rows are not dismissable. Whether the instruction-like message is dismissable is decided by its reading; state which in the report.
+- **Attention rows.** Show every row, up to 8. Order them: settle-cut first, then short orders, then updates ready to approve, then updates needing answers, then dismissable ones.
+- **Review updates bar.**
+  - It becomes an ordinary secondary button.
+  - It is hidden when no update waits.
+  - "Resolve" is a real secondary button on short rows.
+- **Confirm on the Overview as soon as nothing is short and no cut is open,** even if updates still wait. Show the same line as Pack: "{n} grower updates not settled. The plan uses approved updates only, so this does not block confirming."
+- **After confirming, the Overview card** "Plan confirmed by {name} at {time}" shows:
+  - "{packed} of {n} packed, {handed} of {n} handed off";
+  - the Mark all packed or Mark all handed off button (whichever applies next);
+  - Print sheets, which opens /pack and prints;
+  - Confirm again, when the plan has changed.
+
+  "Plan confirmed." must appear only once.
+- **Overview result after Approve or Dismiss** names what changed, for example "Tomato from Alder Creek Farm: 120 lb → 60 lb. Riverbend School Kitchen is now 60 lb short." with a Resolve link.
+- **Pack after confirming.**
+  - "Before you confirm" collapses into a one-line summary with a "Show checklist" fold.
+  - The "{n} grower messages arrived since you confirmed" link goes to the first such message (`/review?item=…`), not `/review`.
+- **Wording.**
+  - Remove the "Allocation is a proposal from the hub's rules…" fine print (`app/page.tsx` around line 91).
+  - The measures in Day details are re-labelled plainly: "Shortages caught", "Grower asks that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders shipped short". Drop "Counts of actions, not of orders…".
+
+- [ ] Tests:
+  - `dismissable` against the seed;
+  - row ordering (pure helper in `app/lib/view.ts`);
+  - the packed and handed-off counts;
+  - copy tests.
+- [ ] Implement, run all checks, then commit.
+
+### Task 11: Orders and Review flow
+
+**Files:** `app/orders/page.tsx`, `app/review/page.tsx`, `app/actions.ts`, `src/orders.ts` (`recommend`, options), `src/answers.ts` and `src/workbench.ts` (only if needed), and tests.
+
+- **The Next step card after Send** shows the sent message's state ("Asked Birch Hollow Gardens for 60 lb. Waiting on their reply."), with the reply controls. The next suggestion appears only when there is nothing to wait for. It never shows "Message already open" for a sent message.
+- **`recommend` skips a grower whose pending update cuts the lot it would ask about** (the "Ask Alder" case). Test it.
+- **Visible alternatives.** Below the Next step, show up to two alternatives as one-step buttons, outside the fold:
+  - "Offer {product}", when a substitute exists;
+  - "Tell {buyer}".
+
+  Each uses the same one-step send (draft, check, send; stop at the draft if needed). "Other options" holds the rest.
+- **Substitute wording.** "Substitutes this buyer accepts" must agree with the Next step. Find why it reads "None yet" while the Next step says "the buyer already allows zucchini" (`app/orders/page.tsx:169` vs `:224`) and make both read from the same source. If the permission is on file, list it as "zucchini (standard), on file".
+- **"Call logged as their reply. It is in Review updates."** links to that reply.
+- **Review: answering open questions.**
+  - One reply form answers **every** open question from the same pasted reply: one value per open detail, in one form.
+  - When the answers close the last question, the submit button reads **"Apply and approve"**. It applies the answers and approves in one action (named, with rebase, and refused if the result needs another question). Otherwise it reads "Apply answers".
+- **Hand-entry form.**
+  - An amount of 0 is refused: "Enter an amount above zero." (`app/actions.ts` `handReading`).
+  - The limit error from the hand form shows beside Amount (`fieldOf` maps it for `hand`).
+- **The limit message** names the limit: "That amount is more than this hub handles (over 100,000 lb, or 2,000 per case). Check it."
+- **Wording.**
+  - "Not read yet" becomes "Not checked yet".
+  - "Save the reading" becomes "Save these details".
+  - "Notice to buyer to {buyer}" becomes "Shortage notice to {buyer}".
+  - "Waiting on answers" and "Waiting on your answer" become one phrase: "Waiting on your answer".
+  - "planned, not yet promised" gets a plain sentence: "Planned: we expect to send this, but it isn't promised to the buyer until you confirm today's plan."
+
+- [ ] Tests:
+  - `recommend` skips a cutting grower;
+  - the multi-answer reply and "Apply and approve" (an action-level test or a domain test of the composed step);
+  - hand 0 refused;
+  - copy tests.
+- [ ] Implement, run all checks, then commit.
+
+### Task 12: Measure again (controller)
+
+Re-run the four audits and the click script on a fresh build, as in Task 8. Loop until every interface criterion is 4.5 or above (overall about 9) and the clicks are at the targets as ruled above.
