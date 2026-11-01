@@ -272,7 +272,7 @@ mark { background: var(--evidence); color: inherit; padding: 0 4px; border-radiu
 .impact .line { display: flex; justify-content: space-between; gap: 8px; }
 .better { color: var(--leaf); font-weight: 600; }
 .worse { color: var(--beet); font-weight: 600; }
-.fine-print { font-size: 0.8rem; color: var(--ink-soft); }
+.fine-print { font-size: 0.875rem; color: var(--ink-soft); }
 
 /* Orders: option groups and cards, resolution drafts */
 .section-head { gap: 12px; }
@@ -306,6 +306,7 @@ mark { background: var(--evidence); color: inherit; padding: 0 4px; border-radiu
 .gate .warn .mark { background: var(--sun-wash); color: var(--sun-ink); }
 label.check { display: flex; gap: 12px; align-items: flex-start; font-size: 0.92rem; color: var(--ink); padding: 12px 16px; border-radius: var(--r-s); background: var(--sun-wash); }
 label.check input { width: auto; margin-top: 4px; }
+label.check > span { min-width: 0; overflow-wrap: anywhere; }
 .lapsed b { color: var(--beet); }
 .sheets { display: grid; gap: 16px; }
 .sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 16px; }
@@ -460,6 +461,8 @@ p a, li a:not(.button), .attention .more, a.plain, .result a { color: var(--link
   .top { column-gap: 8px; }
 }
 @media (max-width: 300px) {
+  :root { --tabbar-h: 122px; }
+  .tabbar { grid-template-columns: repeat(3, minmax(44px, 1fr)); }
   .tabbar a span { display: none; }
   .top { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand menu" "name name" "who who"; }
   .brand img { width: 32px; height: 32px; }
@@ -498,7 +501,9 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
   .gate li > :nth-child(n+3) { grid-column: 2; justify-self: start; }
   .chip { overflow-wrap: anywhere; }
   .stat { flex-wrap: wrap; }
-  table.reading, table.reading tbody, table.reading tr, table.reading td { display: block; width: auto; overflow-wrap: anywhere; }
+  table.reading, table.reading tbody, table.reading tr, table.reading td { display: block; width: auto; }
+  table.reading td:last-child { overflow-wrap: anywhere; }
+  table.reading td:first-child { overflow-wrap: normal; word-break: normal; }
   table.reading tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
   table.reading td { border: 0; padding: 0; }
   table.buyers td { flex-wrap: wrap; }

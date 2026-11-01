@@ -132,3 +132,29 @@ test("the header lets 'not you?' wrap and keeps the Menu clear of the page name"
   assert.doesNotMatch(rule(css, ".page-name"), /white-space: nowrap/);
   assert.match(css, /@media \(max-width: 300px\) \{[\s\S]*?grid-template-areas: "brand menu" "name name" "who who"/);
 });
+
+// Task 15: phone chrome and small layout.
+test("the phone tab bar follows <main> in the DOM, and the fixed bar is not inside the header", () => {
+  const layout = source("app/layout.tsx"), nav = source("app/nav.tsx");
+  assert.ok(layout.indexOf("</main>") < layout.indexOf("<TabBar />"), "TabBar after main");
+  assert.ok(layout.indexOf("<TabBar />") > layout.indexOf("</header>"), "TabBar outside header");
+  const header = nav.slice(nav.indexOf("export function Header"));
+  assert.doesNotMatch(header, /className="tabbar"/);
+  assert.match(nav, /aria-label="Pages"/);
+  assert.match(nav, /aria-current/);
+});
+
+test("at 300 px and below the tab links are at least 44 px wide and the body padding follows --tabbar-h", () => {
+  const narrow = css.slice(css.indexOf("@media (max-width: 300px)"));
+  assert.match(narrow, /grid-template-columns: repeat\(3, minmax\(44px, 1fr\)\)/);
+  assert.match(narrow, /--tabbar-h: (\d+)px/);
+  assert.match(css, /padding-bottom: calc\(var\(--tabbar-h\)/);
+});
+
+test("radio labels wrap long text, the understood labels never break mid-word, fine print is 14 px", () => {
+  assert.match(css, /label\.check > span \{[^}]*min-width: 0;[^}]*overflow-wrap: anywhere/);
+  assert.match(css, /table\.reading td:last-child \{ overflow-wrap: anywhere; \}/);
+  assert.match(css, /table\.reading td:first-child \{ overflow-wrap: normal;/);
+  const size = rule(css, ".fine-print").match(/font-size: ([\d.]+)rem/)![1];
+  assert.ok(Number(size) * 16 >= 14, `fine print is ${Number(size) * 16}px`);
+});

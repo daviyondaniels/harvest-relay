@@ -26,6 +26,15 @@ function pageName(path: string): string {
   return PAGES.find(([href]) => href === "/" ? path === "/" : path.startsWith(href))?.[1] ?? "Harvest Relay";
 }
 
+// The phone tab bar sits after <main> in the DOM so Tab reaches the page before it; CSS fixes it to the bottom.
+export function TabBar() {
+  const path = usePathname();
+  const here = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
+  return <nav className="tabbar" aria-label="Pages">
+    {TABS.map(([href, label, full, Icon]) => <a key={href} href={href} aria-label={full} aria-current={here(href) ? "page" : undefined}><Icon /><span>{label}</span></a>)}
+  </nav>;
+}
+
 export function Header({ theme, who, name }: { theme: Theme; who: ReactNode; name?: string }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
@@ -42,9 +51,6 @@ export function Header({ theme, who, name }: { theme: Theme; who: ReactNode; nam
     <a className="brand" href="/"><img src="/mark.png" alt="" width={34} height={34} /><span className="brand-text">Harvest Relay</span></a>
     <span className="page-name" aria-hidden="true">{pageName(path)}</span>
     <nav className="nav" aria-label="Main">{links}</nav>
-    <nav className="tabbar" aria-label="Pages">
-      {TABS.map(([href, label, full, Icon]) => <a key={href} href={href} aria-label={full} aria-current={here(href) ? "page" : undefined}><Icon /><span>{label}</span></a>)}
-    </nav>
     <div className="who-area">{who}</div>
     <div className="menu-wrap" ref={area}>
       <button type="button" className="menu-button" ref={button} aria-expanded={open} aria-controls="site-menu" onClick={() => setOpen(o => !o)}>
