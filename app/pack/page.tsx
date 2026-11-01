@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CUT_FIRST, planOf, stageOf, stageable } from "../../src/commitments.ts";
 import { shortages } from "../../src/orders.ts";
-import { changedBuyers, lockGate, orderSheets, pickLists } from "../../src/pack.ts";
+import { lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
 import { canReceiveLate } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
@@ -16,7 +16,7 @@ import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { newSinceConfirm, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
+import { STALE_HEADING, newSinceConfirm, staleSentence, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
 import { AutoPrint } from "./print.tsx";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || ((shown.on === "stage" || shown.on === "stageall") && !!shown.res))
     ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on === "stageall" ? `stageall-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
   const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
-  const fresh = newSinceConfirm(w), arrived = fresh.length, behind = changedBuyers(w.ledger).map(buyer);
+  const fresh = newSinceConfirm(w), arrived = fresh.length;
   // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
   const confirmForm = (
     <form action={confirmAction} className="form">
@@ -50,7 +50,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
       )}
       <Problem bad={bad} on="lock" name="shipShort" />
       <div className="row">
-        <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className={c && !stale ? undefined : "primary"} known={known} on="lock" bad={bad} />
+        <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className="primary" known={known} on="lock" bad={bad} />
         {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
       </div>
     </form>
@@ -94,11 +94,11 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         <Conflicts w={w} version={version} known={known} page="/pack" params={params} level={2} />
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
-            <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b> {stale ? <span>The plan has changed since. Each changed line says what it was; confirm again to promise the new amounts.</span> : <span>Print the sheets.</span>}</p>
-            {stale && behind.length > 0 && <p className="small">Sheets printed from the plan confirmed at {time(c.confirmed.at)} are out of date for: {behind.join(", ")}.</p>}
+            {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w)} Each changed line on a sheet says what it was.</p></div>}
+            <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && " Print the sheets."}</p>
             {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>Open the first one in Review</a></p>}
             <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
-            {confirmForm}
+            {stale && confirmForm}
           </div>
         )}
 
@@ -117,18 +117,21 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         )}
 
         {!c && confirmForm}
-        {c && canReceiveLate(w) && (
-          <div className="demo no-print" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
+      </section>
+
+      {c && params.print === "1" && <AutoPrint />}
+      {c && <Sheets w={w} version={version} toldSince={toldSince} known={known} bad={bad} />}
+      {c && canReceiveLate(w) && (
+        <details className="demo-tools no-print" open={bad?.on === "late"}>
+          <summary>Demo tools</summary>
+          <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
             <form action={lateMessageAction} className="form">
               <input type="hidden" name="version" value={version} />
               <div><NamedSubmit label={<>Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></>} known={known} on="late" bad={bad} /></div>
             </form>
           </div>
-        )}
-      </section>
-
-      {c && params.print === "1" && <AutoPrint />}
-      {c && <Sheets w={w} version={version} toldSince={toldSince} known={known} bad={bad} />}
+        </details>
+      )}
     </div>
   );
 }
@@ -162,7 +165,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
             {s.undecided && <p className="flag">Cut not decided yet</p>}
             {notes.length > 0 && <p className="small">{notes.join(". ")}.</p>}
             <table>
-              <thead className="sr-only"><tr><th scope="col">Packed</th><th scope="col">Amount</th><th scope="col">Product and grade</th><th scope="col">Grower</th></tr></thead>
+              <thead className="sheet-cols"><tr><th scope="col">Packed</th><th scope="col" className="num">Amount</th><th scope="col">Product and grade</th><th scope="col">Grower</th></tr></thead>
               <tbody>
               {s.lines.map(x => (
                 <tr key={x.lotId}><td><span className="tick" aria-hidden="true" /></td><td className="num"><span className="amt">{weight(x.amount, s.unit)}</span>{x.was !== undefined && <span className="was muted small">(was {weight(x.was, s.unit)} at confirm)</span>}</td><td>{x.product}{x.substitute && " (substitute)"}, {x.grade}</td><td className="muted">{grower(x.growerId)}</td></tr>

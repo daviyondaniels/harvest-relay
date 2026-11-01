@@ -19,7 +19,7 @@ import { numberSpan } from "../lib/quote.ts";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { queueOrder } from "../lib/queue.ts";
-import { overview, questionCounts } from "../lib/view.ts";
+import { INSTRUCTION_LABEL, cutReason, instructionLike, overview, questionCounts } from "../lib/view.ts";
 
 export const dynamic = "force-dynamic";
 type Params = Record<string, string | string[] | undefined>;
@@ -51,6 +51,7 @@ function QueueLink({ i, p, current }: { i: InboxItem; p: Preview | undefined; cu
       <span className="row"><b>{grower(i.source.growerId)}</b></span>
       <span className="muted small">{i.requestId ? "Reply to your ask, " : i.source.id.startsWith("call-") ? "Call note, " : ""}{time(i.receivedAt)}</span>
       <span className="snippet">{i.source.text}</span>
+      {instructionLike(i) && <span className="small">{INSTRUCTION_LABEL}</span>}
       <span><span className={`chip ${st.tone}`}>{st.label}</span></span>
     </a>
   );
@@ -187,7 +188,6 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
 
       {!closed && <div className="form">
         <div className="row">
-          {hasScript && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} quiet /></form></div>}
           {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="dismiss" bad={bad} quiet /></form>}
           {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} quiet /></form>}
         </div>
@@ -242,6 +242,10 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
             </div>
           </form>
         </details>
+        {hasScript && <details className="demo-tools" open={failedOn("script")}>
+          <summary>Demo tools</summary>
+          <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} quiet /></form></div>
+        </details>}
       </div>}
 
       <div className="history">
@@ -262,7 +266,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
       <ChangeTag it={it} p={p} event={event} />
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
-      {!closed && <Impact p={p} names={names} />}
+      {!closed && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
           <p>Supply changed since this was read, and checking it again {p.error ? "found a problem" : "raised a new question"}. Refresh it to review it against current supply.</p>
@@ -436,7 +440,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
 }
 
-function Impact({ p, names }: { p: Preview; names: Map<string, string> }) {
+function Impact({ p, names, why }: { p: Preview; names: Map<string, string>; why?: string }) {
   const changed = p.orders.filter(o => JSON.stringify(o.before) !== JSON.stringify(o.after));
   const extra = p.unallocated.filter(u => u.before !== u.after);
   return (
@@ -453,6 +457,7 @@ function Impact({ p, names }: { p: Preview; names: Map<string, string> }) {
           </div>
         );
       })}
+      {why && <p className="small">{why}</p>}
       {extra.map(u => <div key={u.lotId} className="line"><span>Not going to anyone yet: {names.get(u.lotId) ?? u.lotId}</span><span>{weight(u.after, u.unit)} <span className="muted small">(was {weight(u.before, u.unit)})</span></span></div>)}
     </div>
   );

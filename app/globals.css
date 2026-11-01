@@ -339,7 +339,7 @@ label.check input { width: auto; margin-top: 4px; }
   .card { box-shadow: none; border: 1px solid #999; }
   /* Block layout, not the grid: Chromium left a blank page and put two sheets on one page when grid items broke. */
   .pack, .sheets, .sheet-grid { display: block; }
-  .sheet { display: block; margin: 0; break-inside: avoid; page-break-inside: avoid; break-before: page; page-break-before: always; }
+  .sheet { display: block; margin: 0; padding-top: 12mm; break-inside: avoid; page-break-inside: avoid; break-before: page; page-break-before: always; }
   .sheet > * + * { margin-top: 8px; }
   .sheet .card-head { display: flex; }
   .sheets > .card-head, .sheets > h3 { display: none; }
@@ -359,7 +359,7 @@ label.check input { width: auto; margin-top: 4px; }
   /* The page heading, then the attention card, then the rest in page order. */
   .overview > .main-col { display: contents; }
   .overview .hero { order: -2; }
-  .overview .needs { order: -1; }
+  .overview .needs, .overview .notice-slot, .overview .confirmed-card { order: -1; }
   .page { padding: 4px 16px 24px; }
   h1 { font-size: 1.6rem; }
   .overview, .workspace { grid-template-columns: minmax(0, 1fr); }
@@ -504,3 +504,49 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
   table.buyers td { flex-wrap: wrap; }
   .attention .text span:not(.sr-only), .attention .text b { overflow-wrap: anywhere; }
 }
+
+/* Task 13: Overview hierarchy. Notices and the confirmed card come before the attention card on a phone too. */
+.overview .notice-slot, .overview .confirmed-card { display: grid; gap: 8px; }
+.overview .confirmed-card { padding: 0; background: none; box-shadow: none; }
+.needs .card-head { align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.needs .open-all { font-size: 0.9rem; color: var(--link); min-height: 24px; display: inline-flex; align-items: center; }
+.attention .item .why, .attention .item .flag-note { color: var(--ink); font-size: 0.82rem; }
+.attention .item .flag-note { font-weight: 600; }
+.leave { margin: 12px 0 0; padding: 12px; border-radius: var(--r-s); background: var(--sun-wash); color: var(--sun-ink); }
+.leave a { color: inherit; }
+.warnbox { flex: 1 1 100%; padding: 12px; border: 2px solid var(--sun-ink); border-radius: var(--r-s); background: var(--sun-wash); color: var(--sun-ink); }
+.warnbox h2 { font-size: 1rem; margin: 0 0 4px; }
+.warnbox p { margin: 0; flex: none; }
+.cov-phone, .phone-chip { display: none; }
+@media (max-width: 600px) {
+  .hero .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hero .stat { padding: 8px 8px; gap: 8px; min-width: 0; }
+  .hero .stat b { font-size: 1.15rem; }
+  table.buyers td[data-label="Wants"], table.buyers td.bar, table.buyers td[data-label="Short"] { display: none; }
+  table.buyers tr { margin-bottom: 8px; padding: 8px 12px; }
+  table.buyers td[data-label="Covered / ordered"] { align-items: center; }
+  table.buyers td[data-label="Covered / ordered"]::before { content: none; }
+  table.buyers .cov { display: none; }
+  table.buyers .cov-phone, table.buyers .phone-chip { display: inline-flex; }
+  table.buyers .cov-phone { margin-right: auto; }
+}
+
+/* Task 13: Pack. Column headers on the sheets; the demo controls sit in one closed fold. */
+.sheet .sheet-cols th { text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+.sheet .sheet-cols th.num { text-align: right; }
+.demo-tools { border: 1px dashed var(--field-line); border-radius: var(--r-s); padding: 0 12px; }
+.demo-tools > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.demo-tools[open] { padding-bottom: 12px; }
+.demo-tools .demo { margin-top: 12px; }
+@media print { .sheet .sheet-cols th { color: #000; border-bottom: 1px solid #000; } }
+@media screen and (max-width: 600px) { .sheet .sheet-cols { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
+/* Task 13: on wide screens a row's action sits beside it, not under it, so the card stays short. */
+@media (min-width: 761px) {
+  .attention .item { grid-template-columns: 36px minmax(0, 1fr) auto auto; }
+  .attention .item .chips { grid-column: 3; grid-row: 1; }
+  .attention .item .act { grid-column: 4; grid-row: 1; justify-content: flex-end; align-self: center; }
+  .attention .item .act label.named { flex: 0 1 14em; }
+  .attention .short-order { grid-template-columns: 36px minmax(0, 1fr) repeat(3, auto); }
+  .attention .short-order > .button { grid-column: auto; justify-self: end; }
+}
+.hero-sub a { color: var(--link); min-height: 24px; }

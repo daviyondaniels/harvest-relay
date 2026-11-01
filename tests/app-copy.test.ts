@@ -184,7 +184,7 @@ test("Task 18: on a phone the selected message comes before the queue, which fol
   assert.match(actions, /const anchor = notice\.field \? "" :/, "no fragment for a name or field problem, so focus can go to the field");
   assert.match(actions, /redirect\(`\/review\?\$\{new URLSearchParams\(\{ item, \.\.\.signNotice\(\{ text: "Call logged\. Review it below\.", ok: true, on: "call" \}[^`]*\}#item`\)/, "a logged call lands on its message");
   const css = source("app/globals.css");
-  assert.match(css, /\.overview \.needs \{ order: -1; \}/, "the attention card follows the heading (R13)");
+  assert.match(css, /\.overview \.needs, \.overview \.notice-slot, \.overview \.confirmed-card \{ order: -1; \}/, "the confirmed card and the attention card follow the heading (R13)");
   assert.match(css, /\.overview \.hero \{ order: -2; \}/, "the page heading stays above the attention card (N5)");
 });
 
@@ -439,7 +439,7 @@ test("Task 4: the conflict panel is a fieldset with a legend, reports errors bes
 
 test("a11y: order sheets name their columns, and a changed line's note can wrap", () => {
   const pack = source("app/pack/page.tsx"), css = source("app/globals.css");
-  for (const col of ["Amount", "Product and grade", "Grower"]) assert.match(pack, new RegExp(`<th scope="col">${col}</th>`));
+  for (const col of ["Amount", "Product and grade", "Grower"]) assert.match(pack, new RegExp(`<th scope="col"[^>]*>${col}</th>`));
   assert.match(pack, /className="was muted small"/);
   assert.doesNotMatch(css, /\.sheet td\.num[^{]*\{[^}]*nowrap/, "the whole amount cell must not be forced onto one line");
 });
@@ -541,14 +541,15 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   assert.deepEqual([...tabs.matchAll(/"([^"/][^"]*)"\]/g)].map(m => m[1]), ["Overview", "Review updates", "Orders", "Pack", "Log a call"]);
   assert.match(nav, /aria-current=\{here\(href\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
   assert.doesNotMatch(page, /Open review workspace/);
-  assert.match(page, />Review updates</);
+  assert.match(page, /Open all \{open\.length\} /, "a text link next to the heading, not a full-width bar");
   // The measures, gauge, donut and grower lots sit in one closed fold below Buyer orders; the export link stays out of it.
   const fold = page.indexOf('<details className="day-details">'), end = page.indexOf("</details>", fold);
   assert.ok(fold > page.indexOf('id="orders"') && page.indexOf("<summary>Day details</summary>") > fold);
+  assert.ok(page.indexOf("<SupplyCard", fold) > fold && page.indexOf("<SupplyCard", fold) < end, "Supply against orders is inside the fold");
   assert.doesNotMatch(page.slice(fold, fold + 40), /open/);
   for (const t of ["<DayCard", "<Gauge", "<Donut", 'id="lots"']) assert.ok(page.indexOf(t, fold) > fold && page.indexOf(t, fold) < end, t);
-  assert.ok(page.indexOf('href="/export"') > end, "the export link stays visible");
-  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s"]) assert.ok(page.includes(t), t);
+  assert.ok(page.indexOf('href="/export"') < fold, "the export link stays visible, in the hero line");
+  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s", "Review it"]) assert.ok(page.includes(t), t);
   // Approve and Dismiss post from the Overview and come back to it; Confirm too.
   assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{ready\.reviewHash\}/);
   assert.match(page, /action=\{dismissNoChangeAction\}/);
@@ -565,9 +566,9 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
   const pack = source("app/pack/page.tsx"), css = source("app/globals.css"), domain = source("src/commitments.ts");
   assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
   assert.match(pack, /Ship these orders short without telling the buyer/);
-  assert.match(pack, /Sheets printed from the plan confirmed at \{time\(c\.confirmed\.at\)\} are out of date for:/, "dated by the confirm, not the page load");
-  for (const t of ["Mark all packed", "Mark all handed off", "arrived since you confirmed", "are out of date for:", "Confirmed by ${c.confirmed.by}"]) assert.ok(pack.includes(t), t);
-  assert.match(pack, /className="demo no-print" role="group" aria-label="Demo"[\s\S]*Late grower message \(demo\)/);
+  assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
+  for (const t of ["Mark all packed", "Mark all handed off", "arrived since you confirmed", "staleSentence(w)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
+  assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
   assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);
   const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
   assert.doesNotMatch(print, /\.sheets \.card-head/, "the buyer name's header is not hidden in print");
@@ -582,9 +583,10 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
 test("Task 10: Overview and Pack wording and structure", () => {
   const page = source("app/page.tsx"), pack = source("app/pack/page.tsx"), actions = source("app/actions.ts");
   assert.doesNotMatch(page, /Allocation is a proposal/);
-  assert.match(page, /\{open\.length > 0 && <a className="button" href="\/review">Review updates<\/a>\}/, "an ordinary button, hidden with nothing to review");
+  assert.match(page, /\{open\.length > 0 && <a className="open-all" href="\/review">Open all/, "a text link, hidden with nothing to review");
   assert.doesNotMatch(page, /bar-action/);
   assert.match(page, /<a className="button" href=\{resolve\}>Resolve/, "Resolve is a secondary button beside a Review button");
+  assert.ok(page.indexOf('aria-label="Plan confirmed"') < page.indexOf('id="needs"'), "the confirmed card comes before Needs your attention");
   assert.match(page, /Plan confirmed by \{c\.confirmed\.by\} at \{time\(c\.confirmed\.at\)\}/);
   assert.equal(page.split("Plan confirmed by").length, 2, "said once");
   assert.match(page, /\{counts2\.packed\} of \{counts2\.total\} packed, \{counts2\.handed\} of \{counts2\.total\} handed off/);

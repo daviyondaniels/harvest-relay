@@ -13,7 +13,7 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, becomesShort, byAttention, newSinceConfirm, overview, questionCounts, readyToApprove, stageCounts, staleSinceConfirm, unsettledLine, updateKind, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, INSTRUCTION_LABEL, STALE_HEADING, becomesShort, byAttention, cutReason, instructionLike, leavesShort, newSinceConfirm, overview, questionCounts, readyToApprove, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { PendingCover } from "./pending-cover.tsx";
@@ -140,7 +140,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Messages that arrived after the plan was confirmed, and the plan's own state for the all-clear card.
   const fresh = newSinceConfirm(w), isNew = new Set(fresh.map(i => i.id)), confirmed = !!w.ledger.commitments?.confirmed;
   // Nothing short and no cut open: the plan can be confirmed even while updates wait.
-  const canConfirm = blocking.length === 0 && settle === 0, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
+  // It is offered only when no waiting update would leave an order short if approved (the same preview Review shows).
+  // The domain gate is unchanged; this keeps the one-tap Confirm from leaving a surprise cut behind.
+  const leaves = leavesShort(w, previews), leave = leaves[0];
+  const canConfirm = blocking.length === 0 && settle === 0 && leaves.length === 0, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
+  const leaveLine = leave && <p className="small leave"><b>{grower(leave.item.source.growerId)}'s update would leave {names.get(leave.order.orderId) ?? leave.order.orderId} {weight(leave.order.after.short, leave.order.unit)} short.</b> Review it before confirming. <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>;
+  // Only the first thing to do in the attention card is primary; the rest are plain buttons.
+  let primaryTaken = false;
+  const primary = () => { const p = primaryTaken; primaryTaken = true; return p ? undefined : "primary"; };
   const nextStage = stageable(w, "packed").length > 0 ? "packed" as const : stageable(w, "handed-off").length > 0 ? "handed-off" as const : undefined;
   // The name is asked once on the page: on the first form that records it; the others use it (quiet).
   const lockOn = "lock-plan"; // the confirm and Confirm again forms share a name: only one is on the page
@@ -151,7 +158,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const bad: Bad = notice && !notice.ok && notice.field && row ? { on: `${notice.on}-${row}`, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && !bad ? notice : undefined;
   const reset = notice?.ok && notice.on === "reset";
-  const result = notice && <Result key={String(params.sig)} text={notice.ok ? notice.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : reset ? "hub" : "needs"} />;
+  const result = notice && <Result key={String(params.sig)} text={notice.ok ? notice.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : reset || shown.length === 0 ? "hub" : "needs"} />;
+  // After an approve that left a buyer short, Resolve is shown once: on the order's row below when it is listed
+  // there, else here in the result. The same goes for a cut to settle.
+  const resOrder = notice?.ok && notice.on === "approve" && notice.res?.startsWith("order:") ? notice.res.slice(6) : undefined;
+  const approveLinks = notice?.ok && notice.on === "approve" && notice.res && row
+    ? (resOrder
+      ? (shown.some(x => x.kind === "short" && x.g.orderId === resOrder) ? null : <p className="small"><a className="button" href={`/orders?order=${encodeURIComponent(resOrder)}`}>Resolve<span className="sr-only"> the new shortage</span></a></p>)
+      : (shown.some(x => x.kind === "cut") ? null : <p className="small"><a href={`/review?item=${encodeURIComponent(row)}`}>Decide who takes the cut</a></p>))
+    : null;
   const hidden = (item: string) => <><input type="hidden" name="item" value={item} /><input type="hidden" name="version" value={version} /><input type="hidden" name="from" value="/" /></>;
   return (
     <div className="overview">
@@ -159,7 +174,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <section className="hero" aria-labelledby="hub">
         {reset && result}
         <h1 id="hub" tabIndex={-1}>{HUB_NAME}</h1>
-        <p className="hero-sub"><span>{delivery ? `Delivery ${day(delivery)}` : "No delivery scheduled"}</span><span>{s.orders.length} buyer orders from {new Set(s.lots.map(l => l.growerId)).size} growers</span></p>
+        <p className="hero-sub"><span>{delivery ? `Delivery ${day(delivery)}` : "No delivery scheduled"}</span><span>{s.orders.length} buyer orders from {new Set(s.lots.map(l => l.growerId)).size} growers</span><a href="/export">Download the day record</a></p>
         <div className="stats">
           <span className="stat"><span className="icon"><Crate /></span><b>{weight(rows.reduce((n, r) => n + r.supply, 0), unit)}</b><span>confirmed supply</span></span>
           <span className="stat"><span className="icon"><Basket /></span><b>{weight(ordered, unit)}</b><span>ordered</span></span>
@@ -169,104 +184,114 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </section>
 
-      <section className="card needs" aria-labelledby="needs">
-        {!reset && result}
-        <div className="card-head"><h2 id="needs" tabIndex={-1}>Needs your attention</h2></div>
-        {top && <p className="error" role="alert">{top.text}</p>}
-        {notice?.ok && notice.on === "approve" && notice.res && row && (notice.res.startsWith("order:")
-          ? <p className="small"><a className="button" href={`/orders?order=${encodeURIComponent(notice.res.slice(6))}`}>Resolve<span className="sr-only"> the new shortage</span></a></p>
-          : <p className="small"><a href={`/review?item=${encodeURIComponent(row)}`}>Decide who takes the cut</a></p>)}
-        {shown.length > 0 && (
-          <div className="attention">
-            {shown.map(x => {
-              if (x.kind === "cut") return (
-                <div key={x.c.lotId} className="short-order">
-                  <span className="icon"><Crate /></span>
-                  <span className="text"><b>{x.c.product}: {weight(x.c.excess, x.c.unit)} of what you promised can't be filled</b><span>Promises to settle: a lot dropped below what was promised.</span></span>
-                  <a className="button primary" href="/orders">Decide who takes the cut<span className="sr-only"> on {x.c.product}</span></a>
-                </div>
-              );
-              if (x.kind === "short") {
-                const cover = pendingCover(w, x.g.orderId)[0], resolve = `/orders?order=${encodeURIComponent(x.g.orderId)}`;
-                return (
-                  <div key={x.g.orderId} className="short-order">
-                    <span className="icon"><Crate /></span>
-                    <span className="text"><b>{buyer(x.g.buyerId)}, {weight(x.g.short, x.g.unit)} {x.g.product} short</b><PendingCover w={w} orderId={x.g.orderId} /></span>
-                    {x.st.label !== ORDER_STATUS.short.label && <span className={`chip ${x.st.tone}`}>{x.st.label}</span>}
-                    {cover ? <>
-                      <a className="button primary" href={`/review?item=${encodeURIComponent(cover.items[0].id)}`}>Review {grower(cover.growerId)}'s {cover.items.length === 1 ? "update" : "updates"}<span className="sr-only"> for {buyer(x.g.buyerId)}</span></a>
-                      <a className="button" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>
-                    </> : <a className="button primary" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>}
-                  </div>
-                );
-              }
-              const i = x.i, p = x.p, fresher = isNew.has(i.id);
-              const newChip = fresher && <span className="chip wait">New since you confirmed</span>;
-              if (x.kind === "asks") return (
-                <a key={i.id} href={`/review?item=${i.id}`}>
-                  <span className="icon"><Message /></span>
-                  <span className="text"><b>{grower(i.source.growerId)}</b><span>{i.source.text}</span></span>
-                  <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
-                </a>
-              );
-              const ready = x.kind === "ready" && readyToApprove(i, p) ? p : undefined;
-              const forecast = ready?.change.effect === "forecast";
-              const lot = ready ? s.lots.find(l => l.id === ready.change.lotId) : undefined;
-              const line = ready ? (forecast ? (forecastTag(ready.change) ?? "Forecast, not confirmed") : changeLine(ready.change.before, ready.change.after)) : undefined;
-              const shorts = ready ? becomesShort(ready) : [];
-              const on = (form: string) => `${form}-${i.id}`;
-              return (
-                <div key={i.id} className="item">
-                  <span className="icon"><Message /></span>
-                  <span className="text">
-                    <a href={`/review?item=${i.id}`}><b>{grower(i.source.growerId)}</b></a>
-                    <span>{i.source.text}</span>
-                    {ready && <span className="change"><b>{lot ? `${lot.product}: ` : ""}{line}</b>{forecast && " (forecast, not confirmed supply)"}</span>}
-                    {shorts.map(o => <span key={o.orderId} className="bad">{names.get(o.orderId) ?? o.orderId} becomes short {weight(o.after.short, o.unit)}</span>)}
-                  </span>
-                  <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
-                  {ready ? (
-                    <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
-                      <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className="primary" known={known} on={on("approve")} bad={bad} quiet={quiet()} />
-                    </form>
-                  ) : (
-                    <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
-                      <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} known={known} on={on("dismiss")} bad={bad} quiet={quiet()} />
-                    </form>
-                  )}
-                </div>
-              );
-            })}
-            {work.length > shown.length && <a href={work.slice(shown.length).some(x => x.kind === "ready" || x.kind === "asks" || x.kind === "dismiss") ? "/review" : "/orders"} className="more">and {work.length - shown.length} more <span className="sr-only">things that need you</span></a>}
-          </div>
-        )}
-        {c ? (
+      {(result || top || approveLinks) && !reset && <div className="notice-slot">{result}{top && <p className="error" role="alert">{top.text}</p>}{approveLinks}</div>}
+
+      {c && (
+        <section className="card confirmed-card" aria-label="Plan confirmed">
           <div className="clear confirmed" role="group" aria-label="Plan confirmed">
+            {stale && <div className="warnbox"><h2>{STALE_HEADING}</h2><p>{staleSentence(w)}</p></div>}
             <p><b>Plan confirmed by {c.confirmed.by} at {time(c.confirmed.at)}</b></p>
             <p>{counts2.packed} of {counts2.total} packed, {counts2.handed} of {counts2.total} handed off</p>
             <div className="row">
+              {stale && canConfirm && <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet()} /></form>}
               {nextStage && (
                 <form action={stageAllAction}>
                   <input type="hidden" name="version" value={version} /><input type="hidden" name="stage" value={nextStage} /><input type="hidden" name="from" value="/" />
-                  <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className="primary" known={known} on="stageall-stageall" bad={bad} quiet={quiet()} />
+                  <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className={stale ? undefined : "primary"} known={known} on="stageall-stageall" bad={bad} quiet={quiet()} />
                 </form>
               )}
-              <a className="button" href="/pack?print=1">Print sheets</a>
-              {stale && (canConfirm
-                ? <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className={nextStage ? undefined : "primary"} known={known} on={lockOn} bad={bad} quiet={quiet()} /></form>
-                : <a className="button" href="/pack">Confirm again on Pack</a>)}
+              <a className={`button${!stale && !nextStage ? " primary" : ""}`} href="/pack?print=1">Print sheets</a>
             </div>
-            {stale && <p className="small">The plan has changed since you confirmed. Confirm again to promise the new amounts.</p>}
+            {stale && !canConfirm && (leaveLine ?? <p className="small"><a href="/pack">Confirm again on Pack</a></p>)}
           </div>
-        ) : canConfirm ? (
-          <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
-            <p>{shown.length === 0 ? "Everything is covered. Confirm today's plan" : "Nothing is short. You can confirm today's plan."}</p>
-            {warnings.length > 0 && <p className="small">{unsettledLine(warnings.length)}</p>}
-            <NamedSubmit label="Confirm today's plan" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet()} />
-          </form>
-        ) : null}
-        {open.length > 0 && <a className="button" href="/review">Review updates</a>}
-      </section>
+        </section>
+      )}
+
+      {(shown.length > 0 || (!c && (canConfirm || leave))) && (
+        <section className="card needs" aria-labelledby={shown.length > 0 ? "needs" : undefined}>
+          {shown.length > 0 && <div className="card-head">
+            <h2 id="needs" tabIndex={-1}>Needs your attention</h2>
+            {open.length > 0 && <a className="open-all" href="/review">Open all {open.length} {open.length === 1 ? "update" : "updates"}</a>}
+          </div>}
+          {shown.length > 0 && (
+            <div className="attention">
+              {shown.map(x => {
+                if (x.kind === "cut") return (
+                  <div key={x.c.lotId} className="short-order">
+                    <span className="icon"><Crate /></span>
+                    <span className="text"><b>{x.c.product}: {weight(x.c.excess, x.c.unit)} of what you promised can't be filled</b><span>Promises to settle: a lot dropped below what was promised.</span></span>
+                    <a className={`button ${primary() ?? ""}`.trim()} href="/orders">Decide who takes the cut<span className="sr-only"> on {x.c.product}</span></a>
+                  </div>
+                );
+                if (x.kind === "short") {
+                  const cover = pendingCover(w, x.g.orderId)[0], resolve = `/orders?order=${encodeURIComponent(x.g.orderId)}`;
+                  return (
+                    <div key={x.g.orderId} className="short-order">
+                      <span className="icon"><Crate /></span>
+                      <span className="text"><b>{buyer(x.g.buyerId)}, {weight(x.g.short, x.g.unit)} {x.g.product} short</b><PendingCover w={w} orderId={x.g.orderId} /></span>
+                      {x.st.label !== ORDER_STATUS.short.label && <span className={`chip ${x.st.tone}`}>{x.st.label}</span>}
+                      {cover ? <>
+                        <a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${encodeURIComponent(cover.items[0].id)}`}>Review {grower(cover.growerId)}'s {cover.items.length === 1 ? "update" : "updates"}<span className="sr-only"> for {buyer(x.g.buyerId)}</span></a>
+                        <a className="button" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>
+                      </> : <a className={`button ${primary() ?? ""}`.trim()} href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>}
+                    </div>
+                  );
+                }
+                const i = x.i, p = x.p, fresher = isNew.has(i.id);
+                const newChip = fresher && <span className="chip wait">New since you confirmed</span>;
+                const ready = (x.kind === "ready" || x.kind === "unchecked") && readyToApprove(i, p) ? p : undefined;
+                if (!ready && (x.kind === "asks" || x.kind === "unchecked")) return (
+                  <a key={i.id} href={`/review?item=${i.id}`}>
+                    <span className="icon"><Message /></span>
+                    <span className="text"><b>{grower(i.source.growerId)}</b><span>{i.source.text}</span></span>
+                    <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
+                  </a>
+                );
+                const forecast = ready?.change.effect === "forecast";
+                const lot = ready ? s.lots.find(l => l.id === ready.change.lotId) : undefined;
+                const line = ready ? (forecast ? (forecastTag(ready.change) ?? "Forecast, not confirmed") : changeLine(ready.change.before, ready.change.after)) : undefined;
+                const shorts = ready ? becomesShort(ready) : [];
+                const why = ready && shorts.length ? cutReason(w, ready, id => names.get(id) ?? id) : undefined;
+                const on = (form: string) => `${form}-${i.id}`;
+                return (
+                  <div key={i.id} className="item">
+                    <span className="icon"><Message /></span>
+                    <span className="text">
+                      <a href={`/review?item=${i.id}`}><b>{grower(i.source.growerId)}</b></a>
+                      <span>{i.source.text}</span>
+                      {ready && <span className="change"><b>{lot ? `${lot.product}: ` : ""}{line}</b>{forecast && " (forecast, not confirmed supply)"}</span>}
+                      {shorts.map(o => <span key={o.orderId} className="bad">{names.get(o.orderId) ?? o.orderId} becomes short {weight(o.after.short, o.unit)}</span>)}
+                      {why && <span className="why">{why}</span>}
+                      {!ready && instructionLike(i) && <span className="flag-note">{INSTRUCTION_LABEL}</span>}
+                    </span>
+                    <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
+                    {ready && shorts.length > 0 ? (
+                      <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update, it leaves a buyer short</span></a></span>
+                    ) : ready ? (
+                      <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
+                        <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet()} />
+                      </form>
+                    ) : (
+                      <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
+                        <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} className={primary()} known={known} on={on("dismiss")} bad={bad} quiet={quiet()} />
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
+              {work.length > shown.length && <a href={work.slice(shown.length).some(x => x.kind === "ready" || x.kind === "asks" || x.kind === "unchecked" || x.kind === "dismiss") ? "/review" : "/orders"} className="more">and {work.length - shown.length} more <span className="sr-only">things that need you</span></a>}
+            </div>
+          )}
+          {!c && canConfirm && (
+            <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
+              <p>{shown.length === 0 ? "Everything is covered. Confirm today's plan" : "Nothing is short. You can confirm today's plan."}</p>
+              {warnings.length > 0 && <p className="small">{unsettledLine(warnings.length)}</p>}
+              <NamedSubmit label="Confirm today's plan" className={primary()} known={known} on={lockOn} bad={bad} quiet={quiet()} />
+            </form>
+          )}
+          {!c && !canConfirm && leaveLine}
+        </section>
+      )}
 
       <section className="card orders" aria-labelledby="orders">
         <div className="card-head"><h2 id="orders">Buyer orders</h2><span className="row small muted"><Calendar /> {delivery ? day(delivery) : ""}</span></div>
@@ -276,7 +301,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <tr key={o.id}>
               <td data-label="Buyer"><b>{buyer(o.buyerId)}</b></td>
               <td data-label="Wants">{o.product}{o.approvedSubstitutions.length ? <span className="muted small"><br />or {o.approvedSubstitutions.map(x => x.maxAmount !== undefined ? `${x.product} up to ${weight(x.maxAmount, normalize(o.quantity).unit)}` : x.product).join(", ")}</span> : null}</td>
-              <td data-label="Covered / ordered" className="num">{weight(direct + sub, unit)} / {weight(want, unit)}</td>
+              <td data-label="Covered / ordered" className="num"><span className="cov">{weight(direct + sub, unit)} / {weight(want, unit)}</span><span className="cov-phone">{direct + sub} of {weight(want, unit)}</span>{gap > 0 ? <span className="chip block phone-chip">{weight(gap, unit)} short</span> : <span className="chip ready phone-chip">Covered</span>}</td>
               <td className="bar"><div className="progress" aria-hidden="true"><span style={{ width: `${(100 * direct) / total}%` }} /><span style={{ width: `${(100 * sub) / total}%` }} /></div></td>
               <td data-label="Short" className={`num${gap ? " worse" : ""}`}>{weight(gap, unit)}</td>
             </tr>
@@ -284,10 +309,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </table></div>
       </section>
 
-      <SupplyCard rows={rows} unit={unit} />
-
       <details className="day-details">
         <summary>Day details</summary>
+        <SupplyCard rows={rows} unit={unit} />
         <DayCard m={measures(w)} names={names} />
         <div className="day-grid">
           <section className="card side" aria-labelledby="coverage">
@@ -309,7 +333,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </section>
         </div>
       </details>
-      <p><a className="button" href="/export">Download the day record</a></p>
       </div>
     </div>
   );
