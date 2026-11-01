@@ -301,14 +301,15 @@ label.check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.92
 label.check input { width: auto; margin-top: 3px; }
 .lapsed b { color: var(--beet); }
 .sheets { display: grid; gap: 14px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
 .sheet { gap: 10px; break-inside: avoid; page-break-inside: avoid; }
 .sheet h4 { font-size: 1.05rem; margin: 0; }
 .sheet .flag.told { color: var(--ink); border-color: var(--line); font-weight: 600; }
+.sheet .card-head { flex-wrap: wrap; }
 .sheet .card-head span, .sheet .amt { white-space: nowrap; }
 .sheet .was { display: block; }
 .sheet table { width: 100%; }
-.sheet td { overflow-wrap: anywhere; vertical-align: top; }
+.sheet td { overflow-wrap: normal; vertical-align: top; }
 .sheet { min-width: 0; }
 .locked { display: grid; gap: 10px; padding: 12px 14px; border-radius: var(--r-s); background: var(--leaf-wash); }
 .locked p { margin: 0; }
@@ -329,10 +330,13 @@ label.check input { width: auto; margin-top: 3px; }
   body { background: #fff; color: #000; }
   .page { padding: 0; max-width: none; }
   .card { box-shadow: none; border: 1px solid #999; }
-  .sheet-grid { grid-template-columns: minmax(0, 1fr); }
-  .sheet { break-inside: avoid; page-break-inside: avoid; break-before: page; page-break-before: always; }
-  .sheets h3, .sheets .card-head { display: none; }
-  .sheets > h3:first-of-type + .sheet-grid .sheet:first-child { break-before: auto; page-break-before: auto; }
+  /* Block layout, not the grid: Chromium left a blank page and put two sheets on one page when grid items broke. */
+  .pack, .sheets, .sheet-grid { display: block; }
+  .sheet { display: block; margin: 0; break-inside: avoid; page-break-inside: avoid; break-before: page; page-break-before: always; }
+  .sheet > * + * { margin-top: 8px; }
+  .sheet .card-head { display: flex; }
+  .sheets > .card-head, .sheets > h3 { display: none; }
+  .sheets > h3:first-of-type + .sheet-grid > .sheet:first-child { break-before: auto; page-break-before: auto; }
 }
 
 @media (max-width: 1180px) {
@@ -417,4 +421,15 @@ label.check input { width: auto; margin-top: 3px; }
   .attention .short-order > a.plain { min-height: 44px; grid-column: 1 / -1; }
   .clear button, .clear input, .clear .button { min-height: 44px; }
   .day-details > summary { min-height: 44px; }
+}
+
+/* Phone: every button is a 44 px target; a sheet's lines stack so the table never scrolls sideways at 320 px. */
+@media (max-width: 600px) {
+  button, .button, .menu-button, .who-line .link, .menu-who .link { min-height: 44px; }
+  .sheet tbody, .sheet tr { display: block; }
+  .sheet tr { display: grid; grid-template-columns: 1.6em minmax(0, 1fr); gap: 2px 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .sheet td { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .sheet td:nth-child(n+2) { grid-column: 2; }
+  .sheet td[colspan] { grid-column: 1 / -1; width: auto; }
+  .sheet table { display: block; }
 }

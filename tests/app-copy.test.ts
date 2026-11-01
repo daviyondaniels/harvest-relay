@@ -543,3 +543,20 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   assert.match(page, /<h1 id="hub" tabIndex=\{-1\}>/);
   assert.match(source("app/actions.ts"), /on: "reset"/);
 });
+
+test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and print rules", () => {
+  const pack = source("app/pack/page.tsx"), css = source("app/globals.css"), domain = source("src/commitments.ts");
+  assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
+  assert.match(pack, /<\/label>|Ship these orders short without telling the buyer/);
+  for (const t of ["Mark all packed", "Mark all handed off", "arrived since you confirmed", "are out of date for:", "Confirmed by ${c.confirmed.by}"]) assert.ok(pack.includes(t), t);
+  assert.match(pack, /className="demo no-print" role="group" aria-label="Demo"[\s\S]*Late grower message \(demo\)/);
+  assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);
+  const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
+  assert.doesNotMatch(print, /\.sheets \.card-head/, "the buyer name's header is not hidden in print");
+  assert.match(print, /\.sheets > \.card-head, \.sheets > h3 \{ display: none; \}/, "only the page's own heading is hidden");
+  assert.match(print, /\.sheet-grid \{ display: block; \}/, "block layout, not the grid");
+  assert.match(print, /\.sheet \{[^}]*break-before: page/);
+  assert.match(print, /\.sheet:first-child \{ break-before: auto/);
+  assert.match(css, /@media \(max-width: 600px\) \{\s*button, \.button, \.menu-button, \.who-line \.link, \.menu-who \.link \{ min-height: 44px; \}/);
+  assert.doesNotMatch(css, /\.sheet td \{ overflow-wrap: anywhere; vertical-align/, "desktop order-sheet columns do not split words");
+});

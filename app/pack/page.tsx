@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { CUT_FIRST, changedSinceConfirm, planOf, stageOf } from "../../src/commitments.ts";
+import { CUT_FIRST, changedSinceConfirm, planOf, stageOf, stageable } from "../../src/commitments.ts";
 import { shortages } from "../../src/orders.ts";
-import { lockGate, orderSheets, pickLists } from "../../src/pack.ts";
+import { changedBuyers, lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
 import { canReceiveLate } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
-import { confirmAction, lateMessageAction, stageAction } from "../actions.ts";
+import { confirmAction, lateMessageAction, stageAction, stageAllAction } from "../actions.ts";
 import { HUB_NAME, ORDER_STATUS, STAGE, buyer, day, grower, promiseText, time, weight } from "../lib/format.ts";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current } from "../lib/hub.ts";
@@ -16,6 +16,7 @@ import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
+import { newSinceConfirm } from "../lib/view.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Pack" };
@@ -38,9 +39,24 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   // A refused confirm is shown beside the Ship short box when it is on the page, else at the top.
   const known = !!await rememberedName();
   // A missing name is shown beside the name field of the form that was refused (confirm, late message, or one order's stage).
-  const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || (shown.on === "stage" && !!shown.res))
-    ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
+  const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || ((shown.on === "stage" || shown.on === "stageall") && !!shown.res))
+    ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on === "stageall" ? `stageall-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
   const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
+  const arrived = newSinceConfirm(w).length, behind = changedBuyers(w.ledger).map(buyer);
+  // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
+  const confirmForm = (
+    <form action={confirmAction} className="form">
+      <input type="hidden" name="version" value={version} />
+      {blocking.length > 0 && (
+        <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
+      )}
+      <Problem bad={bad} on="lock" name="shipShort" />
+      <div className="row">
+        <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className={c && !stale ? undefined : "primary"} known={known} on="lock" bad={bad} />
+        {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
+      </div>
+    </form>
+  );
   return (
     <div className="pack">
       <section className="panel no-print" aria-labelledby="pack">
@@ -57,7 +73,10 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b> {stale ? <span>The plan has changed since. Each changed line says what it was; confirm again to promise the new amounts.</span> : <span>Print the sheets.</span>}</p>
-            <div className="row"><PrintButton /><a className="button" href="/export">Download day record</a></div>
+            {stale && behind.length > 0 && <p className="small">Sheets printed before {time(new Date().toISOString())} are out of date for: {behind.join(", ")}.</p>}
+            {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href="/review">Open Review</a></p>}
+            <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
+            {confirmForm}
           </div>
         )}
 
@@ -85,22 +104,14 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           </li>
         </ul>
 
-        <form action={confirmAction} className="form">
-          <input type="hidden" name="version" value={version} />
-          {blocking.length > 0 && (
-            <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
-          )}
-          <Problem bad={bad} on="lock" name="shipShort" />
-          <div className="row">
-            <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className={c && !stale ? undefined : "primary"} known={known} on="lock" bad={bad} />
-            {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
-          </div>
-        </form>
+        {!c && confirmForm}
         {c && canReceiveLate(w) && (
-          <form action={lateMessageAction} className="form no-print">
-            <input type="hidden" name="version" value={version} />
-            <div><NamedSubmit label={<>Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></>} known={known} on="late" bad={bad} /></div>
-          </form>
+          <div className="demo no-print" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
+            <form action={lateMessageAction} className="form">
+              <input type="hidden" name="version" value={version} />
+              <div><NamedSubmit label={<>Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></>} known={known} on="late" bad={bad} /></div>
+            </form>
+          </div>
         )}
       </section>
 
@@ -112,7 +123,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
 // Each sheet is one printed page: the hub, the delivery day, then what to pack with a box to
 // tick. Names only; no internal IDs.
 function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: number; toldSince: Set<string>; known: boolean; bad: Bad }) {
-  const l = w.ledger, c = l.commitments!, picks = pickLists(l), sheets = orderSheets(l), plan = planOf(l);
+  const l = w.ledger, c = l.commitments!, picks = pickLists(l), sheets = orderSheets(l), plan = planOf(l), stamp = `Confirmed by ${c.confirmed.by} at ${time(c.confirmed.at)}.`;
   return (
     <section className="sheets" aria-labelledby="sheets">
       <div className="card-head">
@@ -120,10 +131,19 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
       </div>
 
       <h3>Order sheets</h3>
+      <div className="row no-print">
+        {(["packed", "handed-off"] as const).map(st => stageable(w, st).length > 0 && (
+          <form key={st} action={stageAllAction}>
+            <input type="hidden" name="version" value={version} />
+            <input type="hidden" name="stage" value={st} />
+            <NamedSubmit label={st === "packed" ? "Mark all packed" : "Mark all handed off"} known={known} on={`stageall-${st}`} bad={bad} />
+          </form>
+        ))}
+      </div>
       <div className="sheet-grid">
         {sheets.map(s => { const st = stageOf(l, s.orderId), notes = promiseText(st, plan.allocations.filter(a => a.orderId === s.orderId).reduce((n, a) => n + a.amount, 0)); return (
           <article key={s.orderId} className="card sheet">
-            <p className="sheet-hub small">{HUB_NAME}, delivery {day(s.deliveryOn)}</p>
+            <p className="sheet-hub small">{HUB_NAME}, delivery {day(s.deliveryOn)}. {stamp}</p>
             <div className="card-head"><h4 id={`sheet-${s.orderId}`} tabIndex={-1}>{buyer(s.buyerId)}</h4><span className={`chip ${STAGE[s.stage].tone}`}>{STAGE[s.stage].label}</span></div>
             <p>Ordered <b>{weight(s.ordered, s.unit)} {s.product}</b></p>
             {s.undecided && <p className="flag">Cut not decided yet</p>}
@@ -156,7 +176,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
       <div className="sheet-grid">
         {picks.map(p => (
           <article key={p.growerId} className="card sheet">
-            <p className="sheet-hub small">{HUB_NAME}, pick list</p>
+            <p className="sheet-hub small">{HUB_NAME}, pick list, delivery {[...new Set(p.lines.map(x => day(x.deliveryOn)))].join(", ")}. {stamp}</p>
             <h4>{grower(p.growerId)}</h4>
             {p.lines.map(l => (
               <div key={l.lotId}>

@@ -6,7 +6,7 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, type Option } from "../src/orders.ts";
-import { conflicts, confirmPlan, decideCut, markStage } from "../src/commitments.ts";
+import { conflicts, confirmPlan, decideCut, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
@@ -464,6 +464,25 @@ export async function stageAction(f: FormData) {
     }, { rebase: true });
     notice = { text: said, ok: true, on: "stage", res: str(f, "order") };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stage", field: e.field, res: order } : { text: e instanceof Error ? e.message : "The stage could not be saved" }; }
+  toPack(notice);
+}
+
+// Marks every order that can take the stage, in one record. The domain skips an order that cannot (the same
+// rules as one order's button), so a sheet from before another change still applies to the rest.
+export async function stageAllAction(f: FormData) {
+  let notice: Notice;
+  const stage = str(f, "stage");
+  try {
+    if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
+    const who = await named(f);
+    let said = "";
+    await act(Number(str(f, "version")), w => {
+      const { next, marked } = markAllStage(w, stage, who, now());
+      said = `${marked.length} ${marked.length === 1 ? "order" : "orders"} marked ${stage === "packed" ? "packed" : "handed off"}.`;
+      return next;
+    }, { rebase: true });
+    notice = { text: said, ok: true, on: "stageall", res: stage };
+  } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stageall", field: e.field, res: stage } : { text: e instanceof Error ? e.message : "The orders could not be marked" }; }
   toPack(notice);
 }
 

@@ -103,7 +103,7 @@ export function confirmPlan(w: Workbench, by: string, at: string, opts: { shipSh
   const who = text(by, NAME_MAX, "Actor name"), when = stamp(at);
   if (conflicts(w.ledger).length) throw new Error(CUT_FIRST);
   const { blocking } = lockGate(w);
-  if (blocking.length && !opts.shipShort) throw new Error(`Orders still to resolve: ${blocking.join(", ")}. Resolve them or choose Ship short`);
+  if (blocking.length && !opts.shipShort) throw new Error(`Orders still to resolve: ${blocking.join(", ")}. Resolve them, or tick “Ship these orders short” to confirm anyway.`);
   const plan = planOf(w.ledger), promised: Promised[] = [];
   for (const a of plan.allocations) {
     const same = promised.find(p => p.orderId === a.orderId && p.lotId === a.lotId && p.kind === a.kind);
@@ -167,6 +167,18 @@ export function markStage(w: Workbench, orderId: string, stage: "packed" | "hand
   const next = structuredClone(w);
   next.ledger.commitments!.log.push({ kind: "stage", by: who, at: when, orderId, stage });
   return next;
+}
+
+// The orders that could take this stage now, by exactly the rules of markStage (stage order, open cuts).
+export function stageable(w: Workbench, stage: "packed" | "handed-off"): string[] {
+  return w.ledger.snapshot.orders.filter(o => { try { markStage(w, o.id, stage, "x", "2000-01-01T00:00:00.000Z"); return true; } catch { return false; } }).map(o => o.id);
+}
+// Marks every order that can take the stage, and skips the rest. Nothing to mark is a refusal, not a silent success.
+export function markAllStage(w: Workbench, stage: "packed" | "handed-off", by: string, at: string): { next: Workbench; marked: string[] } {
+  text(by, NAME_MAX, "Actor name"); stamp(at);
+  const marked = stageable(w, stage);
+  if (marked.length === 0) throw new Error(`No order can be marked ${stage === "packed" ? "packed" : "handed off"} right now.`);
+  return { next: marked.reduce((n, id) => markStage(n, id, stage, by, at), w), marked };
 }
 
 // Lines whose amount differs from the latest confirm; now 0 means the line is gone, was 0 that it is new.
