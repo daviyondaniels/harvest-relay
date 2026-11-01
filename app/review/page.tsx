@@ -13,7 +13,8 @@ import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
-import { NameNeeded } from "../name-needed.tsx";
+import { NameField, NamedSubmit } from "../named-submit.tsx";
+import { rememberedName } from "../lib/name.ts";
 import { queueOrder } from "../lib/queue.ts";
 import { overview, questionCounts } from "../lib/view.ts";
 
@@ -69,18 +70,19 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
   const items = queueOrder(w.items, counts), isDone = (i: InboxItem) => i.state === "approved" || i.state === "dismissed";
   const todo = items.filter(i => !isDone(i)), done = items.filter(isDone);
   const it = selected(w, wanted);
-  const live = await liveAllowance(), rec = recording();
+  const live = await liveAllowance(), rec = recording(), known = !!await rememberedName();
   // Refresh all does exactly the items counted here: those that need a refresh. Items only quietly
   // checked again against moved supply are neither counted nor refreshed by it.
   const stale = needingRefresh(w).length;
+  // A missing name on "Refresh all stale items" is shown beside that form, and the folded queue opens to it.
+  const allBad: Bad = notice && !notice.ok && notice.on === "refreshAll" && notice.field === "who" && stale > 0 ? { on: "refreshAll", field: "who", text: notice.text } : undefined;
   return (
     <div className="workspace item-first">
-      {notice?.field === "who" && <NameNeeded key={String(params.sig)} text={notice.text} />}
       <nav className="queue" id="queue" aria-label="Incoming messages">
-        <QueueFold count={todo.length} noun="messages" open={false}>
+        <QueueFold count={todo.length} noun="messages" open={!!allBad}>
           <h2>Incoming</h2>
           {stale > 0 && it && <form action={refreshAllAction} className="form"><Hidden item={it.id} version={version} />
-            <button type="submit">Refresh all stale items</button>
+            <NamedSubmit label="Refresh all stale items" known={known} on="refreshAll" bad={allBad} />
             <span className="fine-print"> Supply changed since {stale === 1 ? "one message was" : `${stale} messages were`} read.</span>
           </form>}
           {todo.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} />)}
@@ -91,13 +93,13 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
           </details>}
         </QueueFold>
       </nav>
-      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} page="/review" id={it.id} params={params} level={3} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
+      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={3} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
         : <p className="muted">No messages yet.</p>}
     </div>
   );
 }
 
-function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; cuts: ReactNode; sig: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
+function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; cuts: ReactNode; sig: string; known: boolean; queueFocus?: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
   const closed = it.state === "approved" || it.state === "dismissed";
   const i = it.proposal?.interpretation, lot = w.ledger.snapshot.lots.find(l => l.id === i?.lotId);
   const quotes = (f: Field) => (it.proposal?.clarifications ?? []).filter(c => c.field === f && c.answer).map(c => c.answer!.source.text.slice(c.answer!.span.start, c.answer!.span.end));
@@ -115,13 +117,14 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
   const ask = it.requestId ? w.resolutions.find(r => r.id === it.requestId) : undefined, askOrder = ask && w.ledger.snapshot.orders.find(o => o.id === ask.orderId);
   const names = new Map<string, string>([...w.ledger.snapshot.orders.map(o => [o.id, buyer(o.buyerId)] as const), ...w.ledger.snapshot.lots.map(l => [l.id, `${l.product}, ${grower(l.growerId)}`] as const)]);
   const from = grower(it.source.growerId);
-  // A problem with a field of a form still on the page is shown beside that field; a name
-  // problem at the header's name field (NameNeeded); anything else at the top of the message.
-  const forms = closed ? [] : ["hold", ...(i ? ["ask", "reply", "correct"] : ["hand"])];
-  const bad: Bad = notice && !notice.ok && notice.field && notice.field !== "who" && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
-  const top = notice && !notice.ok && notice.field !== "who" && !bad ? notice : undefined;
+  // A problem with a field of a form still on the page (a missing name included) is shown
+  // beside that field; anything else at the top of the message.
+  const forms = closed ? [] : ["hold", ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
+    ...(i ? ["ask", "reply", "correct", ...(i.lotId ? ["lot"] : [])] : ["hand"]), ...(it.proposal ? [p.needsRefresh ? "refresh" : "approve"] : [])];
+  const bad: Bad = notice && !notice.ok && notice.field && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
+  const top = notice && !notice.ok && !bad && !queueFocus ? notice : undefined;
   // Where focus goes: the field with the problem, else the result's heading.
-  const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : notice && notice.field !== "who" ? "msg" : undefined;
+  const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : queueFocus ?? (notice ? "msg" : undefined);
   return <>
     <section className="panel" id="item" aria-labelledby="msg">
       {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} />}
@@ -167,16 +170,16 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
 
       {!closed && <div className="form">
         <div className="row">
-          {hasScript && <form action={scriptedReplyAction}><Hidden {...v} /><button type="submit">Receive the grower's reply (demo)</button></form>}
-          {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction}><Hidden {...v} /><button type="submit">No change, dismiss</button></form>}
-          {live > 0 && <form action={liveReadAction}><Hidden {...v} /><button type="submit">{i ? "Read again automatically" : "Read automatically"}</button></form>}
+          {hasScript && <form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} /></form>}
+          {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="hold" bad={bad} /></form>}
+          {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} /></form>}
         </div>
-        {!i && <HandForm it={it} w={w} v={v} bad={bad} />}
-        {i?.lotId && <details>
+        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} />}
+        {i?.lotId && <details open={bad?.on === "lot"}>
           <summary>Mark the lot as checked</summary>
           <form action={confirmLotAction} className="form"><Hidden {...v} />
             <p className="muted small">Adds a line to the history that you checked this is the right lot. Approving does not need it.</p>
-            <div><button type="submit">Confirm lot</button></div>
+            <div><NamedSubmit label="Confirm lot" known={known} on="lot" bad={bad} /></div>
           </form>
         </details>}
         {i && <details open={bad?.on === "ask"}>
@@ -185,7 +188,7 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
             <FieldSelect only={byField.size ? [...byField.keys()] : undefined} bad={bad} on="ask" />
             <label>Question<input name="question" required maxLength={500} placeholder="How much is in each case?" {...invalid(bad, "ask", "question")} /></label>
             <Problem bad={bad} on="ask" name="question" />
-            <div><button type="submit">Record question <span className="sr-only">for {from}</span></button></div>
+            <div><NamedSubmit label=<>Record question <span className="sr-only">for {from}</span></> known={known} on="ask" bad={bad} /></div>
           </form>
         </details>}
         {i && <details open={bad?.on === "reply"}>
@@ -198,7 +201,7 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
             <Problem bad={bad} on="reply" name="quote" />
             <label>Value<input name="value" required placeholder="3 kg" {...invalid(bad, "reply", "value")} /></label>
             <Problem bad={bad} on="reply" name="value" />
-            <div className="row"><button type="submit">Apply answer</button>{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
+            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
           </form>
         </details>}
         {i && <details open={bad?.on === "correct"}>
@@ -210,7 +213,7 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
             <Problem bad={bad} on="correct" name="quote" />
             <label>Value<input name="value" required placeholder="add-quantity, 4 cases, standard or 2026-10-30" {...invalid(bad, "correct", "value")} /></label>
             <Problem bad={bad} on="correct" name="value" />
-            <div><button type="submit">Apply correction</button></div>
+            <div><NamedSubmit label="Apply correction" known={known} on="correct" bad={bad} /></div>
           </form>
         </details>}
         <details open={bad?.on === "hold"}>
@@ -218,6 +221,7 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
           <form className="form"><Hidden {...v} />
             <label>Note or reason<input name="note" required maxLength={500} {...invalid(bad, "hold", "note")} /></label>
             <Problem bad={bad} on="hold" name="note" />
+            <NameField known={known} on="hold" bad={bad} />
             <div className="row">
               <button type="submit" formAction={pendingAction}>Leave pending</button>
               <button type="submit" formAction={returnAction}>Return to grower</button>
@@ -250,14 +254,14 @@ function Item({ it, p, version, notice, cuts, sig, live, hasScript, w }: { it: I
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
           <p>Supply changed since this was read, and checking it again {p.error ? "found a problem" : "raised a new question"}. Refresh it to review it against current supply.</p>
-          <div><button type="submit">Refresh review</button></div>
+          <div><NamedSubmit label="Refresh review" known={known} on="refresh" bad={bad} /></div>
         </form>
       ) : !closed && it.proposal && (
         <form action={approveAction} className="panel"><Hidden {...v} />
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
           <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
           <div className="row">
-            <button className="primary" type="submit" disabled={off} aria-describedby={off ? "approve-why" : undefined}>Approve supply change</button>
+            <NamedSubmit label="Approve supply change" className="primary" known={known} on="approve" bad={bad} disabled={off} aria-describedby={off ? "approve-why" : undefined} />
             {off && <span id="approve-why" className="small muted">{why}</span>}
           </div>
           <p className="fine-print">Approving changes this lot's confirmed supply only. It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
@@ -290,7 +294,7 @@ function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnT
 // The coordinator's own reading of an unread message, prefilled from the words in it. The
 // grower is the message's; the lot is one of theirs. A call note is its own evidence.
 const UNIT_NAMES: [string, string][] = [["lb", "lb"], ["kg", "kg"], ["g", "g"], ["each", "each"], ["case", "cases"]];
-function HandForm({ it, w, v, bad }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; v: { item: string; version: number }; bad: Bad }) {
+function HandForm({ it, w, v, bad, known }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; v: { item: string; version: number }; bad: Bad; known: boolean }) {
   const guess = suggestReading(w, it.id), call = it.source.id.startsWith("call-"), s = w.ledger.snapshot;
   const lots = s.lots.filter(l => l.growerId === it.source.growerId);
   const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
@@ -328,7 +332,7 @@ function HandForm({ it, w, v, bad }: { it: InboxItem; w: Awaited<ReturnType<type
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
-        <div><button type="submit">Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></button></div>
+        <div><NamedSubmit label=<>Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} /></div>
       </form>
     </details>
   );

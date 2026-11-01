@@ -108,13 +108,6 @@ dialog.confirm::backdrop { background: rgba(10, 20, 14, 0.55); }
   .menu-wrap, .who { position: relative; }
   .who-name { max-width: 12em; }
   .who-form, .menu-panel { right: 0; width: 300px; top: calc(100% + 8px); }
-  /* With no name remembered the field sits in the header row. */
-  .who.unnamed { display: flex; align-items: center; gap: 8px; }
-  .who.unnamed .link { display: none; }
-  .who.unnamed .who-form[hidden], .who.unnamed .who-form { position: static; display: flex; align-items: center; gap: 6px; width: auto; padding: 0; border: 0; box-shadow: none; background: none; }
-  .who.unnamed .who-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .who.unnamed input { width: 10em; padding: 6px 10px; }
-  .who.unnamed .field-error { position: absolute; top: calc(100% + 4px); right: 0; background: var(--surface); padding: 6px 10px; border-radius: var(--r-s); box-shadow: var(--shadow); white-space: nowrap; }
 }
 @media (min-width: 1024px) and (max-width: 1180px) {
   .brand-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -163,6 +156,8 @@ details[open] > summary { margin-bottom: 6px; }
 
 .error, .blocker { border-radius: var(--r-s); padding: 12px 14px; background: var(--beet-wash); color: var(--ink); }
 .error { margin-bottom: 4px; }
+label.named { max-width: 28em; }
+.row > label.named { flex: 1 1 100%; }
 .field-error { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--beet); }
 [aria-invalid="true"] { border-color: var(--beet); outline-color: var(--beet); }
 .blocker b:first-child { color: var(--beet); }

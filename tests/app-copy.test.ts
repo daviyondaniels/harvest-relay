@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { forecastTag } from "../app/lib/format.ts";
 
 // The app's own words, checked where a unit test cannot render the page.
@@ -31,7 +31,7 @@ test("M8: the Orders fine print says nothing is delivered", () => {
 
 test("Task 17: the approver name is asked for beside its field and remembered in a strict, HttpOnly cookie", () => {
   const actions = source("app/actions.ts"), name = source("app/lib/name.ts");
-  assert.match(actions, /"Enter your name at the top to continue\."/, "fix round 3: the name is asked once, in the header");
+  assert.match(actions, /"Enter your name to continue\."/, "the name is asked beside the form's own name field");
   assert.match(name, /NAME_COOKIE = "hr_name"/);
   assert.match(source("src/hub.ts"), /NAME_MAX = 80/, "the same limit as the name field");
   assert.match(source("app/lib/names.ts"), /import \{ NAME_MAX \} from "..\/..\/src\/hub.ts"/, "one limit for the field and every recorded name");
@@ -44,23 +44,44 @@ test("Task 17: the approver name is asked for beside its field and remembered in
   // Task 18: the name field, its error and "Recording as … · not you?" live in the header (app/who.tsx).
 });
 
-test("Fix round 1 / Task 18 fix 3: forms that record a name rely on the header name and are refused without it", () => {
-  const review = source("app/review/page.tsx"), orders = source("app/orders/page.tsx"), actions = source("app/actions.ts");
-  for (const page of [review, orders]) {
-    assert.doesNotMatch(page, /Recorder|name="who"/, "no per-form name field");
-    assert.match(page, /notice\?\.field === "who" && <NameNeeded key=\{String\(params\.sig\)\} text=\{notice\.text\} \/>/);
+test("Ease task 2: the name is asked on the first action, in the same form, and every recording action takes it", () => {
+  const actions = source("app/actions.ts"), orders = source("app/orders/page.tsx"), pack = source("app/pack/page.tsx"), review = source("app/review/page.tsx");
+  assert.doesNotMatch(actions, /actor\(\)|RESERVED_NAME|NameNeeded|NAME_AT_TOP/, "no action records the reserved label or points at the header");
+  assert.match(actions, /async function named\(f: FormData\): Promise<string> \{[\s\S]*?checkName\(f\.get\("who"\)\)[\s\S]*?rememberName\(c\.name\)[\s\S]*?rememberedName\(\)[\s\S]*?new FieldError\(NAME_NEEDED, "who"\)/);
+  // Every exported action that changes records through act( also asks named(.
+  const exported = actions.split(/\nexport async function /).slice(1).map(b => ({ name: b.slice(0, b.indexOf("(")), body: b.split(/\n(?:export |\/\/ )/)[0] }));
+  const acting = exported.filter(x => /\bact\(/.test(x.body));
+  assert.ok(acting.length >= 6, "the actions that call act( directly");
+  for (const x of acting) assert.match(x.body, /await named\(f\)/, `${x.name} records a person's name`);
+  // The ones that go through run( or onOrder( do so by their step, which names unless it is the scripted arrival.
+  assert.match(actions, /step\.anon \? "" : await named\(f\)/);
+  assert.equal(actions.match(/anon: true/g)?.length, 1, "only the demo's scripted arrival of a reply is not the coordinator's");
+  for (const page of [review, orders, pack, source("app/call/page.tsx"), source("app/conflict.tsx")]) assert.doesNotMatch(page, /NameNeeded|name-needed/, "no redirect to the header");
+  assert.equal(existsSync(new URL("../app/name-needed.tsx", import.meta.url)), false, "NameNeeded is gone");
+  // A refusal for want of a name is shown beside the form's own name field, which takes focus.
+  assert.match(actions, /resId && !notice\.field/);
+  assert.match(pack, /field === "who"/);
+  assert.match(orders, /optBad/);
+});
+
+test("Ease task 2: NamedSubmit shows the name input only when no name is known, and every recording submit uses it", () => {
+  const ns = source("app/named-submit.tsx");
+  assert.match(ns, /^"use client";/);
+  assert.match(ns, /if \(known\) return null;/, "a known name shows nothing extra");
+  assert.match(ns, /<input name="who" required maxLength=\{NAME_MAX\} autoComplete="name"/);
+  assert.match(ns, /<Problem bad=\{bad\} on=\{on\} name="who" \/>/, "a refused name is explained beside the input");
+  assert.match(ns, /<NameField known=\{known\}[^>]*\/>\s*<button type="submit"/, "the input comes directly before the button, in the same form");
+  assert.doesNotMatch(ns, />\s*Save\s*</, "no separate Save button");
+  // Every form that records a name has the field: none of these actions is posted by a bare button.
+  const plain = /<form[^>]*action=\{(?:approve|ask|reply|correct|readByHand|confirmLot|dismissNoChange|refresh|refreshAll|scriptedReply|liveRead|decideCut|logCall|confirm|lateMessage|stage|startResolution|confirmDraft|editDraft|museDraft|send|discardDraft|requestedCall|buyerReply|supplyReply)Action\}[^>]*>[^]*?<\/form>/g;
+  let seen = 0;
+  for (const path of ["app/review/page.tsx", "app/orders/page.tsx", "app/pack/page.tsx", "app/call/page.tsx", "app/conflict.tsx"]) {
+    for (const form of source(path).match(plain) ?? []) {
+      seen += 1;
+      assert.match(form, /NamedSubmit|NameField/, `${path}: ${form.slice(0, 90)}`);
+    }
   }
-  assert.match(actions, /async function named\(\): Promise<string> \{[\s\S]*?if \(!kept\) throw new NameNeeded\(NAME_AT_TOP\);/);
-  for (const fn of ["stageAction", "confirmAction"]) {
-    const body = actions.slice(actions.indexOf(`export async function ${fn}`)).split(/\nexport /)[0];
-    assert.match(body, /await named\(\)/, `${fn} records a person's name`);
-    assert.doesNotMatch(body, /await actor\(\)/, `${fn} never falls back to the reserved name`);
-    assert.match(body, /instanceof NameNeeded/, `${fn} sends a missing name to the header field`);
-  }
-  assert.match(source("app/pack/page.tsx"), /field === "who" && <NameNeeded/);
-  assert.match(actions, /resId && notice\?\.field !== "who"/, "a name refusal on Orders lands at the top, by the header field");
-  assert.match(source("app/who.tsx"), /window\.addEventListener\(ASK_NAME/);
-  assert.match(orders, /name="words"/, "confirm posts the words shown");
+  assert.ok(seen >= 25, `${seen} forms checked`);
 });
 
 test("Fix round 1: no page renders error text taken straight from the URL", () => {
@@ -121,7 +142,7 @@ test("Task 18: the header menu is a disclosure that closes on Escape and returns
 
 test("Task 18: the header says who is recording, once, and the name can be changed there", () => {
   const who = source("app/who.tsx"), actions = source("app/actions.ts");
-  for (const s of [/Recording as/, /not you\?/, /Who is working\?/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
+  for (const s of [/Recording as/, /not you\?/, /Not signed in/, /set name/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
   assert.match(actions, /export async function setNameAction\([^)]*\)[^{]*\{[\s\S]*?checkName\([\s\S]*?rememberName\(/);
   // Fix round 3 (N1): only the name is cut short; "not you?" is its own flex item, at least 24 px.
   const css = source("app/globals.css");
@@ -377,7 +398,8 @@ test("Final review: recording a buyer's consent or a new lot needs the header na
   const actions = source("app/actions.ts"), orders = source("app/orders/page.tsx");
   for (const name of ["buyerReplyAction", "supplyReplyAction"]) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport async function /)[0];
-    assert.match(body, /done: "Reply recorded\.", named: true/, name);
+    assert.match(body, /done: "Reply recorded\."/, name);
+    assert.doesNotMatch(body, /anon: true/, name);
   }
   assert.match(orders, /failedTheCheck\(r\.fallback\)/);
   assert.match(orders, /Couldn't get other wording just now\. The template stands\./);

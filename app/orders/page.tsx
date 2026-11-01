@@ -14,11 +14,11 @@ import type { Workbench } from "../../src/workbench.ts";
 import { buyerReplyAction, confirmDraftAction, discardDraftAction, editDraftAction, liveAllowance, museDraftAction, requestedCallAction, scriptedRequestReplyAction, sendAction, startResolutionAction, supplyReplyAction } from "../actions.ts";
 import { ORDER_STATUS, STAGE, buyer, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
 import { current, extras } from "../lib/hub.ts";
-import { Problem, invalid, type Bad } from "../lib/field-error.tsx";
+import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
-import { NameNeeded } from "../name-needed.tsx";
+import { NameField, NamedSubmit } from "../named-submit.tsx";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
 
@@ -55,6 +55,8 @@ type CardError = { on: string; text: string; field?: string };
 function fields(rid: string, error?: CardError) {
   const bad: Bad = error?.field ? { on: `${rid}-${error.on}`, field: error.field, text: error.text } : undefined;
   return {
+    // What a NamedSubmit on the form `on` of this card needs, to ask for a name beside it.
+    named: (known: boolean, on: string) => ({ known, on: `${rid}-${on}`, bad }),
     inv: (on: string, name: string) => invalid(bad, `${rid}-${on}`, name),
     problem: (on: string, name: string): ReactNode => <Problem bad={bad} on={`${rid}-${on}`} name={name} />
   };
@@ -85,12 +87,11 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
 
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, raw = readNotice(params, { page: "/orders", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
-  const { state: w, version } = await current();
+  const { state: w, version } = await current(), me = await rememberedName();
   const orders = w.ledger.snapshot.orders, statuses = new Map(orders.map(o => [o.id, orderStatus(w, o.id)]));
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
   return (
     <div className="workspace item-first">
-      {notice?.field === "who" && <NameNeeded key={String(params.sig)} text={notice.text} />}
       <nav className="queue" aria-label="Buyer orders">
         <QueueFold count={orders.length} noun="orders" open={false}>
           <h2>Orders</h2>
@@ -103,7 +104,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
           ); })}
         </QueueFold>
       </nav>
-      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={await rememberedName()} /> : <p className="muted">No orders yet.</p>}
+      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} /> : <p className="muted">No orders yet.</p>}
     </div>
   );
 }
@@ -119,15 +120,20 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
   const resolutions = w.resolutions.filter(r => r.orderId === orderId);
   // A problem from a card's form is shown on that card while the card still shows the form;
   // otherwise at the top. A result moves focus to the card it is about, or to the order.
-  const onCard = !!notice && !notice.ok && notice.field !== "who" && !!notice.res && resolutions.some(r => r.id === notice.res && cardForms(w, r).includes(notice.on ?? ""));
-  const focus = !notice || notice.field === "who" ? undefined
+  const onCard = !!notice && !notice.ok && !!notice.res && resolutions.some(r => r.id === notice.res && cardForms(w, r).includes(notice.on ?? ""));
+  // A missing name on "Use this message" / "Draft message" is shown on that option's own card.
+  const optBad: Bad = notice && !notice.ok && notice.on === "draft" && notice.field === "who" && notice.res?.startsWith("opt-") && offered.some(x => `opt-${x.index}` === notice.res)
+    ? { on: `${notice.res}-draft`, field: "who", text: notice.text } : undefined;
+  const focus = !notice ? undefined
+    : optBad ? fieldId(optBad.on, "who")
     : onCard && notice.field ? `${notice.res}-${notice.on}-${notice.field}`
     : (notice.ok || onCard) && notice.res && resolutions.some(r => r.id === notice.res) ? `${notice.res}-title` : "order";
   const today = hubDay(new Date().toISOString());
   const onFile = o.approvedSubstitutions.map(x => x.product).filter(p => permissionSource(w.ledger, orderId, p).kind === "on-file");
   const pick = recommend(w, orderId, CONTACTS), picked = pick && pick.kind !== "review-reply" ? offered.find(x => sameOption(x.opt, pick)) : undefined;
   const names: Record<string, string> = { ...Object.fromEntries(CONTACTS.map(c => [c.id, c.name])), [o.buyerId]: buyer(o.buyerId) };
-  const card = (x: { opt: Option; index: number }) => <OptionCard key={x.index} {...x} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, x.opt)} />;
+  const known = !!me, optBadOf = (index: number) => optBad?.on === `opt-${index}-draft` ? optBad : undefined;
+  const card = (x: { opt: Option; index: number }) => <OptionCard key={x.index} {...x} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, x.opt)} known={known} bad={optBadOf(x.index)} />;
   const rest = offered.filter(x => x !== picked);
   const reading = pick?.kind === "review-reply" ? pick : undefined;
   // A substitute covering under a quarter of the short is only ever listed here (docs/EVIDENCE.md R6).
@@ -143,7 +149,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
   return <>
     <section className="panel" aria-labelledby="order">
       {notice && <Result key={sig} text={notice.ok ? notice.text : undefined} focus={focus} />}
-      {notice && !notice.ok && !onCard && notice.field !== "who" && <p className="error" role="alert">{notice.text}</p>}
+      {notice && !notice.ok && !onCard && !optBad && <p className="error" role="alert">{notice.text}</p>}
       <div className="section-head row">
         <h1 id="order" tabIndex={-1}>{buyer(o.buyerId)}</h1>
         <span className={`chip ${st.tone}`}>{st.label}</span>
@@ -176,10 +182,10 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
       </div>}
       {picked && <div className="option-group" aria-labelledby="next-step">
         <h2 id="next-step">Next step</h2>
-        <PrimaryCard x={picked} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, picked.opt)} why={why(picked.opt, o.product)}
+        <PrimaryCard x={picked} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, picked.opt)} known={known} bad={optBadOf(picked.index)} why={why(picked.opt, o.product)}
           draft={template(factsFor(w, orderId, picked.opt, names))} />
       </div>}
-      {offered.length > 0 ? (rest.length > 0 && <details className="option-group">
+      {offered.length > 0 ? (rest.length > 0 && <details className="option-group" open={rest.some(x => optBadOf(x.index)) || undefined}>
         <summary>Other options ({rest.length})</summary>
         {groups.map(([title, xs, note]) => (xs.length > 0 || note) && (
           <div key={title}>
@@ -217,27 +223,27 @@ function why(o: Option, product: string): string {
   if (o.kind === "notify-short") return "nobody else is left to ask";
   return o.hasLot ? `they hold ${product} for this day` : `${o.contactKind === "member" ? "a member grower" : "an outside source"} to try next`;
 }
-function PrimaryCard({ x, order, buyerName, version, open, why, draft }: { x: { opt: Option; index: number }; order: string; buyerName: string; version: number; open?: Resolution; why: string; draft: string }) {
+function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draft }: { x: { opt: Option; index: number }; order: string; buyerName: string; version: number; open?: Resolution; known: boolean; bad?: Bad; why: string; draft: string }) {
   const { opt } = x, amt = weight(amountOf(opt), opt.unit);
   const line = opt.kind === "ask-grower" ? `Ask ${grower(opt.contactId)} for ${amt}` : opt.kind === "offer-substitute" ? `Offer ${buyerName} ${opt.product} (${opt.grade}) for ${amt}` : `Tell ${buyerName} the order is ${amt} short`;
   return (
     <form action={startResolutionAction} className="option-card primary-card">
-      <Hidden order={order} version={version} />
+      <Hidden order={order} version={version} res={`opt-${x.index}`} />
       <input type="hidden" name="index" value={x.index} /><input type="hidden" name="kind" value={opt.kind} />
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       <b>{line}: {why}</b>
       <p className="draft">{draft}</p>
       {open ? <a className="small" href={`#${open.id}`}>Message already open<span className="sr-only"> for this step</span></a>
-        : <div><button className="primary" type="submit">Use this message<span className="sr-only">: {line}</span></button></div>}
+        : <div><NamedSubmit label={<>Use this message<span className="sr-only">: {line}</span></>} className="primary" known={known} on={`opt-${x.index}-draft`} bad={bad} /></div>}
     </form>
   );
 }
 
-function OptionCard({ opt, index, order, buyerName, version, open }: { opt: Option; index: number; order: string; buyerName: string; version: number; open?: Resolution }) {
+function OptionCard({ opt, index, order, buyerName, version, open, known, bad }: { opt: Option; index: number; order: string; buyerName: string; version: number; open?: Resolution; known: boolean; bad?: Bad }) {
   const amt = weight(amountOf(opt), opt.unit);
   return (
     <form action={startResolutionAction} className="option-card">
-      <Hidden order={order} version={version} />
+      <Hidden order={order} version={version} res={`opt-${index}`} />
       <input type="hidden" name="index" value={index} /><input type="hidden" name="kind" value={opt.kind} />
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       {opt.kind === "ask-grower" ? <>
@@ -254,7 +260,7 @@ function OptionCard({ opt, index, order, buyerName, version, open }: { opt: Opti
       </>}
       {/* Seven cards each have this button, so its name says who the message is to. */}
       {open ? <a className="small" href={`#${open.id}`}>Message already open<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></a>
-        : <div><button type="submit">Draft message<span className="sr-only"> {opt.kind === "ask-grower" ? `to ${grower(opt.contactId)}` : opt.kind === "offer-substitute" ? `to ${buyerName} offering ${opt.product} (${opt.grade})` : `to ${buyerName} about the shortfall`}</span></button></div>}
+        : <div><NamedSubmit label={<>Draft message<span className="sr-only"> {opt.kind === "ask-grower" ? `to ${grower(opt.contactId)}` : opt.kind === "offer-substitute" ? `to ${buyerName} offering ${opt.product} (${opt.grade})` : `to ${buyerName} about the shortfall`}</span></>} known={known} on={`opt-${index}-draft`} bad={bad} /></div>}
     </form>
   );
 }
@@ -267,7 +273,7 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
   // A problem with a field is shown beside the field; one with a control, beside the control.
   const at = (on: string) => error?.on === on && !error.field, errId = (on: string) => at(on) ? `${r.id}-${on}-error` : undefined;
   const fieldError = (on: string) => at(on) && <p id={errId(on)} className="field-error" role="alert">{error!.text}</p>;
-  const { inv, problem } = fields(r.id, error);
+  const { inv, problem, named } = fields(r.id, error), known = !!me;
   const reviewed = ["approved", "dismissed"].includes(w.items.find(i => i.id === r.linkedItemId)?.state ?? "");
   const out = w.outbox.find(m => m.id === r.messageId), o = w.ledger.snapshot.orders.find(x => x.id === r.orderId)!;
   const to = r.facts.to.name, ctx = <span className="sr-only"> to {to}</span>;
@@ -288,7 +294,7 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
           <ul>{asks.map(c => <li key={c.token}>{c.question.includes(`"${c.token}"`) ? c.question : `“${c.token}”: ${c.question}`}{confirmed(c) && <span className="muted"> Confirmed by {r.confirmation!.by}.</span>}</li>)}</ul>
           {open.length > 0 && <form action={confirmDraftAction} className="form"><Hidden {...h} />
             {asks.map(c => <input key={c.token} type="hidden" name="words" value={c.token} />)}
-            <div><button type="submit" aria-describedby={errId("confirm")}>Confirm these words<span className="sr-only"> in the message to {to}</span></button></div>
+            <div><NamedSubmit label={<>Confirm these words<span className="sr-only"> in the message to {to}</span></>} aria-describedby={errId("confirm")} {...named(known, "confirm")} /></div>
           </form>}
           {fieldError("confirm")}
         </div>
@@ -300,17 +306,17 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
           <form action={editDraftAction} className="form"><Hidden {...h} />
             <label>Message<textarea name="body" required maxLength={480} rows={4} defaultValue={r.text} {...inv("edit", "body")} /></label>
             {problem("edit", "body")}
-            <div><button type="submit">Save edit and check<span className="sr-only"> the message{ctx}</span></button></div>
+            <div><NamedSubmit label={<>Save edit and check<span className="sr-only"> the message{ctx}</span></>} {...named(known, "edit")} /></div>
           </form>
           {fieldError("edit")}
         </details>
         {canSuggest && <form action={museDraftAction} className="row"><Hidden {...h} />
-          <button type="submit" aria-describedby={errId("redraft")}>Suggest other wording<span className="sr-only"> for the message{ctx}</span></button>
+          <NamedSubmit label={<>Suggest other wording<span className="sr-only"> for the message{ctx}</span></>} aria-describedby={errId("redraft")} {...named(known, "redraft")} />
         </form>}
         {fieldError("redraft")}
         <form action={sendAction} className="form"><Hidden {...h} />
           <div className="row">
-            <button className="primary" type="submit" disabled={!sendable} aria-describedby={errId("send")}>Send<span className="sr-only"> the message{ctx}</span></button>
+            <NamedSubmit label={<>Send<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
             <span className="fine-print">{sendable ? "Recorded only; nothing is delivered." : "Confirm the words above first."}</span>
           </div>
         </form>
@@ -321,14 +327,14 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
             <label>Why it won't be sent<input name="reason" aria-required="true" maxLength={480} {...inv("discard", "reason")} /></label>
             {problem("discard", "reason")}
             {fieldError("discard")}
-            <div><button type="submit">Discard draft<span className="sr-only">{ctx}</span></button></div>
+            <div><NamedSubmit label={<>Discard draft<span className="sr-only">{ctx}</span></>} {...named(known, "discard")} /></div>
             <p className="fine-print">The text stays in the history, and this option can be drafted again.</p>
           </form>
         </details>
       </>}
       {out && <p className="fine-print">Recorded as sent (demo: not delivered) by {out.sentBy}, {time(out.sentAt)}.</p>}
-      {r.status === "sent" && r.option.kind === "offer-substitute" && <BuyerReply h={h} to={to} error={error} prefill={r.option.kind === "offer-substitute" && BUYER_REPLIES[o.buyerId]?.text.includes(r.option.product) ? BUYER_REPLIES[o.buyerId].text : undefined} />}
-      {r.status === "sent" && r.option.kind === "ask-grower" && !r.option.hasLot && <ReplyForm h={h} to={to} error={error} grades={o.acceptedGrades} unit={r.option.unit} />}
+      {r.status === "sent" && r.option.kind === "offer-substitute" && <BuyerReply h={h} to={to} error={error} known={known} prefill={r.option.kind === "offer-substitute" && BUYER_REPLIES[o.buyerId]?.text.includes(r.option.product) ? BUYER_REPLIES[o.buyerId].text : undefined} />}
+      {r.status === "sent" && r.option.kind === "ask-grower" && !r.option.hasLot && <ReplyForm h={h} to={to} error={error} known={known} grades={o.acceptedGrades} unit={r.option.unit} />}
       {r.status === "sent" && r.option.kind === "ask-grower" && r.option.hasLot && (r.linkedItemId
         ? reviewed
           ? <p className="small">Their reply was reviewed. <a href={`/review?item=${r.linkedItemId}`}>See their reply</a></p>
@@ -342,7 +348,7 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
                 <label>What {to} said<textarea name="note" required maxLength={480} rows={3} {...inv("call", "note")} /></label>
                 {problem("call", "note")}
                 {fieldError("call")}
-                <div><button type="submit">Log call as their reply</button></div>
+                <div><NamedSubmit label="Log call as their reply" {...named(known, "call")} /></div>
                 <p className="fine-print">The note goes to Review updates as their reply to this ask.</p>
               </form>
             </details>
@@ -354,8 +360,8 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
 
 // Two taps: They said yes, They said no. What they said is a call note or the text pasted in full;
 // a text holding the word supplies its own quote, otherwise the words that answer it are typed or pasted.
-function BuyerReply({ h, to, error, prefill }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; prefill?: string }) {
-  const { inv, problem } = fields(h.res, error), mine = error?.on === "reply";
+function BuyerReply({ h, to, error, known, prefill }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; prefill?: string }) {
+  const { inv, problem, named } = fields(h.res, error), mine = error?.on === "reply";
   return (
     <details open>
       <summary>Record the buyer's answer<span className="sr-only"> ({to})</span></summary>
@@ -369,6 +375,7 @@ function BuyerReply({ h, to, error, prefill }: { h: { order: string; version: nu
         {problem("reply", "quote")}
         {problem("reply", "accept")}
         {mine && !error!.field && <p className="field-error" role="alert">{error!.text}</p>}
+        <NameField {...named(known, "reply")} />
         <div className="row">
           <button type="submit" name="accept" value="yes">They said yes<span className="sr-only"> ({to})</span></button>
           <button type="submit" name="accept" value="no">They said no<span className="sr-only"> ({to})</span></button>
@@ -378,8 +385,8 @@ function BuyerReply({ h, to, error, prefill }: { h: { order: string; version: nu
   );
 }
 
-function ReplyForm({ h, to, error, grades, unit }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; grades: string[]; unit: string }) {
-  const { inv, problem } = fields(h.res, error), mine = error?.on === "reply";
+function ReplyForm({ h, to, error, known, grades, unit }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; grades: string[]; unit: string }) {
+  const { inv, problem, named } = fields(h.res, error), mine = error?.on === "reply";
   return (
     <details open>
       <summary>Record their reply<span className="sr-only"> ({to})</span></summary>
@@ -398,7 +405,7 @@ function ReplyForm({ h, to, error, grades, unit }: { h: { order: string; version
         </div>
         {problem("reply", "amount")}{problem("reply", "grade")}
         {mine && !error!.field && <p className="field-error" role="alert">{error!.text}</p>}
-        <div><button type="submit">Record reply<span className="sr-only"> from {to}</span></button></div>
+        <div><NamedSubmit label={<>Record reply<span className="sr-only"> from {to}</span></>} {...named(known, "reply")} /></div>
         <p className="fine-print">A call note is its own evidence; a text needs the quoted words.</p>
       </form>
     </details>

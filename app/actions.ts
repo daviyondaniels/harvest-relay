@@ -14,7 +14,7 @@ import { FIELDS, type Field } from "../src/updates.ts";
 import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
-import { NAME_PROBLEM, RESERVED_NAME, checkName } from "./lib/names.ts";
+import { NAME_PROBLEM, checkName } from "./lib/names.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { cutPage, signNotice, type Notice } from "./lib/notice.ts";
 
@@ -24,17 +24,17 @@ import { cutPage, signNotice, type Notice } from "./lib/notice.ts";
 // moves focus to.
 const now = () => new Date().toISOString();
 const str = (f: FormData, k: string) => { const v = f.get(k); return typeof v === "string" ? v.trim() : ""; };
-// Forms that do not ask for a name record the remembered one, or the reserved label.
-async function actor(): Promise<string> { await forgetOldName(); return (await rememberedName()) ?? RESERVED_NAME; }
-// Forms that record a name use the one saved in the header ("Recording as … · not you?").
-// With none saved they are refused, and the page points at the header's name field. The
-// name is asked once, in the header (setNameAction), never on each form.
-const NAME_AT_TOP = "Enter your name at the top to continue.";
-class NameNeeded extends Error {}
-async function named(): Promise<string> {
+// Every action that records a person's name takes it from the form's own "who" field when
+// one was typed (checked by the same rules as any name, then remembered), else the name
+// remembered in the cookie. With neither, the form is refused beside its own name field.
+const NAME_NEEDED = "Enter your name to continue.";
+async function named(f: FormData): Promise<string> {
   await forgetOldName();
+  const c = checkName(f.get("who"));
+  if ("name" in c) { await rememberName(c.name); return c.name; }
+  if (c.problem !== "empty") throw new FieldError(NAME_PROBLEM[c.problem], "who");
   const kept = await rememberedName();
-  if (!kept) throw new NameNeeded(NAME_AT_TOP);
+  if (!kept) throw new FieldError(NAME_NEEDED, "who");
   return kept;
 }
 // A problem with one field of the form, shown beside that field (by its form name).
@@ -54,7 +54,6 @@ function fieldOf(e: unknown, on?: string): string | undefined {
 }
 const failed = async (e: unknown, on?: string, res?: string): Promise<Notice> => {
   const at = { ...(on ? { on } : {}), ...(res ? { res } : {}) };
-  if (e instanceof NameNeeded) return { text: e.message, ...at, field: "who" };
   const field = fieldOf(e, on);
   const w = await current().then(s => s.state, () => undefined);
   return { text: plain(e, w, on), ...at, ...(field ? { field } : {}) };
@@ -65,7 +64,7 @@ function plain(e: unknown, w?: Workbench, on?: string, fallback = "That didn't w
   if (/^Stale update/.test(m)) return "Supply changed since this was read. Checking it again…";
   if (/^Named approval of exact proposal required/.test(m)) return "Supply changed since this page loaded, so the change shown is out of date. Check it again, then approve.";
   if (/^Literal source evidence required/.test(m)) return `Those words aren't in the ${on === "reply" ? "reply" : "message"}. Copy them exactly as written.`;
-  if (/^(Actor|Reviewer) name required/.test(m)) return NAME_AT_TOP;
+  if (/^(Actor|Reviewer) name required/.test(m)) return NAME_NEEDED;
   const limit = m.match(/^(.+) required \(at most (\d+) characters\)$/);
   if (limit) return `Enter ${limit[1].toLowerCase()}, at most ${limit[2]} characters.`;
   return w ? withNames(m, w) : m;
@@ -109,32 +108,33 @@ function need(f: FormData, k: string, ask: string): string {
 // A notice names the form (on) and field it belongs to, so the page shows it there. It is
 // signed (lib/notice.ts) for this page and item: the page shows no text a link could choose.
 // It lands on the result: the change panel after an approval and the message (with any
-// notice at its top) otherwise. A problem with a field has no fragment, because a fragment
-// blocks the autofocus that puts the cursor in the name field beside the error, and the page
-// moves focus to the field itself.
+// notice at its top) otherwise. A problem with a field (a missing name included) has no
+// fragment, because a fragment blocks the autofocus, and the page moves focus to the field itself.
 function back(item: string, notice: Notice, on?: string): never {
   revalidatePath("/", "layout");
   const anchor = notice.field ? "" : notice.ok && on === "approve" ? "#change" : "#item";
   redirect(`/review?${new URLSearchParams({ item, ...signNotice(notice, { page: "/review", id: item }) })}${anchor}`);
 }
 // on: the form, so the page shows the notice there; done: the result said once it worked;
-// named: the form records the coordinator's name, so it is refused without one.
+// rebase: apply to a newer stored version when the domain re-checks what the page showed.
+// Every step records the coordinator's name, so the form is refused without one beside its own
+// name field (named); only the demo's scripted arrival of a grower's reply (anon) is not theirs.
 // after: reads the changed workbench, and may replace the result (an approval that opens a conflict says so).
-type Step = { on: string; done: string; named?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
+type Step = { on: string; done: string; rebase?: boolean; anon?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
 async function run(f: FormData, change: (w: Workbench, item: string, who: string) => Workbench | Promise<Workbench>, step: Step): Promise<never> {
   const item = str(f, "item");
   let notice: Notice;
   try {
-    const who = step.named ? await named() : await actor();
+    const who = step.anon ? "" : await named(f);
     let next: Workbench | undefined;
-    await act(Number(str(f, "version")), async w => (next = await change(w, item, who)));
+    await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase });
     notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
   } catch (e) { notice = await failed(e, step.on); }
   back(item, notice, step.on);
 }
 
 export async function askAction(f: FormData) {
-  return run(f, (w, i, who) => ask(w, i, field(f), need(f, "question", "Write the question to ask the grower."), who, now()), { on: "ask", done: "Question recorded.", named: true });
+  return run(f, (w, i, who) => ask(w, i, field(f), need(f, "question", "Write the question to ask the grower."), who, now()), { on: "ask", done: "Question recorded." });
 }
 export async function replyAction(f: FormData) {
   return run(f, (w, i, who) => {
@@ -143,10 +143,10 @@ export async function replyAction(f: FormData) {
     const text = need(f, "reply", "Paste the grower's reply exactly as received.");
     const source = { id: `${it.source.id}-reply-${it.replies.length + 1}`, revision: 1, growerId: it.source.growerId, text };
     return reply(w, i, source, answers(f, "reply"), [], who, now());
-  }, { on: "reply", done: "Reply added.", named: true });
+  }, { on: "reply", done: "Reply added." });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
-export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", done: "Correction applied.", named: true }); }
+export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", done: "Correction applied." }); }
 // The coordinator's own reading of a message: what kind of change, which lot, how much, the
 // grade and the day. A call note is its own evidence; any other message needs the words.
 const KINDS = ["replace-total", "add-quantity", "correction", "forecast"] as const;
@@ -166,7 +166,7 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   return { operation, lotId, quantity: { amount: Number(amount), unit }, grade, deliveryOn, ...(str(f, "target") ? { correctsEventId: str(f, "target") } : {}), ...(quote ? { quote } : {}) };
 }
 export async function readByHandAction(f: FormData) {
-  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", done: "Reading saved. Check it, then approve.", named: true });
+  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", done: "Reading saved. Check it, then approve." });
 }
 export async function confirmLotAction(f: FormData) { return run(f, (w, i, who) => confirmLot(w, i, who, now()), { on: "lot", done: "Lot confirmed." }); }
 const note = (f: FormData) => need(f, "note", "Write a note or reason.");
@@ -176,10 +176,10 @@ export async function dismissAction(f: FormData) { return run(f, (w, i, who) => 
 // A message with no supply change in it (thanks, a question, a time of arrival): one tap, no reason to type.
 export async function dismissNoChangeAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, "No supply change", who, now()), { on: "hold", done: "Dismissed. No supply change." }); }
 export async function refreshAction(f: FormData) { return run(f, (w, i, who) => refresh(w, i, who, now()), { on: "refresh", done: "Checked again against current supply." }); }
-export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply.", named: true }); }
+export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply." }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one
 // change, against that review's hash.
-export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", named: true, after: openedConflict }); }
+export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", rebase: true, after: openedConflict }); }
 // An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
 function openedConflict(w: Workbench, item: string): Partial<Notice> {
   const lotId = w.ledger.events.find(e => e.id === w.items.find(i => i.id === item)?.eventId)?.lotId, c = conflicts(w.ledger).find(x => x.lotId === lotId);
@@ -257,16 +257,15 @@ function answerOf(f: FormData): { channel: "text" | "call"; text: string; quote?
 function toOrders(order: string, resId: string, notice: Notice): never {
   revalidatePath("/", "layout");
   const q = new URLSearchParams({ order, ...signNotice(notice, { page: "/orders", id: order }) });
-  // A name problem points at the header, so it lands at the top rather than on the card; a
-  // field problem has no fragment, because the page moves focus to the field.
-  redirect(`/orders?${q}${resId && notice?.field !== "who" && !notice.field ? `#${resId}` : ""}`);
+  // A field problem (a missing name included) has no fragment, because the page moves focus to the field.
+  redirect(`/orders?${q}${resId && !notice.field ? `#${resId}` : ""}`);
 }
 async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workbench | Promise<Workbench>, step: Step, after?: (w: Workbench) => string): Promise<never> {
   const order = str(f, "order");
   let notice: Notice, resId = str(f, "res");
   try {
-    const who = step.named ? await named() : await actor();
-    await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); return next; });
+    const who = step.anon ? "" : await named(f);
+    await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); return next; }, { rebase: step.rebase });
     notice = { text: step.done, ok: true, on: step.on, ...(resId ? { res: resId } : {}) };
   } catch (e) { notice = await failed(e, step.on, resId || undefined); }
   toOrders(order, resId, notice);
@@ -293,7 +292,7 @@ export async function museDraftAction(f: FormData) {
   const order = str(f, "order"), resId = str(f, "res");
   let notice: Notice;
   try {
-    const version = Number(str(f, "version")), who = await actor(), { state: w, version: stored } = await current();
+    const version = Number(str(f, "version")), who = await named(f), { state: w, version: stored } = await current();
     if (stored !== version) throw new StaleView(staleMessage(w));
     const r = res(w, f);
     if (r.status !== "drafted") throw new Error(`This message was already ${r.status}; it can no longer change`);
@@ -308,12 +307,12 @@ export async function museDraftAction(f: FormData) {
   toOrders(order, resId, notice);
 }
 export async function editDraftAction(f: FormData) { return onOrder(f, (w, who) => editDraft(w, res(w, f).id, words(f, "body", "the message"), who, now()), { on: "edit", done: "Edit saved and checked." }); }
-export async function sendAction(f: FormData) { return onOrder(f, (w, who) => sendMessage(w, res(w, f).id, CONTACTS, who, now()), { on: "send", done: "Recorded as sent.", named: true }); }
+export async function sendAction(f: FormData) { return onOrder(f, (w, who) => sendMessage(w, res(w, f).id, CONTACTS, who, now()), { on: "send", done: "Recorded as sent." }); }
 // The words the page showed, so only those are confirmed (resolve.ts confirmDraft).
 const shownWords = (f: FormData) => f.getAll("words").filter((v): v is string => typeof v === "string" && v.length <= 120).slice(0, 50);
-export async function confirmDraftAction(f: FormData) { return onOrder(f, (w, who) => confirmDraft(w, res(w, f).id, shownWords(f), who, now()), { on: "confirm", done: "Words confirmed.", named: true }); }
+export async function confirmDraftAction(f: FormData) { return onOrder(f, (w, who) => confirmDraft(w, res(w, f).id, shownWords(f), who, now()), { on: "confirm", done: "Words confirmed." }); }
 export async function discardDraftAction(f: FormData) {
-  return onOrder(f, (w, who) => discardDraft(w, res(w, f).id, words(f, "reason", "a reason to discard this draft"), who, now()), { on: "discard", done: "Draft discarded.", named: true });
+  return onOrder(f, (w, who) => discardDraft(w, res(w, f).id, words(f, "reason", "a reason to discard this draft"), who, now()), { on: "discard", done: "Draft discarded." });
 }
 // One tap: the pressed button says yes or no. A pasted text that holds that word supplies its own quote;
 // otherwise the coordinator gives the words, and recordBuyerReply still requires them to be in the text.
@@ -327,7 +326,7 @@ export async function buyerReplyAction(f: FormData) {
       f.set("quote", quote);
     }
     return recordBuyerReply(w, res(w, f).id, { ...answerOf(f), accept }, who, now());
-  }, { on: "reply", done: "Reply recorded.", named: true });
+  }, { on: "reply", done: "Reply recorded." });
 }
 export async function supplyReplyAction(f: FormData) {
   return onOrder(f, (w, who) => {
@@ -338,14 +337,14 @@ export async function supplyReplyAction(f: FormData) {
     if (!Number.isSafeInteger(amount)) throw new FieldError("Enter the amount they can supply as a whole number.", "amount");
     if (!w.ledger.snapshot.orders.find(o => o.id === r.orderId)?.acceptedGrades.includes(grade)) throw new FieldError("Choose a grade the order accepts.", "grade");
     return recordSupplyReply(w, r.id, { ...answerOf(f), yes, amount, grade }, who, now());
-  }, { on: "reply", done: "Reply recorded.", named: true });
+  }, { on: "reply", done: "Reply recorded." });
 }
 // A phone reply to an ask: the note is linked to the ask as its reply and goes to review.
 export async function requestedCallAction(f: FormData) {
   return onOrder(f, (w, who) => receiveRequestedCall(w, res(w, f).id, words(f, "note", "what they said"), who, now()), { on: "call", done: "Call logged as their reply. It is in Review updates." });
 }
 export async function scriptedRequestReplyAction(f: FormData) {
-  return onOrder(f, w => scriptedRequestReply(w, res(w, f).id, extras(), now()), { on: "script", done: "Their reply arrived. It is in Review updates." });
+  return onOrder(f, w => scriptedRequestReply(w, res(w, f).id, extras(), now()), { on: "script", done: "Their reply arrived. It is in Review updates.", anon: true });
 }
 
 // A phone call from a grower becomes an inbox message, read and reviewed like any other.
@@ -353,8 +352,9 @@ export async function logCallAction(f: FormData) {
   let error: Notice | undefined, item = "";
   const growerId = str(f, "grower"), kept = str(f, "note").slice(0, MAX_TEXT);
   try {
+    const who = await named(f);
     if (!CONTACTS.some(c => c.id === growerId)) throw new FieldError("Choose who called.", "grower");
-    const note = words(f, "note", "the call note"), who = await actor();
+    const note = words(f, "note", "the call note");
     await act(Number(str(f, "version")), w => { const next = logCall(w, growerId, note, who, now()); item = next.items.at(-1)!.id; return next; });
   } catch (e) { error = await failed(e, "call"); }
   revalidatePath("/", "layout");
@@ -374,14 +374,15 @@ const toPack = (n: Notice) => { revalidatePath("/", "layout"); redirect(`/pack?$
 // the form only says whether the coordinator chose Ship short, and the version check refuses
 // a page that is out of date.
 export async function confirmAction(f: FormData) {
-  let error: string | undefined;
+  let notice: Notice;
   try {
     const choice = str(f, "shipShort");
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
-    const who = await named();
+    const who = await named(f);
     await act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } });
-  } catch (e) { error = e instanceof Error ? e.message : "The plan could not be confirmed"; if (e instanceof NameNeeded) toPack({ text: error, field: "who" }); }
-  toPack(error ? { text: error } : { text: "Plan confirmed. Print the sheets below.", ok: true, on: "lock" });
+    notice = { text: "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
+  } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "lock", field: e.field } : { text: e instanceof Error ? e.message : "The plan could not be confirmed" }; }
+  toPack(notice);
 }
 
 // Demo only: Birch Hollow's late harvest message arrives after the plan is confirmed, in the Review
@@ -389,7 +390,7 @@ export async function confirmAction(f: FormData) {
 export async function lateMessageAction(f: FormData) {
   let notice: Notice;
   try {
-    await actor();
+    await named(f);
     await act(Number(str(f, "version")), w => {
       const refusal = lateRefusal(w);
       if (refusal) throw new Error(refusal);
@@ -397,22 +398,26 @@ export async function lateMessageAction(f: FormData) {
       notice = { text: "Birch Hollow's late message is in Review.", ok: true, on: "late", res: next.items.at(-1)!.id };
       return next;
     });
-  } catch (e) { notice = { text: e instanceof Error ? e.message : "The message could not be delivered" }; }
+  } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "late", field: e.field } : { text: e instanceof Error ? e.message : "The message could not be delivered" }; }
   toPack(notice!);
 }
 
 // Marks one order packed, or handed off. The domain refuses a stage that does not follow.
 export async function stageAction(f: FormData) {
-  let error: string | undefined, said = "Saved. The sheet shows the new stage.";
+  let notice: Notice;
+  const order = str(f, "order");
   try {
-    const stage = str(f, "stage"), order = str(f, "order");
+    const stage = str(f, "stage");
     if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
-    const who = await named();
+    const who = await named(f);
+    let said = "Saved. The sheet shows the new stage.";
+    // The domain refuses a stage that does not follow, so a sheet from before another change still applies.
     await act(Number(str(f, "version")), w => {
       try { const next = markStage(w, order, stage, who, now()); said = `${buyer(w.ledger.snapshot.orders.find(o => o.id === order)?.buyerId ?? order)}'s order is marked ${stage === "packed" ? "packed" : "handed off"}.`; return next; } catch (e) { throw byBuyer(w, e); }
-    });
-  } catch (e) { error = e instanceof Error ? e.message : "The stage could not be saved"; if (e instanceof NameNeeded) toPack({ text: error, field: "who" }); }
-  toPack(error ? { text: error } : { text: said, ok: true, on: "stage", res: str(f, "order") });
+    }, { rebase: true });
+    notice = { text: said, ok: true, on: "stage", res: str(f, "order") };
+  } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stage", field: e.field, res: order } : { text: e instanceof Error ? e.message : "The stage could not be saved" }; }
+  toPack(notice);
 }
 
 // The coordinator's recorded choice of who takes the cut on a lot. The excess is the one the form
@@ -423,10 +428,11 @@ export async function decideCutAction(f: FormData) {
   const choice = str(f, "choice"), excess = Number(str(f, "excess"));
   let notice: Notice, kept: Record<string, string> = {};
   try {
-    const who = await named();
+    const who = await named(f);
     if (!choice) throw new FieldError("Choose who takes the cut.", "cut");
     await act(Number(str(f, "version")), w => {
       const c = conflicts(w.ledger).find(x => x.lotId === lot), ids = c?.promises.map(p => p.orderId) ?? [];
+      if (!c) throw new Error("Supply changed since this was shown. Look at the current numbers and choose again.");
       const amount = (orderId: string) => { const v = str(f, `cut-${orderId}`); if (!/^\d{0,9}$/.test(v)) throw new FieldError("Enter whole numbers of pounds for the split.", "cut"); return Number(v); };
       const cuts = choice === "split" ? ids.map(orderId => ({ orderId, amount: amount(orderId) })) : ids.includes(choice) ? [{ orderId: choice, amount: excess }] : undefined;
       if (!cuts) throw new FieldError("Choose who takes the cut.", "cut");
@@ -434,7 +440,7 @@ export async function decideCutAction(f: FormData) {
       const done = `${taken.map(x => `${buyer(w.ledger.snapshot.orders.find(o => o.id === x.orderId)?.buyerId ?? x.orderId)} takes the ${weight(x.amount, unit)} cut`).join(", ")}. Find more ${product} on Orders.`;
       notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
       return next;
-    });
+    }, { rebase: true });
   } catch (e) {
     notice = await failed(e, "cut", lot);
     if (e instanceof Error && /^Supply changed since this was shown/.test(e.message)) notice.text = "Supply changed since this was shown. Look at the current numbers and choose again.";

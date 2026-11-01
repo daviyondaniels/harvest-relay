@@ -13,7 +13,8 @@ import { PrintButton } from "./print.tsx";
 import { readNotice } from "../lib/notice.ts";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
-import { NameNeeded } from "../name-needed.tsx";
+import { NamedSubmit } from "../named-submit.tsx";
+import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
 
 export const dynamic = "force-dynamic";
@@ -35,13 +36,16 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   const toldSince = new Set([...shipped].filter(id => orderStatus(w, id) === "buyer-told"));
   const orders = w.ledger.snapshot.orders, settled = orders.filter(o => !blocking.includes(o.id));
   // A refused confirm is shown beside the Ship short box when it is on the page, else at the top.
-  const bad: Bad = shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined;
+  const known = !!await rememberedName();
+  // A missing name is shown beside the name field of the form that was refused (confirm, late message, or one order's stage).
+  const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || (shown.on === "stage" && !!shown.res))
+    ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
+  const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
   return (
     <div className="pack">
-      {shown?.field === "who" && <NameNeeded key={String(params.sig)} text={shown.text} />}
       <section className="panel no-print" aria-labelledby="pack">
-        {shown && shown.field !== "who" && <Result key={String(params.sig)} text={shown.ok ? shown.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : shown.ok && c ? (shown.on === "late" && shown.res ? "late-link" : shown.on === "stage" && shown.res ? `sheet-${shown.res}` : "sheets") : "pack"} />}
-        {shown && !shown.ok && !bad && shown.field !== "who" && <p className="error" role="alert">{shown.text}</p>}
+        {shown && <Result key={String(params.sig)} text={shown.ok ? shown.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : shown.ok && c ? (shown.on === "late" && shown.res ? "late-link" : shown.on === "stage" && shown.res ? `sheet-${shown.res}` : "sheets") : "pack"} />}
+        {shown && !shown.ok && !bad && <p className="error" role="alert">{shown.text}</p>}
         <div className="section-head row">
           <h1 id="pack" tabIndex={-1}>Pack</h1>
           {!c && <span className="chip quiet">Not confirmed</span>}
@@ -49,7 +53,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           {stale && <span className="chip wait">Changed since confirmed</span>}
         </div>
         {shown?.ok && shown.on === "late" && shown.res && <p><a id="late-link" href={`/review?item=${encodeURIComponent(shown.res)}`}>Open the late message in Review</a></p>}
-        <Conflicts w={w} version={version} page="/pack" params={params} level={2} />
+        <Conflicts w={w} version={version} known={known} page="/pack" params={params} level={2} />
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b> {stale ? <span>The plan has changed since. Each changed line says what it was; confirm again to promise the new amounts.</span> : <span>Print the sheets.</span>}</p>
@@ -88,26 +92,26 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           )}
           <Problem bad={bad} on="lock" name="shipShort" />
           <div className="row">
-            <button type="submit" className={c && !stale ? undefined : "primary"}>{c ? "Confirm again" : "Confirm today's plan"}</button>
+            <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className={c && !stale ? undefined : "primary"} known={known} on="lock" bad={bad} />
             {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
           </div>
         </form>
         {c && canReceiveLate(w) && (
           <form action={lateMessageAction} className="form no-print">
             <input type="hidden" name="version" value={version} />
-            <div><button type="submit">Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></button></div>
+            <div><NamedSubmit label={<>Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></>} known={known} on="late" bad={bad} /></div>
           </form>
         )}
       </section>
 
-      {c && <Sheets w={w} version={version} toldSince={toldSince} />}
+      {c && <Sheets w={w} version={version} toldSince={toldSince} known={known} bad={bad} />}
     </div>
   );
 }
 
 // Each sheet is one printed page: the hub, the delivery day, then what to pack with a box to
 // tick. Names only; no internal IDs.
-function Sheets({ w, version, toldSince }: { w: Workbench; version: number; toldSince: Set<string> }) {
+function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: number; toldSince: Set<string>; known: boolean; bad: Bad }) {
   const l = w.ledger, c = l.commitments!, picks = pickLists(l), sheets = orderSheets(l), plan = planOf(l);
   return (
     <section className="sheets" aria-labelledby="sheets">
@@ -141,7 +145,7 @@ function Sheets({ w, version, toldSince }: { w: Workbench; version: number; told
                 <input type="hidden" name="version" value={version} />
                 <input type="hidden" name="order" value={s.orderId} />
                 <input type="hidden" name="stage" value={s.stage === "promised" ? "packed" : "handed-off"} />
-                <button type="submit">{s.stage === "promised" ? "Mark packed" : "Mark handed off"}<span className="sr-only"> for {buyer(s.buyerId)}</span></button>
+                <NamedSubmit label={<>{s.stage === "promised" ? "Mark packed" : "Mark handed off"}<span className="sr-only"> for {buyer(s.buyerId)}</span></>} known={known} on={"stage-" + s.orderId} bad={bad} />
               </form>
             )}
           </article>
