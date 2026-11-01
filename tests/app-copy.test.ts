@@ -335,7 +335,7 @@ test("Task 19 (R15): repeated buttons carry hidden context, and the 404 page lea
   assert.match(orders, /Draft message<span className="sr-only">/);
   assert.match(orders, /Send<span className="sr-only">/);
   assert.match(orders, /Record reply<span className="sr-only"> from \{to\}/);
-  assert.match(source("app/page.tsx"), /Resolve<span className="sr-only"> \{buyer\(x\.g\.buyerId\)\}/);
+  assert.match(source("app/page.tsx"), /Resolve\{hint && `: \$\{hint\}`\}<span className="sr-only"> \{buyer\(x\.g\.buyerId\)\}/);
   assert.match(source("app/globals.css"), /\.sr-only \{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset\(50%\);/);
   const missing = source("app/not-found.tsx");
   assert.match(missing, /href="\/"/);
@@ -544,7 +544,7 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   assert.deepEqual([...tabs.matchAll(/"([^"/][^"]*)"\]/g)].map(m => m[1]), ["Overview", "Review updates", "Orders", "Pack", "Log a call"]);
   assert.match(nav, /aria-current=\{here\(href\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
   assert.doesNotMatch(page, /Open review workspace/);
-  assert.match(page, /Open all \{open\.length\} /, "a text link next to the heading, not a full-width bar");
+  assert.match(page, /openAllLabel\(open\.length\)/, "a text link next to the heading, not a full-width bar");
   // The measures, gauge, donut and grower lots sit in one closed fold below Buyer orders; the export link stays out of it.
   const fold = page.indexOf('<details className="day-details">'), end = page.indexOf("</details>", fold);
   assert.ok(fold > page.indexOf('id="orders"') && page.indexOf("<summary>Day details</summary>") > fold);
@@ -552,7 +552,7 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   assert.doesNotMatch(page.slice(fold, fold + 40), /open/);
   for (const t of ["<DayCard", "<Gauge", "<Donut", 'id="lots"']) assert.ok(page.indexOf(t, fold) > fold && page.indexOf(t, fold) < end, t);
   assert.ok(page.indexOf('href="/export"') < fold, "the export link stays visible, in the hero line");
-  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s", "Review it"]) assert.ok(page.includes(t), t);
+  for (const t of ["confirmLead(gaps.length > 0", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "reviewCoverLink(grower(cover.growerId)", "Review it"]) assert.ok(page.includes(t), t);
   // Approve and Dismiss post from the Overview and come back to it; Confirm too.
   assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{ready\.reviewHash\}/);
   assert.match(page, /action=\{dismissNoChangeAction\}/);
@@ -570,7 +570,7 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
   assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
   assert.match(pack, /Ship these orders short without telling the buyer/);
   assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
-  for (const t of ["Mark all packed", "Mark all handed off", "arrived since you confirmed", "staleSentence(w)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
+  for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
   assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
   assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);
   const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
@@ -586,9 +586,9 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
 test("Task 10: Overview and Pack wording and structure", () => {
   const page = source("app/page.tsx"), pack = source("app/pack/page.tsx"), actions = source("app/actions.ts");
   assert.doesNotMatch(page, /Allocation is a proposal/);
-  assert.match(page, /\{open\.length > 0 && <a className="open-all" href="\/review">Open all/, "a text link, hidden with nothing to review");
+  assert.match(page, /\{open\.length > 0 && <a className="open-all" href="\/review">\{openAllLabel/, "a text link, hidden with nothing to review");
   assert.doesNotMatch(page, /bar-action/);
-  assert.match(page, /<a className="button" href=\{resolve\}>Resolve/, "Resolve is a secondary button beside a Review button");
+  assert.match(page, /<a className="button" href=\{resolve\}>\{resolveLabel\}/, "Resolve is a secondary button beside a Review button");
   assert.ok(page.indexOf('aria-label="Plan confirmed"') < page.indexOf('id="needs"'), "the confirmed card comes before Needs your attention");
   assert.match(page, /Plan confirmed by \{c\.confirmed\.by\} at \{time\(c\.confirmed\.at\)\}/);
   assert.equal(page.split("Plan confirmed by").length, 2, "said once");

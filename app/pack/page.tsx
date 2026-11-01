@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CUT_FIRST, planOf, stageOf, stageable } from "../../src/commitments.ts";
+import { CUT_FIRST, conflicts, planOf, stageOf, stageable } from "../../src/commitments.ts";
 import { shortages } from "../../src/orders.ts";
 import { lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
@@ -9,14 +9,15 @@ import { confirmAction, lateMessageAction, stageAction, stageAllAction } from ".
 import { HUB_NAME, ORDER_STATUS, STAGE, buyer, day, grower, promiseText, time, weight } from "../lib/format.ts";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current } from "../lib/hub.ts";
-import { PrintButton } from "./print.tsx";
+import { PickFold, PrintButton } from "./print.tsx";
 import { readNotice } from "../lib/notice.ts";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { STALE_HEADING, newSinceConfirm, staleSentence, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
+import { readKept } from "../lib/kept.ts";
+import { LEAVE_PROMPT, STALE_HEADING, arrivedLead, leaveSentence, leavesShort, newSinceConfirm, overview, staleSentence, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
 import { AutoPrint } from "./print.tsx";
 
 export const dynamic = "force-dynamic";
@@ -41,16 +42,22 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
     ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on === "stageall" ? `stageall-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
   const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
   const fresh = newSinceConfirm(w), arrived = fresh.length;
+  // Same rule as the Overview: a waiting update that would leave a buyer short is reviewed before confirming. The domain
+  // still allows confirming on approved updates only, so Pack keeps a secondary "Confirm without it".
+  const leave = leavesShort(w, overview(w).previews)[0], cutOpen = conflicts(w.ledger).length > 0;
+  const kept = readKept(params, "lock", "shipShort") === "yes";
   // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
-  const confirmForm = (
+  // With a cut open the one primary on the page is Settle the cut; the second confirm comes after it is settled.
+  const confirmForm = c && stale && cutOpen ? <p className="small">Settle the cut first, then confirm again.</p> : (
     <form action={confirmAction} className="form">
       <input type="hidden" name="version" value={version} />
+      {leave && <p className="small leave"><b>{leaveSentence(grower(leave.item.source.growerId), buyer(orders.find(o => o.id === leave.order.orderId)?.buyerId ?? leave.order.orderId), weight(leave.order.after.short, leave.order.unit))}</b> {LEAVE_PROMPT} <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>}
       {blocking.length > 0 && (
-        <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
+        <label className="check"><input type="checkbox" name="shipShort" value="yes" defaultChecked={kept} {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
       )}
       <Problem bad={bad} on="lock" name="shipShort" />
       <div className="row">
-        <NamedSubmit label={c ? "Confirm again" : "Confirm today's plan"} className="primary" known={known} on="lock" bad={bad} />
+        <NamedSubmit label={leave ? "Confirm without it" : c ? "Confirm again" : "Confirm today's plan"} className={leave ? undefined : "primary"} known={known} on="lock" bad={bad} />
         {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
       </div>
     </form>
@@ -96,7 +103,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           <div className="locked" role="group" aria-label="Plan confirmed">
             {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w)} Each changed line on a sheet says what it was.</p></div>}
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && " Print the sheets."}</p>
-            {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>Open the first one in Review</a></p>}
+            {arrived > 0 && <p className="small"><b>{arrivedLead(arrived)}</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>Open the first one in Review</a></p>}
             <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
             {stale && confirmForm}
           </div>
@@ -168,7 +175,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
               <thead className="sheet-cols"><tr><th scope="col">Packed</th><th scope="col" className="num">Amount</th><th scope="col">Product and grade</th><th scope="col">Grower</th></tr></thead>
               <tbody>
               {s.lines.map(x => (
-                <tr key={x.lotId}><td><span className="tick" aria-hidden="true" /></td><td className="num"><span className="amt">{weight(x.amount, s.unit)}</span>{x.was !== undefined && <span className="was muted small">(was {weight(x.was, s.unit)} at confirm)</span>}</td><td>{x.product}{x.substitute && " (substitute)"}, {x.grade}</td><td className="muted">{grower(x.growerId)}</td></tr>
+                <tr key={x.lotId}><td><span className="tick" aria-hidden="true" /></td><td className="num"><span className="amt">{weight(x.amount, s.unit)}</span>{x.was !== undefined && <span className="was muted small">(was {weight(x.was, s.unit)} at confirm)</span>}</td><td>{x.product}{x.substitute && " (substitute)"}, {x.grade}</td><td className="muted who">{grower(x.growerId)}</td></tr>
               ))}
               {s.lines.length === 0 && <tr><td colSpan={4} className="muted">Nothing allocated</td></tr>}
             </tbody></table>
@@ -188,7 +195,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
         ); })}
       </div>
 
-      <h3>Pick lists</h3>
+      <PickFold count={picks.length}>
       <div className="sheet-grid">
         {picks.map(p => (
           <article key={p.growerId} className="card sheet">
@@ -198,7 +205,10 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
               <div key={l.lotId}>
                 {l.undecided && <p className="flag small">Cut not decided yet</p>}
                 <p><span className="tick" aria-hidden="true" /><b>{weight(l.total, l.unit)} {l.product}</b>, {l.grade}, delivery {day(l.deliveryOn)}</p>
-                <ul className="small">{l.to.map(t => <li key={t.orderId}><span className="tick" aria-hidden="true" />{weight(t.amount, l.unit)} to {buyer(t.buyerId)}{t.kind === "approved-substitution" && " (substitute)"}{t.was !== undefined && <span className="was muted small"> (was {weight(t.was, l.unit)} at confirm)</span>}</li>)}</ul>
+                <table className="picks">
+                  <thead className="sheet-cols"><tr><th scope="col">Packed</th><th scope="col" className="num">Amount</th><th scope="col">To buyer</th></tr></thead>
+                  <tbody>{l.to.map(t => <tr key={t.orderId}><td><span className="tick" aria-hidden="true" /></td><td className="num"><span className="amt">{weight(t.amount, l.unit)}</span>{t.was !== undefined && <span className="was muted small">(was {weight(t.was, l.unit)} at confirm)</span>}</td><td className="who">{buyer(t.buyerId)}{t.kind === "approved-substitution" && " (substitute)"}</td></tr>)}</tbody>
+                </table>
                 <p className="small">Left over: {weight(l.leftOver, l.unit)}</p>
               </div>
             ))}
@@ -206,6 +216,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
         ))}
         {picks.length === 0 && <p className="muted">Nothing to pick.</p>}
       </div>
+      </PickFold>
     </section>
   );
 }

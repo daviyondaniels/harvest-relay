@@ -5,7 +5,7 @@ import { seedWorkbench } from "../src/seed.ts";
 import { BUYERS } from "../src/demo.ts";
 import { BY_HAND, approve, preview, type InboxItem } from "../src/workbench.ts";
 import { confirmPlan, conflicts } from "../src/commitments.ts";
-import { INSTRUCTION_LABEL, STALE_HEADING, becomesShort, byAttention, cutReason, instructionLike, leavesShort, overview, readyToApprove, staleSentence, staleSinceConfirm, updateKind } from "../app/lib/view.ts";
+import { INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, becomesShort, byAttention, cutReason, instructionLike, leavesShort, overview, readyToApprove, staleSentence, staleSinceConfirm, updateKind } from "../app/lib/view.ts";
 
 // Task 13: Overview and Pack, hierarchy and the stale plan.
 const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8"));
@@ -34,7 +34,8 @@ test("one-tap Approve only when no buyer is left short; the forecast update stay
   assert.equal(ok("msg-forecast"), true);
   const page = source("app/page.tsx");
   assert.match(page, /ready && shorts\.length > 0 \?[\s\S]*?Review it/, "the row shows a Review it link instead of Approve");
-  assert.match(page, /Review it before confirming\./);
+  assert.match(page, /LEAVE_PROMPT/);
+  assert.equal(LEAVE_PROMPT, "Review it before confirming.");
 });
 
 test("rows are ordered cut, short, not checked yet, ready, answers, dismiss; a late unread message sits above routine approvals", async () => {

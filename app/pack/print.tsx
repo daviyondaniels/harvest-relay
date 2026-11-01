@@ -23,3 +23,19 @@ export function AutoPrint() {
   }, []);
   return <p className="sr-only no-print" role="status" aria-live="polite">{said}</p>;
 }
+
+// The pick lists for growers. On a phone they are folded shut under one line with the count; from 601 px they open
+// by themselves, and they are always open on paper (the print styles also show them when this script has not run).
+export function PickFold({ count, children }: { count: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const el = ref.current, wide = window.matchMedia("(min-width: 601px)");
+    if (!el) return;
+    if (wide.matches) el.open = true;
+    let was = false;
+    const before = () => { was = el.open; el.open = true; }, after = () => { el.open = was; };
+    window.addEventListener("beforeprint", before); window.addEventListener("afterprint", after);
+    return () => { window.removeEventListener("beforeprint", before); window.removeEventListener("afterprint", after); };
+  }, []);
+  return <details ref={ref} className="pick-fold"><summary><h3>Pick lists for growers ({count})</h3></summary>{children}</details>;
+}

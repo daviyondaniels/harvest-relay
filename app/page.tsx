@@ -13,10 +13,9 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, INSTRUCTION_LABEL, STALE_HEADING, becomesShort, byAttention, cutReason, instructionLike, leavesShort, newSinceConfirm, overview, questionCounts, readyToApprove, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
-import { PendingCover } from "./pending-cover.tsx";
 import { Result } from "./result.tsx";
 
 export const dynamic = "force-dynamic";
@@ -107,9 +106,9 @@ function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
         <span className="stat"><b>{r.shipShort}</b><span>Orders shipped short</span></span>
       </div>
       <div>
-        <h3>Time to first message to the buyer</h3>
+        <h3>First message to a short buyer</h3>
         {m.minutesToBuyerNotice.length
-          ? <ul className="minutes">{m.minutesToBuyerNotice.map(x => { const n = Math.round(x.minutes); return <li key={x.orderId}><b>{n} {n === 1 ? "minute" : "minutes"}</b> for {names.get(x.orderId) ?? x.orderId}</li>; })}</ul>
+          ? <ul className="minutes">{m.minutesToBuyerNotice.map(x => <li key={x.orderId}>{names.get(x.orderId) ?? x.orderId}: <b>{duration(x.minutes)}</b> after the order went short</li>)}</ul>
           : <p className="muted">No message sent to a buyer yet</p>}
         <p className="fine-print">From the grower message that made the order short to the first message sent to its buyer: a substitute offer or a shortfall notice.</p>
       </div>
@@ -144,7 +143,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // The domain gate is unchanged; this keeps the one-tap Confirm from leaving a surprise cut behind.
   const leaves = leavesShort(w, previews), leave = leaves[0];
   const canConfirm = blocking.length === 0 && settle === 0 && leaves.length === 0, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
-  const leaveLine = leave && <p className="small leave"><b>{grower(leave.item.source.growerId)}'s update would leave {names.get(leave.order.orderId) ?? leave.order.orderId} {weight(leave.order.after.short, leave.order.unit)} short.</b> Review it before confirming. <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>;
+  const leaveLine = leave && <p className="small leave"><b>{leaveSentence(grower(leave.item.source.growerId), names.get(leave.order.orderId) ?? leave.order.orderId, weight(leave.order.after.short, leave.order.unit))}</b> {LEAVE_PROMPT} <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>;
   // Only the first thing to do in the attention card is primary; the rest are plain buttons.
   let primaryTaken = false;
   const primary = () => { const p = primaryTaken; primaryTaken = true; return p ? undefined : "primary"; };
@@ -189,10 +188,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {c && (
         <section className="card confirmed-card" aria-label="Plan confirmed">
           <div className="clear confirmed" role="group" aria-label="Plan confirmed">
+            {fresh.length > 0 && <p className="arrived"><b>{arrivedLead(fresh.length)}</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{fresh.length === 1 ? "Open it in Review" : "Open the first one in Review"}</a></p>}
             {stale && <div className="warnbox"><h2>{STALE_HEADING}</h2><p>{staleSentence(w)}</p></div>}
             <p><b>Plan confirmed by {c.confirmed.by} at {time(c.confirmed.at)}</b></p>
-            <p>{counts2.packed} of {counts2.total} packed, {counts2.handed} of {counts2.total} handed off</p>
             <div className="row">
+              <p className="counts">{counts2.packed} of {counts2.total} packed, {counts2.handed} of {counts2.total} handed off</p>
               {stale && canConfirm && <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet()} /></form>}
               {nextStage && (
                 <form action={stageAllAction}>
@@ -202,7 +202,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               )}
               <a className={`button${!stale && !nextStage ? " primary" : ""}`} href="/pack?print=1">Print sheets</a>
             </div>
-            {stale && !canConfirm && (leaveLine ?? <p className="small"><a href="/pack">Confirm again on Pack</a></p>)}
+            {stale && !canConfirm && (leaveLine ?? (settle > 0 ? <p className="small">Settle the cut first, then confirm again.</p> : <p className="small"><a href="/pack">Confirm again on Pack</a></p>))}
           </div>
         </section>
       )}
@@ -211,7 +211,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="card needs" aria-labelledby={shown.length > 0 ? "needs" : undefined}>
           {shown.length > 0 && <div className="card-head">
             <h2 id="needs" tabIndex={-1}>Needs your attention</h2>
-            {open.length > 0 && <a className="open-all" href="/review">Open all {open.length} {open.length === 1 ? "update" : "updates"}</a>}
+            {open.length > 0 && <a className="open-all" href="/review">{openAllLabel(open.length)}</a>}
           </div>}
           {shown.length > 0 && (
             <div className="attention">
@@ -220,20 +220,21 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   <div key={x.c.lotId} className="short-order">
                     <span className="icon"><Crate /></span>
                     <span className="text"><b>{x.c.product}: {weight(x.c.excess, x.c.unit)} of what you promised can't be filled</b><span>Promises to settle: a lot dropped below what was promised.</span></span>
-                    <a className={`button ${primary() ?? ""}`.trim()} href="/orders">Decide who takes the cut<span className="sr-only"> on {x.c.product}</span></a>
+                    <a className={`button ${primary() ?? ""}`.trim()} href={`/orders#cut-${x.c.lotId}-head`}>Settle the cut<span className="sr-only"> on {x.c.product}</span></a>
                   </div>
                 );
                 if (x.kind === "short") {
-                  const cover = pendingCover(w, x.g.orderId)[0], resolve = `/orders?order=${encodeURIComponent(x.g.orderId)}`;
+                  const covers = pendingCover(w, x.g.orderId), cover = covers[0], resolve = `/orders?order=${encodeURIComponent(x.g.orderId)}`, hint = resolveHint(w, x.g.orderId, buyer(x.g.buyerId));
+                  const resolveLabel = <>Resolve{hint && `: ${hint}`}<span className="sr-only"> {buyer(x.g.buyerId)}</span></>;
                   return (
                     <div key={x.g.orderId} className="short-order">
                       <span className="icon"><Crate /></span>
-                      <span className="text"><b>{buyer(x.g.buyerId)}, {weight(x.g.short, x.g.unit)} {x.g.product} short</b><PendingCover w={w} orderId={x.g.orderId} /></span>
+                      <span className="text"><b>{buyer(x.g.buyerId)}, {weight(x.g.short, x.g.unit)} {x.g.product} short</b>{covers.map(g => <span key={g.growerId}>{waitingCover(grower(g.growerId), g.items.length)}</span>)}</span>
                       {x.st.label !== ORDER_STATUS.short.label && <span className={`chip ${x.st.tone}`}>{x.st.label}</span>}
                       {cover ? <>
-                        <a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${encodeURIComponent(cover.items[0].id)}`}>Review {grower(cover.growerId)}'s {cover.items.length === 1 ? "update" : "updates"}<span className="sr-only"> for {buyer(x.g.buyerId)}</span></a>
-                        <a className="button" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>
-                      </> : <a className={`button ${primary() ?? ""}`.trim()} href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>}
+                        <a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${encodeURIComponent(cover.items[0].id)}`}>{reviewCoverLink(grower(cover.growerId), cover.items.length)}</a>
+                        <a className="button" href={resolve}>{resolveLabel}</a>
+                      </> : <a className={`button ${primary() ?? ""}`.trim()} href={resolve}>{resolveLabel}</a>}
                     </div>
                   );
                 }
@@ -284,7 +285,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           )}
           {!c && canConfirm && (
             <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
-              <p>{shown.length === 0 ? "Everything is covered. Confirm today's plan" : "Nothing is short. You can confirm today's plan."}</p>
+              <p>{confirmLead(gaps.length > 0, shown.length > 0)}</p>
               {warnings.length > 0 && <p className="small">{unsettledLine(warnings.length)}</p>}
               <NamedSubmit label="Confirm today's plan" className={primary()} known={known} on={lockOn} bad={bad} quiet={quiet()} />
             </form>

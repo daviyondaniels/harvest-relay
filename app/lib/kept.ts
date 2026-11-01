@@ -10,6 +10,8 @@ export const KEEP = {
   reply: { reply: 2000, field: 40, value: 200, "value-operation": 200, "value-lot": 200, "value-quantity": 200, "value-unit": 200, "value-pack": 200, "value-grade": 200, "value-date": 200, "value-correction-target": 200, quote: 500 },
   correct: { field: 40, value: 200, quote: 500 },
   hold: { note: 500 },
+  // Pack: the "ship these orders short" tick of the confirm form.
+  lock: { shipShort: 3 },
   send: { body: 480 },
   buyer: { channel: 10, text: 480, quote: 480 },
   // The Orders supply reply: how it came, the text and quote, whether they can supply, how much and what grade.

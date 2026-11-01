@@ -152,7 +152,7 @@ test("at 300 px and below the tab bar stays one row of icons at least 24 px wide
 });
 
 test("radio labels wrap long text, the understood labels never break mid-word, fine print is 14 px", () => {
-  assert.match(css, /label\.check > span \{[^}]*min-width: 0;[^}]*overflow-wrap: anywhere/);
+  assert.match(css, /label\.check > span \{[^}]*min-width: 0;[^}]*overflow-wrap: break-word/);
   assert.match(css, /table\.reading td:last-child \{ overflow-wrap: anywhere; \}/);
   assert.match(css, /table\.reading td:first-child \{ overflow-wrap: normal;/);
   const size = rule(css, ".fine-print").match(/font-size: ([\d.]+)rem/)![1];

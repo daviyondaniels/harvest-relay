@@ -1,5 +1,6 @@
 import { changedSinceConfirm, planOf, stageOf } from "../../src/commitments.ts";
-import { shortages } from "../../src/orders.ts";
+import { CONTACTS } from "../../src/demo.ts";
+import { recommend, shortages } from "../../src/orders.ts";
 import { changedBuyers } from "../../src/pack.ts";
 import { buyer, changeLine, grower, time, weight } from "./format.ts";
 import { normalize } from "../../src/quantity.ts";
@@ -125,4 +126,32 @@ export function staleSentence(w: Workbench): string {
   const at = w.ledger.commitments?.confirmed.at, behind = changedBuyers(w.ledger).map(buyer);
   const who = at && behind.length ? ` Sheets printed from the plan confirmed at ${time(at)} are wrong for: ${behind.join(", ")}.` : "";
   return `The plan has changed since you confirmed it.${who} Confirm again to promise the new amounts.`;
+}
+
+// One sentence for an update that would leave a buyer short, said the same on the Overview and on Pack.
+export const leaveSentence = (growerName: string, buyerName: string, short: string) => `${growerName}'s update would leave ${buyerName} ${short} short.`;
+export const LEAVE_PROMPT = "Review it before confirming.";
+// "Open the 1 update" for one, "Open all 3 updates" for more.
+export const openAllLabel = (n: number) => n === 1 ? "Open the 1 update" : `Open all ${n} updates`;
+// The line over the confirm button once everything left is told or settled. An order can still be short and told.
+export const confirmLead = (stillShort: boolean, rowsShown: boolean) =>
+  stillShort ? "Every short order has been told or settled. You can confirm today's plan." : rowsShown ? "Nothing is short. You can confirm today's plan." : "Everything is covered. Confirm today's plan";
+// The first line of the confirmed card: grower messages that arrived after the confirm and are not checked yet.
+export const arrivedLead = (n: number) => `${n} grower ${n === 1 ? "message" : "messages"} arrived since you confirmed. ${n === 1 ? "Check it" : "Check them"} before packing.`;
+// An update waiting in Review that may cover a short order: one line, the grower said once.
+export const waitingCover = (growerName: string, n: number) => n === 1 ? `${growerName} has an update waiting that may cover this.` : `${growerName} has ${n} updates waiting that may cover this.`;
+export const reviewCoverLink = (growerName: string, n: number) => `Review ${growerName}'s ${n === 1 ? "update" : "updates"}`;
+// What Resolve will open: the page's recommended next step for the order, in a few words.
+export function resolveHint(w: Workbench, orderId: string, buyerName: string): string | undefined {
+  const r = recommend(w, orderId, CONTACTS);
+  if (!r) return undefined;
+  if (r.kind === "review-reply") return `read ${grower(r.contactId)}'s reply`;
+  if (r.kind === "ask-grower") return `ask ${grower(r.contactId)} for ${weight(r.amount, r.unit)}`;
+  if (r.kind === "offer-substitute") return `offer ${buyerName} ${r.product} for ${weight(r.covers, r.unit)}`;
+  return `tell ${buyerName} the order is ${weight(r.amount, r.unit)} short`;
+}
+// Minutes in plain words: "45 min", "1 h 46 min", "2 h".
+export function duration(minutes: number): string {
+  const m = Math.round(minutes), h = Math.floor(m / 60), r = m % 60;
+  return h === 0 ? `${m} min` : r === 0 ? `${h} h` : `${h} h ${r} min`;
 }

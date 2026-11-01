@@ -72,7 +72,7 @@ main:focus, .panel[tabindex="-1"]:focus, [tabindex="-1"]:focus:not(:focus-visibl
 .who-area { grid-area: who; min-width: 0; }
 .menu-wrap { min-width: 0; }
 /* Only the name is cut short; "not you?" always shows and is at least 24 px tall. */
-.who-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; min-width: 0; font-size: 0.8rem; color: var(--ink-soft); line-height: 1.3; }
+.who-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; min-width: 0; font-size: 0.875rem; color: var(--ink-soft); line-height: 1.3; }
 .who-line > span { flex: none; }
 .who-line .link { flex: none; min-height: 24px; min-width: 24px; padding: 0 4px; }
 .who-name { color: var(--ink); font-weight: 600; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -85,7 +85,7 @@ button.link { display: inline; border: 0; background: none; padding: 0; font-siz
 .menu-nav { display: grid; gap: 4px; }
 .menu-nav a { text-decoration: none; padding: 12px 12px; border-radius: var(--r-s); font-weight: 500; }
 .menu-nav a[aria-current="page"] { background: var(--leaf-wash); font-weight: 700; }
-.menu-who { display: grid; justify-items: start; gap: 4px; font-size: 0.85rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.menu-who { display: grid; justify-items: start; gap: 4px; font-size: 0.875rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 .menu-who b { color: var(--ink); }
 .menu-who .link { min-height: 24px; }
 .menu-apart { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
@@ -99,7 +99,7 @@ dialog.confirm::backdrop { background: rgba(10, 20, 14, 0.55); }
 .nav a { text-decoration: none; padding: 8px 16px; border-radius: var(--r-pill); color: var(--ink-soft); font-size: 0.9rem; font-weight: 500; }
 .nav a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: var(--shadow); font-weight: 600; }
 .theme { display: inline-flex; justify-self: start; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-pill); }
-.theme button { border: 0; background: transparent; padding: 4px 12px; font-size: 0.8rem; color: var(--ink-soft); }
+.theme button { border: 0; background: transparent; padding: 4px 12px; font-size: 0.875rem; color: var(--ink-soft); }
 .theme button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
 @media (min-width: 1024px) {
   .top { display: flex; flex-wrap: nowrap; align-items: center; gap: 16px; padding: 12px 32px; }
@@ -117,7 +117,7 @@ dialog.confirm::backdrop { background: rgba(10, 20, 14, 0.55); }
 }
 .page { padding: 8px 32px 32px; max-width: 1440px; margin: 0 auto; }
 .muted { color: var(--ink-soft); }
-.small { font-size: 0.85rem; }
+.small { font-size: 0.875rem; }
 /* Visually hidden, still read by screen readers: context for repeated buttons and links. */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The result of the last action, said once in a polite live region (app/result.tsx). Empty
@@ -140,7 +140,7 @@ button:disabled, button[aria-disabled="true"] { opacity: 0.45; cursor: not-allow
 .corner svg { width: 14px; height: 14px; }
 /* Field borders use --field-line, at least 3:1 against the field in both themes (WCAG 1.4.11). */
 input, select, textarea { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--field-line); border-radius: var(--r-s); padding: 8px 12px; width: 100%; }
-label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--ink-soft); }
+label { display: grid; gap: 4px; font-size: 0.875rem; color: var(--ink-soft); }
 .form { display: grid; gap: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 details { border-top: 1px solid var(--line); padding-top: 4px; }
@@ -162,7 +162,7 @@ details[open] > summary { margin-bottom: 8px; }
 .error { margin-bottom: 4px; }
 label.named { max-width: 28em; }
 .row > label.named { flex: 1 1 100%; }
-.field-error { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--beet); }
+.field-error { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--beet); }
 [aria-invalid="true"] { border-color: var(--beet); outline-color: var(--beet); }
 .blocker b:first-child { color: var(--beet); }
 .blocker ul { margin: 8px 0 0; padding-left: 16px; }
@@ -182,7 +182,7 @@ label.named { max-width: 28em; }
 .stat .icon { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; color: var(--forest); }
 .stat .icon svg { width: 16px; height: 16px; }
 .stat b { font-size: 1.35rem; font-weight: 600; }
-.stat span { font-size: 0.82rem; color: var(--ink-soft); }
+.stat span { font-size: 0.875rem; color: var(--ink-soft); }
 .stat.bad b { color: var(--beet); }
 
 .produce { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 16px; align-items: center; }
@@ -193,25 +193,25 @@ label.named { max-width: 28em; }
 .meter .sub { background: var(--sun); }
 .meter .gap { background: repeating-linear-gradient(135deg, var(--beet) 0 4px, var(--beet-wash) 4px 8px); }
 .meter .forecast { border: 2px dashed var(--sun-ink); border-radius: var(--r-pill); }
-.legend { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.82rem; color: var(--ink-soft); }
+.legend { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.875rem; color: var(--ink-soft); }
 .legend b { color: var(--ink); font-weight: 600; }
 .legend .bad, .legend .bad b { color: var(--beet); }
 
 .gauge { display: grid; justify-items: center; gap: 0; }
 .gauge svg { width: 100%; max-width: 260px; height: auto; }
 .gauge .value { font-size: 2.6rem; font-weight: 600; letter-spacing: -0.03em; margin-top: -32px; }
-.gauge .label { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px; }
+.gauge .label { font-size: 0.875rem; color: var(--ink-soft); margin-bottom: 8px; }
 .attention { display: grid; gap: 8px; }
 .attention > a, .attention .item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border-radius: var(--r-s); background: var(--surface-2); text-decoration: none; }
 .attention > a:hover { background: var(--leaf-wash); }
 .attention .icon { width: 36px; height: 36px; border-radius: var(--r-s); background: var(--surface); display: grid; place-items: center; color: var(--forest); }
 .attention .icon svg { width: 18px; height: 18px; }
 .attention .text { display: grid; min-width: 0; }
-.attention .more { display: block; padding: 4px 12px; background: none; font-size: 0.85rem; color: var(--ink); text-decoration: underline; }
-.attention .text span:not(.sr-only) { color: var(--ink-soft); font-size: 0.82rem; overflow-wrap: anywhere; }
+.attention .more { display: block; padding: 4px 12px; background: none; font-size: 0.875rem; color: var(--ink); text-decoration: underline; }
+.attention .text span:not(.sr-only) { color: var(--ink-soft); font-size: 0.875rem; overflow-wrap: anywhere; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-th { text-align: left; font-weight: 500; color: var(--ink-soft); font-size: 0.8rem; padding: 8px 12px; background: var(--surface-2); }
+th { text-align: left; font-weight: 500; color: var(--ink-soft); font-size: 0.875rem; padding: 8px 12px; background: var(--surface-2); }
 th:first-child { border-radius: var(--r-s) 0 0 var(--r-s); }
 th:last-child { border-radius: 0 var(--r-s) var(--r-s) 0; }
 td { padding: 12px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -222,7 +222,7 @@ td.num, th.num { text-align: right; }
 .progress span:nth-child(2) { background: var(--sun); }
 .donut { display: grid; justify-items: center; }
 .donut svg { width: 150px; height: 150px; }
-.key { display: grid; gap: 8px; font-size: 0.85rem; }
+.key { display: grid; gap: 8px; font-size: 0.875rem; }
 .key span { display: flex; align-items: center; gap: 8px; }
 .key i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
@@ -253,8 +253,8 @@ mark { background: var(--evidence); color: inherit; padding: 0 4px; border-radiu
 .thread .asked { color: var(--ink-soft); }
 .lot { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.88rem; padding: 12px 16px; background: var(--surface-2); border-radius: var(--r-s); }
 .reading td:first-child { width: 34%; color: var(--ink-soft); }
-.quote { color: var(--ink-soft); font-size: 0.85rem; }
-.history { display: grid; gap: 8px; font-size: 0.85rem; }
+.quote { color: var(--ink-soft); font-size: 0.875rem; }
+.history { display: grid; gap: 8px; font-size: 0.875rem; }
 .history ol { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .preview { position: sticky; top: 16px; display: grid; gap: 16px; }
 .preview h2 { padding: 8px 4px; }
@@ -306,10 +306,10 @@ mark { background: var(--evidence); color: inherit; padding: 0 4px; border-radiu
 .gate .warn .mark { background: var(--sun-wash); color: var(--sun-ink); }
 label.check { display: flex; gap: 12px; align-items: flex-start; font-size: 0.92rem; color: var(--ink); padding: 12px 16px; border-radius: var(--r-s); background: var(--sun-wash); }
 label.check input { width: auto; margin-top: 4px; }
-label.check > span { min-width: 0; overflow-wrap: anywhere; }
+label.check > span { min-width: 0; overflow-wrap: break-word; }
 .lapsed b { color: var(--beet); }
 .sheets { display: grid; gap: 16px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 16px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr)); gap: 16px; }
 .sheet { gap: 12px; break-inside: avoid; page-break-inside: avoid; }
 .sheet h4 { font-size: 1.05rem; margin: 0; }
 .sheet .flag.told { color: var(--ink); border-color: var(--line); font-weight: 600; }
@@ -425,7 +425,7 @@ p a, li a:not(.button), .attention .more, a.plain, .result a { color: var(--link
   table.buyers thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   table.buyers tr { border: 1px solid var(--line); border-radius: var(--r-s); padding: 12px 12px; margin-bottom: 12px; }
   table.buyers td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; text-align: right; overflow-wrap: anywhere; }
-  table.buyers td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.8rem; text-align: left; flex: none; }
+  table.buyers td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.875rem; text-align: left; flex: none; }
   table.buyers td:first-child { font-size: 1rem; text-align: left; }
   table.buyers td:first-child::before { content: none; }
   table.buyers td.bar { display: block; }
@@ -516,7 +516,7 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 .overview .confirmed-card { padding: 0; background: none; box-shadow: none; }
 .needs .card-head { align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .needs .open-all { font-size: 0.9rem; color: var(--link); min-height: 24px; display: inline-flex; align-items: center; }
-.attention .item .why, .attention .item .flag-note { color: var(--ink); font-size: 0.82rem; }
+.attention .item .why, .attention .item .flag-note { color: var(--ink); font-size: 0.875rem; }
 .attention .item .flag-note { font-weight: 600; }
 .leave { margin: 12px 0 0; padding: 12px; border-radius: var(--r-s); background: var(--sun-wash); color: var(--sun-ink); }
 .leave a { color: inherit; }
@@ -539,7 +539,7 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 }
 
 /* Task 13: Pack. Column headers on the sheets; the demo controls sit in one closed fold. */
-.sheet .sheet-cols th { text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+.sheet .sheet-cols th { text-align: left; font-size: 0.875rem; font-weight: 600; color: var(--ink-soft); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
 .sheet .sheet-cols th.num { text-align: right; }
 .demo-tools { border: 1px dashed var(--field-line); border-radius: var(--r-s); padding: 0 12px; }
 .demo-tools > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
@@ -557,3 +557,54 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
   .attention .short-order > .button { grid-column: auto; justify-self: end; }
 }
 .hero-sub a { color: var(--link); min-height: 24px; }
+
+/* Task 18: the zoomed cut card, density, targets and the Pack sheets. */
+/* A fieldset keeps its content's minimum width by default; the cut card must shrink to a 195 px screen. */
+.conflict fieldset { min-width: 0; }
+@media (max-width: 300px) {
+  .card, .panel { padding: 12px; }
+  .conflict { gap: 12px; }
+  .panel.conflict { padding: 8px; }
+  .conflict h2, .conflict h3 { font-size: 1rem; }
+  .conflict ul { padding-left: 16px; margin: 0; }
+  .conflict fieldset { padding: 4px 4px 8px; }
+  .conflict legend { padding: 0; }
+  .conflict .split { margin-left: 0; }
+  label.check { padding: 8px; gap: 8px; }
+  .conflict label.check { padding: 4px 0; gap: 8px; }
+  .page { padding-left: 8px; padding-right: 8px; }
+}
+/* Overview density: tighter attention rows and hero. */
+.attention > a, .attention .item, .attention .short-order { padding: 8px 12px; }
+.hero { gap: 12px; }
+.overview .main-col { gap: 16px; }
+@media (min-width: 601px) { table.buyers td { padding-top: 8px; padding-bottom: 8px; } }
+.attention .item .text > span:not(.change):not(.bad):not(.sr-only) { -webkit-line-clamp: 2; }
+/* The confirmed card: the progress counts sit beside the buttons. */
+.clear .row p.counts { flex: 0 1 auto; margin: 0 8px 0 0; }
+.confirmed .arrived { flex: 1 1 100%; }
+/* Chips in a row of stats are the same height. */
+.hero .stats { align-items: stretch; }
+.hero .stat { align-items: center; }
+/* Targets: 44 px tall on a phone. */
+@media (max-width: 600px) {
+  .hero-sub a, .needs .open-all, .attention .more, .locked a.button { display: inline-flex; align-items: center; min-height: 44px; }
+  .attention .more { display: flex; }
+}
+/* Order sheets: a name is never broken across lines on a screen; the columns give way instead. */
+@media (min-width: 601px) {
+  .sheet td.who { white-space: nowrap; }
+}
+.sheet table.picks { width: 100%; }
+/* The pick lists fold on a phone; the heading inside the summary looks like the other section headings. */
+.pick-fold { border-top: 0; padding-top: 0; }
+.pick-fold > summary { min-height: 44px; }
+.pick-fold > summary h3 { margin: 0; }
+@media print {
+  /* Always printed, whether or not the fold is open on screen. */
+  .pick-fold:not([open])::details-content { content-visibility: visible; display: block; }
+  .pick-fold > summary { display: none; }
+  .sheet table.picks th { color: #000; }
+}
+/* A button inside a card wraps its words instead of running past the card's edge (Orders "Tell {buyer}"). */
+.option-card button, .option-card .button, .resolution button, .resolution .button { white-space: normal; max-width: 100%; text-align: center; justify-content: center; }
