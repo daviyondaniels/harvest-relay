@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { seedWorkbench } from "../src/seed.ts";
 import { confirmPlan } from "../src/commitments.ts";
-import { arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
+import { SETTLE_FIRST, firstMessageLine, arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
 
 // Task 18: Overview, Pack and layout.
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -22,8 +22,9 @@ test("Overview and Pack say the same thing about an update that would leave a bu
 test("a cut open: the Overview's primary is Settle the cut, and Pack shows no second primary until it is settled", () => {
   assert.match(page, /Settle the cut<span className="sr-only"> on/);
   assert.match(page, /href=\{`\/orders#cut-\$\{x\.c\.lotId\}-head`\}/, "the link goes to the cut itself");
-  assert.match(page, /Settle the cut first, then confirm again\./);
-  assert.match(pack, /c && stale && cutOpen \? <p className="small">Settle the cut first, then confirm again\.<\/p>/);
+  assert.equal(SETTLE_FIRST, "Settle the cut first, then confirm again.");
+  assert.match(page, /staleSentence\(w, settle > 0\)/, "the stale box says it");
+  assert.match(pack, /c && stale && cutOpen \? <p className="small">\{SETTLE_FIRST\}<\/p>/);
 });
 
 test("the confirmed card leads with a message that arrived since, and the counts sit with the buttons", () => {
@@ -39,7 +40,7 @@ test("after Tell the all-clear line no longer says nothing is short", () => {
   assert.equal(confirmLead(true, true), "Every short order has been told or settled. You can confirm today's plan.");
   assert.equal(confirmLead(true, false), "Every short order has been told or settled. You can confirm today's plan.");
   assert.equal(confirmLead(false, true), "Nothing is short. You can confirm today's plan.");
-  assert.equal(confirmLead(false, false), "Everything is covered. Confirm today's plan");
+  assert.equal(confirmLead(false, false), "Everything is covered.");
 });
 
 test("update-count wording and the short row", () => {
@@ -63,7 +64,8 @@ test("the day details say it in plain words", () => {
   assert.equal(duration(106), "1 h 46 min");
   assert.equal(duration(45.4), "45 min");
   assert.equal(duration(120), "2 h");
-  assert.match(page, /after the order went short/);
+  assert.equal(firstMessageLine("45 min"), "First message to a short buyer: 45 min after their order went short");
+  assert.doesNotMatch(page, /Measured in this demo session|Shortages caught|Orders shipped short/);
   assert.doesNotMatch(page, /Time to first message to the buyer/);
 });
 

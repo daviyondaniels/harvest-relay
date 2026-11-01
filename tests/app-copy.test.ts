@@ -1,4 +1,5 @@
 import test from "node:test";
+import { SHIP_SHORT } from "../app/lib/view.ts";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { OPERATION, OPERATION_CHOICE, FIELD, changeLine, forecastTag } from "../app/lib/format.ts";
@@ -9,7 +10,7 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 test("I2: the measures card says what was counted, not that each count resolved an order", () => {
   const page = source("app/page.tsx");
   assert.doesNotMatch(page, /covered by a grower|"buyers? told"/, "a corrected notice to one buyer would read as two buyers told");
-  for (const label of ["Shortages caught", "Grower asks that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders shipped short"]) assert.ok(page.includes(label), label);
+  for (const label of ["Short orders found today", "Grower asks that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders sent short"]) assert.ok(page.includes(label), label);
   assert.doesNotMatch(page, /Counts of actions, not of orders/);
 });
 
@@ -568,11 +569,12 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
 test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and print rules", () => {
   const pack = source("app/pack/page.tsx"), css = source("app/globals.css"), domain = source("src/commitments.ts");
   assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
-  assert.match(pack, /Ship these orders short without telling the buyer/);
+  assert.match(pack, /\{SHIP_SHORT\} without telling the buyer/);
+  assert.equal(SHIP_SHORT, "Ship these orders short");
   assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
   for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
   assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
-  assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);
+  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
   const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
   assert.doesNotMatch(print, /\.sheets \.card-head/, "the buyer name's header is not hidden in print");
   assert.match(print, /\.sheets > \.card-head, \.sheets > h3 \{ display: none; \}/, "only the page's own heading is hidden");
@@ -595,7 +597,7 @@ test("Task 10: Overview and Pack wording and structure", () => {
   assert.match(page, /\{counts2\.packed\} of \{counts2\.total\} packed, \{counts2\.handed\} of \{counts2\.total\} handed off/);
   assert.match(page, /href="\/pack\?print=1"/);
   assert.match(page, /unsettledLine\(warnings\.length\)/, "same line as Pack");
-  assert.match(pack, /unsettledLine\(/);
+  assert.match(pack, /unsettledFor\(/);
   assert.match(pack, /Show checklist/);
   assert.match(pack, /\/review\?item=\$\{encodeURIComponent\(fresh\[0\]\.id\)\}/, "the arrived-messages link goes to the first one");
   assert.match(pack, /<AutoPrint \/>/);

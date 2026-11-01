@@ -13,7 +13,7 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { Result } from "./result.tsx";
@@ -97,18 +97,18 @@ function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
   const r = m.resolvedBy;
   return (
     <section className="card day" aria-labelledby="day">
-      <div className="card-head"><h2 id="day">This delivery day</h2><span className="muted small">Measured in this demo session</span></div>
+      <div className="card-head"><h2 id="day">This delivery day</h2></div>
       <div className="stats">
-        <span className="stat"><b>{m.shortsDetected}</b><span>Shortages caught</span></span>
+        <span className="stat"><b>{m.shortsDetected}</b><span>Short orders found today</span></span>
         <span className="stat"><b>{r.grower}</b><span>Grower asks that added supply</span></span>
         <span className="stat"><b>{r.substitute}</b><span>Substitutes agreed</span></span>
         <span className="stat"><b>{r.notice}</b><span>Buyers told they'd be short</span></span>
-        <span className="stat"><b>{r.shipShort}</b><span>Orders shipped short</span></span>
+        <span className="stat"><b>{r.shipShort}</b><span>Orders sent short</span></span>
       </div>
       <div>
-        <h3>First message to a short buyer</h3>
+        <h3>Messages to buyers</h3>
         {m.minutesToBuyerNotice.length
-          ? <ul className="minutes">{m.minutesToBuyerNotice.map(x => <li key={x.orderId}>{names.get(x.orderId) ?? x.orderId}: <b>{duration(x.minutes)}</b> after the order went short</li>)}</ul>
+          ? <ul className="minutes">{m.minutesToBuyerNotice.map(x => <li key={x.orderId}>{firstMessageLine(duration(x.minutes))} ({names.get(x.orderId) ?? x.orderId})</li>)}</ul>
           : <p className="muted">No message sent to a buyer yet</p>}
         <p className="fine-print">From the grower message that made the order short to the first message sent to its buyer: a substitute offer or a shortfall notice.</p>
       </div>
@@ -141,17 +141,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Nothing short and no cut open: the plan can be confirmed even while updates wait.
   // It is offered only when no waiting update would leave an order short if approved (the same preview Review shows).
   // The domain gate is unchanged; this keeps the one-tap Confirm from leaving a surprise cut behind.
-  const leaves = leavesShort(w, previews), leave = leaves[0];
-  const canConfirm = blocking.length === 0 && settle === 0 && leaves.length === 0, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
+  const leaves = leavesShort(w, previews), leave = leaveVisible(w) ? leaves[0] : undefined;
+  const canConfirm = blocking.length === 0 && settle === 0 && !leave, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
   const leaveLine = leave && <p className="small leave"><b>{leaveSentence(grower(leave.item.source.growerId), names.get(leave.order.orderId) ?? leave.order.orderId, weight(leave.order.after.short, leave.order.unit))}</b> {LEAVE_PROMPT} <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>;
   // Only the first thing to do in the attention card is primary; the rest are plain buttons.
-  let primaryTaken = false;
+  // While a message that arrived since confirming is unchecked, "Check it" is the only primary on the page.
+  let primaryTaken = fresh.length > 0 && !!c;
   const primary = () => { const p = primaryTaken; primaryTaken = true; return p ? undefined : "primary"; };
   const nextStage = stageable(w, "packed").length > 0 ? "packed" as const : stageable(w, "handed-off").length > 0 ? "handed-off" as const : undefined;
   // The name is asked once on the page: on the first form that records it; the others use it (quiet).
   const lockOn = "lock-plan"; // the confirm and Confirm again forms share a name: only one is on the page
+  // After a refused name only the refused form shows its field.
   let asked = false;
-  const quiet = () => { const q = asked; asked = true; return q; };
+  const quiet = (on: string) => { if (bad?.field === "who") return on !== bad.on; const q = asked; asked = true; return q; };
   // The result of an action done from a row: a problem with a field is shown beside that row's field,
   // anything else at the top of the card. Focus goes to the field, else the card's heading (the page's for a reset).
   const bad: Bad = notice && !notice.ok && notice.field && row ? { on: `${notice.on}-${row}`, field: notice.field, text: notice.text } : undefined;
@@ -188,27 +190,28 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {c && (
         <section className="card confirmed-card" aria-label="Plan confirmed">
           <div className="clear confirmed" role="group" aria-label="Plan confirmed">
-            {fresh.length > 0 && <p className="arrived"><b>{arrivedLead(fresh.length)}</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{fresh.length === 1 ? "Open it in Review" : "Open the first one in Review"}</a></p>}
-            {stale && <div className="warnbox"><h2>{STALE_HEADING}</h2><p>{staleSentence(w)}</p></div>}
+            {fresh.length > 0 && <p className="arrived"><b>{arrivedLead(fresh.length)}</b> <a className="button primary" href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{CHECK_IT(fresh.length)}</a></p>}
+            {stale && <div className="warnbox"><h2>{STALE_HEADING}</h2><p>{staleSentence(w, settle > 0)}</p></div>}
             <p><b>Plan confirmed by {c.confirmed.by} at {time(c.confirmed.at)}</b></p>
             <div className="row">
               <p className="counts">{counts2.packed} of {counts2.total} packed, {counts2.handed} of {counts2.total} handed off</p>
-              {stale && canConfirm && <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet()} /></form>}
+              {stale && canConfirm && <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet(lockOn)} /></form>}
               {nextStage && (
                 <form action={stageAllAction}>
                   <input type="hidden" name="version" value={version} /><input type="hidden" name="stage" value={nextStage} /><input type="hidden" name="from" value="/" />
-                  <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className={stale ? undefined : "primary"} known={known} on="stageall-stageall" bad={bad} quiet={quiet()} />
+                  <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className={stale || fresh.length > 0 ? undefined : "primary"} known={known} on="stageall-stageall" bad={bad} quiet={quiet("stageall-stageall")} />
                 </form>
               )}
-              <a className={`button${!stale && !nextStage ? " primary" : ""}`} href="/pack?print=1">Print sheets</a>
+              <a className={`button${!stale && !nextStage && fresh.length === 0 ? " primary" : ""}`} href="/pack?print=1">Print sheets</a>
             </div>
-            {stale && !canConfirm && (leaveLine ?? (settle > 0 ? <p className="small">Settle the cut first, then confirm again.</p> : <p className="small"><a href="/pack">Confirm again on Pack</a></p>))}
+            {stale && !canConfirm && settle === 0 && <>{leaveLine}<div className="row"><a className="button" href="/pack">Confirm again on Pack</a></div></>}
           </div>
         </section>
       )}
 
       {(shown.length > 0 || (!c && (canConfirm || leave))) && (
-        <section className="card needs" aria-labelledby={shown.length > 0 ? "needs" : undefined}>
+        <section className="card needs" aria-labelledby={shown.length > 0 ? "needs" : "ready"}>
+          {shown.length === 0 && !c && canConfirm && <h2 id="ready" tabIndex={-1}>Ready to confirm</h2>}
           {shown.length > 0 && <div className="card-head">
             <h2 id="needs" tabIndex={-1}>Needs your attention</h2>
             {open.length > 0 && <a className="open-all" href="/review">{openAllLabel(open.length)}</a>}
@@ -270,11 +273,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update, it leaves a buyer short</span></a></span>
                     ) : ready ? (
                       <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
-                        <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet()} />
+                        <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet(on("approve"))} />
                       </form>
                     ) : (
                       <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
-                        <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} className={primary()} known={known} on={on("dismiss")} bad={bad} quiet={quiet()} />
+                        <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} className={primary()} known={known} on={on("dismiss")} bad={bad} quiet={quiet(on("dismiss"))} />
                       </form>
                     )}
                   </div>
@@ -287,7 +290,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
               <p>{confirmLead(gaps.length > 0, shown.length > 0)}</p>
               {warnings.length > 0 && <p className="small">{unsettledLine(warnings.length)}</p>}
-              <NamedSubmit label="Confirm today's plan" className={primary()} known={known} on={lockOn} bad={bad} quiet={quiet()} />
+              <NamedSubmit label="Confirm today's plan" className={primary()} known={known} on={lockOn} bad={bad} quiet={quiet(lockOn)} />
             </form>
           )}
           {!c && !canConfirm && leaveLine}

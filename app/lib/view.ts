@@ -74,6 +74,13 @@ export function staleSinceConfirm(w: Workbench): boolean {
   if (!l.commitments) return false;
   return changedSinceConfirm(l, plan).length > 0 || l.snapshot.orders.some(o => plan.allocations.filter(a => a.orderId === o.id).reduce((n, a) => n + a.amount, 0) > stageOf(l, o.id).promised);
 }
+// While a "would leave a buyer short" warning shows, other waiting updates are said apart from it, so the
+// two lines never disagree about whether the plan is safe to confirm.
+export const OTHER_UNSETTLED = "Other grower updates are not settled. They don't change what is promised.";
+export const unsettledFor = (warnings: string[], leaveItem?: string): string | undefined => {
+  if (!leaveItem) return warnings.length ? unsettledLine(warnings.length) : undefined;
+  return warnings.some(id => id !== leaveItem) ? OTHER_UNSETTLED : undefined;
+};
 export const unsettledLine = (n: number) => `${n === 1 ? "1 grower update" : `${n} grower updates`} not settled. The plan uses approved updates only, so this does not block confirming.`;
 // An update that can be approved from where it is shown: it has a change, nothing is asked,
 // and the review is current (a stale one is refreshed on the Review page first).
@@ -121,21 +128,35 @@ export function approvalResult(w: Workbench, item: string, before: Map<string, n
 }
 
 // The stale plan, said once for the Overview and Pack: what changed and who a printed sheet is wrong for.
+export const SETTLE_FIRST = "Settle the cut first, then confirm again.";
 export const STALE_HEADING = "Printed sheets are out of date";
-export function staleSentence(w: Workbench): string {
+export function staleSentence(w: Workbench, cutOpen = false): string {
   const at = w.ledger.commitments?.confirmed.at, behind = changedBuyers(w.ledger).map(buyer);
   const who = at && behind.length ? ` Sheets printed from the plan confirmed at ${time(at)} are wrong for: ${behind.join(", ")}.` : "";
-  return `The plan has changed since you confirmed it.${who} Confirm again to promise the new amounts.`;
+  return `The plan has changed since you confirmed it.${who} ${cutOpen ? SETTLE_FIRST : "Confirm again to promise the new amounts."}`;
 }
 
 // One sentence for an update that would leave a buyer short, said the same on the Overview and on Pack.
 export const leaveSentence = (growerName: string, buyerName: string, short: string) => `${growerName}'s update would leave ${buyerName} ${short} short.`;
 export const LEAVE_PROMPT = "Review it before confirming.";
+// The warning is for a plan not confirmed yet, or one that has changed since; once every order is handed off there is
+// nothing left to confirm or pack, so it is never shown.
+export function leaveVisible(w: Workbench): boolean {
+  if (!w.ledger.commitments) return true;
+  const n = stageCounts(w);
+  return staleSinceConfirm(w) && n.handed < n.total;
+}
+// Orders on the checklist that are actually short now (a covered buyer on a cut lot is not).
+export const reallyShort = (blocking: string[], gapIds: Set<string>) => blocking.filter(id => gapIds.has(id));
+export const CONFIRM_WITHOUT = (growerName: string) => `Confirm without ${growerName}'s update`;
+export const SHIP_SHORT = "Ship these orders short";
+export const firstMessageLine = (d: string) => `First message to a short buyer: ${d} after their order went short`;
+export const CHECK_IT = (n: number) => n === 1 ? "Check it" : "Check the first one";
 // "Open the 1 update" for one, "Open all 3 updates" for more.
 export const openAllLabel = (n: number) => n === 1 ? "Open the 1 update" : `Open all ${n} updates`;
 // The line over the confirm button once everything left is told or settled. An order can still be short and told.
 export const confirmLead = (stillShort: boolean, rowsShown: boolean) =>
-  stillShort ? "Every short order has been told or settled. You can confirm today's plan." : rowsShown ? "Nothing is short. You can confirm today's plan." : "Everything is covered. Confirm today's plan";
+  stillShort ? "Every short order has been told or settled. You can confirm today's plan." : rowsShown ? "Nothing is short. You can confirm today's plan." : "Everything is covered.";
 // The first line of the confirmed card: grower messages that arrived after the confirm and are not checked yet.
 export const arrivedLead = (n: number) => `${n} grower ${n === 1 ? "message" : "messages"} arrived since you confirmed. ${n === 1 ? "Check it" : "Check them"} before packing.`;
 // An update waiting in Review that may cover a short order: one line, the grower said once.

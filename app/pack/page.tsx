@@ -16,7 +16,7 @@ import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { LEAVE_PROMPT, STALE_HEADING, arrivedLead, leaveSentence, leavesShort, newSinceConfirm, overview, staleSentence, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
+import { CHECK_IT, CONFIRM_WITHOUT, LEAVE_PROMPT, SETTLE_FIRST, SHIP_SHORT, STALE_HEADING, arrivedLead, leaveSentence, leaveVisible, leavesShort, newSinceConfirm, overview, reallyShort, staleSentence, staleSinceConfirm, unsettledFor } from "../lib/view.ts";
 import { AutoPrint } from "./print.tsx";
 
 export const dynamic = "force-dynamic";
@@ -43,26 +43,35 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   const fresh = newSinceConfirm(w), arrived = fresh.length;
   // Same rule as the Overview: a waiting update that would leave a buyer short is reviewed before confirming. The domain
   // still allows confirming on approved updates only, so Pack keeps a secondary "Confirm without it".
-  const leave = leavesShort(w, overview(w).previews)[0], cutOpen = conflicts(w.ledger).length > 0;
+  // It is shown before confirming, or while the plan is stale; never once everything is handed off.
+  const leave = leaveVisible(w) ? leavesShort(w, overview(w).previews)[0] : undefined, cuts = conflicts(w.ledger), cutOpen = cuts.length > 0;
+  // A buyer on a cut lot can be covered: only orders that are short now are marked short and counted.
+  const shortNow = reallyShort(blocking, new Set(gaps.keys())), unsettled = unsettledFor(warnings, leave?.item.id);
   // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
   // With a cut open the one primary on the page is Settle the cut; the second confirm comes after it is settled.
-  const confirmForm = c && stale && cutOpen ? <p className="small">Settle the cut first, then confirm again.</p> : (
+  const confirmForm = c && stale && cutOpen ? <p className="small">{SETTLE_FIRST}</p> : (
     <form action={confirmAction} className="form">
       <input type="hidden" name="version" value={version} />
       {leave && <p className="small leave"><b>{leaveSentence(grower(leave.item.source.growerId), buyer(orders.find(o => o.id === leave.order.orderId)?.buyerId ?? leave.order.orderId), weight(leave.order.after.short, leave.order.unit))}</b> {LEAVE_PROMPT} <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>}
       {blocking.length > 0 && (
-        <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
+        <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> {SHIP_SHORT} without telling the buyer yet. This is recorded.</label>
       )}
       <Problem bad={bad} on="lock" name="shipShort" />
       <div className="row">
-        <NamedSubmit label={leave ? "Confirm without it" : c ? "Confirm again" : "Confirm today's plan"} className={leave ? undefined : "primary"} known={known} on="lock" bad={bad} />
-        {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
+        <NamedSubmit label={leave ? CONFIRM_WITHOUT(grower(leave.item.source.growerId)) : c ? "Confirm again" : "Confirm today's plan"} className={leave || arrived > 0 ? undefined : "primary"} known={known} on="lock" bad={bad} />
+        {blocking.length > 0 && <span className="muted small">Confirming with orders still to resolve needs “{SHIP_SHORT}”.</span>}
       </div>
     </form>
   );
   const checklist = (
   <ul className="gate">
-    {blocking.map(id => { const o = orders.find(x => x.id === id)!, g = gaps.get(id), st = ORDER_STATUS[orderStatus(w, id)]; return (
+    {blocking.map(id => { const o = orders.find(x => x.id === id)!, g = gaps.get(id), st = ORDER_STATUS[orderStatus(w, id)]; return !g ? (
+      <li key={id} className="warn">
+        <span className="mark" aria-hidden="true">!</span>
+        <span><b>{buyer(o.buyerId)}</b> <span className={`chip ${st.tone}`}>{st.label}</span> Covered now, on a lot with a cut to settle.</span>
+        <a className="button" href={`/orders#cut-${cuts.find(x => x.promises.some(p => p.orderId === id))?.lotId}-head`}>Settle the cut</a>
+      </li>
+    ) : (
       <li key={id} className="fail">
         <span className="mark" aria-hidden="true">✕</span>
         <span><b>{buyer(o.buyerId)}</b>{g ? `, ${weight(g.short, g.unit)} ${g.product} short` : ""}{!(g && orderStatus(w, id) === "short") && <> <span className={`chip ${st.tone}`}>{st.label}</span></>}{shipped.has(id) && <> <span className="chip wait">Shipped short at confirm</span></>}{g && <PendingCover w={w} orderId={id} />}</span>
@@ -75,12 +84,10 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         <span><b>{buyer(o.buyerId)}</b> <span className={`chip ${st.tone}`}>{st.label}</span></span>
       </li>
     ); })}
-    <li className={warnings.length ? "warn" : "pass"}>
-      <span className="mark" aria-hidden="true">{warnings.length ? "!" : "✓"}</span>
-      <span>{warnings.length
-        ? <>{unsettledLine(warnings.length)}</>
-        : "Every grower update is settled."}</span>
-      {warnings.length > 0 && <a className="button" href={`/review?item=${encodeURIComponent(warnings[0])}`}>Review</a>}
+    <li className={unsettled ? "warn" : "pass"}>
+      <span className="mark" aria-hidden="true">{unsettled ? "!" : "✓"}</span>
+      <span>{unsettled ?? (leave ? "No other grower updates are waiting." : "Every grower update is settled.")}</span>
+      {unsettled && <a className="button" href={`/review?item=${encodeURIComponent(warnings.find(id => id !== leave?.item.id) ?? warnings[0])}`}>Review</a>}
     </li>
   </ul>
   );
@@ -101,15 +108,15 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           <div className="locked" role="group" aria-label="Plan confirmed">
             {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w)} Each changed line on a sheet says what it was.</p></div>}
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && " Print the sheets."}</p>
-            {arrived > 0 && <p className="small"><b>{arrivedLead(arrived)}</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>Open the first one in Review</a></p>}
-            <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
+            {arrived > 0 && <p className="small"><b>{arrivedLead(arrived)}</b> <a className="button primary" href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{CHECK_IT(arrived)}</a></p>}
+            <div className="row"><PrintButton primary={!stale && arrived === 0} /><a className="button" href="/export">Download day record</a></div>
             {stale && confirmForm}
           </div>
         )}
 
         {c ? (
           <>
-            <p className="small">{blocking.length ? `${blocking.length} ${blocking.length === 1 ? "order is" : "orders are"} still short.` : "Every order is covered or settled."}{warnings.length > 0 && ` ${unsettledLine(warnings.length)}`}</p>
+            <p className="small">{shortNow.length ? `${shortNow.length} ${shortNow.length === 1 ? "order is" : "orders are"} still short.` : cutOpen ? "No order is short, but a cut is still to settle." : "Every order is covered or settled."}{unsettled && ` ${unsettled}`}</p>
             <details className="checklist no-print" open={blocking.length > 0}><summary>Show checklist</summary>
             {checklist}
             </details>

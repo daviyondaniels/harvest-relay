@@ -59,13 +59,13 @@ test("the stale confirmed card leads with the same sentence as Pack, naming who 
   assert.match(staleSentence(w), /Confirm again to promise the new amounts\.$/);
   assert.match(staleSentence(w), /Sheets printed from the plan confirmed at .* are wrong for: .*Northside Grocery Co-op/, "names who changed");
   const page = source("app/page.tsx"), pack = source("app/pack/page.tsx");
-  for (const src of [page, pack]) assert.match(src, /staleSentence\(w\)/);
+  for (const src of [page, pack]) assert.match(src, /staleSentence\(w/);
   assert.match(page, /STALE_HEADING/);
   assert.equal(STALE_HEADING, "Printed sheets are out of date");
   assert.match(page, /stale && canConfirm && <form action=\{confirmAction\}>[\s\S]*?className="primary"/, "Confirm again is the primary button when stale");
-  assert.match(page, /className=\{stale \? undefined : "primary"\}/, "Mark all is secondary when stale");
+  assert.match(page, /className=\{stale \|\| fresh\.length > 0 \? undefined : "primary"\}/, "Mark all is secondary when stale or a message is unchecked");
   assert.match(pack, /\{stale && confirmForm\}/, "Pack offers Confirm again only when stale");
-  assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);
+  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
 });
 
 test("the instruction-like message is labelled by the reading plus a word test; a real update with a question is not", async () => {
