@@ -69,10 +69,12 @@ test("act refuses a stale version with the latest change, and with rebase runs o
   assert.equal((await current()).state.items.length, n + 1);
 });
 
-test("quote picker: the shortest literal span with the value's number, else the whole reply, never words of its own", () => {
+test("quote picker: the literal span with the value's number and its unit word, else the whole reply, never words of its own", () => {
   const reply = "That's the whole lot, 10 lb in each case.";
-  assert.equal(pickQuote(reply, "10 lb"), "10");
-  assert.equal(pickQuote("We have 1,200 lb and 12 cases", "1200 lb"), "1,200");
+  assert.equal(pickQuote(reply, "10 lb"), "10 lb");
+  assert.equal(pickQuote("6lb each", "6 lb"), "6lb");
+  assert.equal(pickQuote("We have 1,200 lb and 12 cases", "1200 lb"), "1,200 lb");
+  assert.equal(pickQuote("Delivery 2026-10-30, 4 cases", "2026-10-30"), "Delivery 2026-10-30, 4 cases", "a date value looks for no number");
   assert.equal(pickQuote("We have 120 lb", "12 lb"), "We have 120 lb", "12 is not inside 120");
   assert.equal(pickQuote("Sorry, none left", "A new total"), "Sorry, none left", "no number: the whole reply");
   assert.equal(pickQuote("Friday works", "2026-10-30"), "Friday works", "a date's digits are not in the reply");
