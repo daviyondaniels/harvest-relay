@@ -12,7 +12,7 @@ import { confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, rec
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
 import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
-import { StaleView, act, current, extras, recording, resetDemo } from "./lib/hub.ts";
+import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_PROBLEM, RESERVED_NAME, checkName } from "./lib/names.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
@@ -294,7 +294,7 @@ export async function museDraftAction(f: FormData) {
   let notice: Notice;
   try {
     const version = Number(str(f, "version")), who = await actor(), { state: w, version: stored } = await current();
-    if (stored !== version) throw new StaleView("Something changed since this page loaded. Review the current state and try again.");
+    if (stored !== version) throw new StaleView(staleMessage(w));
     const r = res(w, f);
     if (r.status !== "drafted") throw new Error(`This message was already ${r.status}; it can no longer change`);
     const known = products(w), on = hubDay(now()), recorded = recordedDraft(extras(), r.facts);

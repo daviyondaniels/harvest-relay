@@ -52,3 +52,17 @@ test("cutPage: only the allowlist's own pages are honoured; inherited keys fall 
   assert.deepEqual(cutPage("/review"), { page: "/review", key: "item" });
   for (const p of ["constructor", "toString", "__proto__", "hasOwnProperty", "https://x.test", ""]) assert.deepEqual(cutPage(p), { page: "/orders", key: "order" }, p);
 });
+
+test("act refuses a stale version with the latest change, and with rebase runs on the current state", async () => {
+  const { mkdtempSync } = await import("node:fs"), { tmpdir } = await import("node:os"), { join } = await import("node:path");
+  process.env.HARVEST_DB = join(mkdtempSync(join(tmpdir(), "hr-act-")), "w.db");
+  const { act, current, StaleView } = await import("../app/lib/hub.ts");
+  const { receive } = await import("../src/workbench.ts");
+  const start = (await current()).version, src = (id: string) => ({ id, revision: 1, growerId: "grower-a", text: "Cucumbers." });
+  await act(start, w => receive(w, src("m-1"), "2026-10-28T09:00:00Z"));
+  const now = await current(), n = now.state.items.length;
+  await assert.rejects(act(start, w => receive(w, src("m-2"), "2026-10-28T09:05:00Z")), (e: Error) => e instanceof StaleView && /^Something changed in another tab or window: .+\. Check the page and try again\.$/.test(e.message));
+  assert.equal((await current()).state.items.length, n);
+  await act(start, w => receive(w, src("m-3"), "2026-10-28T09:10:00Z"), { rebase: true });
+  assert.equal((await current()).state.items.length, n + 1);
+});

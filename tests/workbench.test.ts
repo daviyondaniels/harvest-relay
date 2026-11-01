@@ -5,7 +5,7 @@ import { ME, morning, short } from "./story.ts";
 import { logCall } from "../src/resolve.ts";
 import { normalize } from "../src/quantity.ts";
 import { createLedger, type Ledger } from "../src/updates.ts";
-import { BY_HAND, madeShort, needingRefresh, readByHand, suggestReading, approve, ask, confirmLot, correct, createWorkbench, dismiss, interpret, leavePending, preview, receive, refresh, refreshAll, refreshAndApprove, refreshableItems, reply, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { BY_HAND, latestChange, madeShort, needingRefresh, readByHand, suggestReading, approve, ask, confirmLot, correct, createWorkbench, dismiss, interpret, leavePending, preview, receive, refresh, refreshAll, refreshAndApprove, refreshableItems, reply, returnForClarification, type Workbench } from "../src/workbench.ts";
 
 // The coordinator workbench on the synthetic hub. Every action returns a new state and
 // leaves the old one untouched, so a rejected action cannot corrupt the inbox.
@@ -359,4 +359,23 @@ test("an approval that lowers a lot lists the orders it made short", () => {
   const made = madeShort(done, "item-4");
   assert.ok(made.length > 0 && made.every(m => m.added > 0 && m.short >= m.added));
   assert.equal(made.reduce((n, m) => n + m.added, 0), short(done) + short(done, "order-a") - short(w) - short(w, "order-a"));
+});
+
+test("a refused reply leaves the item unchanged: no turn and no history line", () => {
+  const w = inbox();
+  const before = JSON.stringify(w);
+  const REPLY = { id: "msg-cuke-reply", revision: 1, growerId: "grower-a", text: "Each case is 0 lb." };
+  assert.throws(() => reply(w, "item-1", REPLY, [{ field: "pack", quote: "Each case is 0 lb", value: { amount: 0, unit: "lb" } }], [], ME, T(14)), /more than zero/);
+  assert.throws(() => reply(w, "item-1", { ...REPLY, text: "Each case is 2500 lb." }, [{ field: "pack", quote: "Each case is 2500 lb", value: { amount: 2500, unit: "lb" } }], [], ME, T(14)), /more than this hub handles/);
+  assert.equal(JSON.stringify(w), before);
+});
+
+test("latestChange names the newest decision plainly, with names from the resolver", () => {
+  let w = inbox();
+  const names = { grower: (id: string) => `Grower ${id}`, buyer: (id: string) => `Buyer ${id}` };
+  assert.equal(latestChange(createWorkbench(createLedger(scenario())), names), undefined);
+  assert.equal(latestChange(w, names), `${"coordinator"} read Grower grower-a's update at ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" }).format(new Date(T(13)))}`);
+  w = dismiss(w, "item-1", "not needed", ME, T(20));
+  assert.equal(latestChange(w, names), "Hub coordinator dismissed Grower grower-a's update at 4:20 AM");
+  assert.match(latestChange(w)!, /^Hub coordinator dismissed .+'s update at 4:20 AM$/);
 });

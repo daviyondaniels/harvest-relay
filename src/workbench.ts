@@ -1,7 +1,8 @@
 import { amendFromMessage, applyAnswers, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash, type Plan, type Snapshot } from "./planner.ts";
 import { normalize, type BaseUnit, type Quantity } from "./quantity.ts";
-import { NAME_MAX } from "./hub.ts";
+import { NAME_MAX, HUB_ZONE } from "./hub.ts";
+import { BUYERS, CONTACTS } from "./demo.ts";
 import { planOf } from "./commitments.ts";
 import type { OutboxMessage, Resolution } from "./resolve.ts";
 import { commitUpdate, locate, reviewUpdate, validateSource, type Change, type Field, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -317,4 +318,33 @@ export function preview(w: Workbench, id: string): Preview {
   return { ...base,
     orders: l.snapshot.orders.map(o => ({ orderId: o.id, unit: normalize(o.quantity).unit, requested: normalize(o.quantity).amount, before: fill(before, o.id), after: fill(after, o.id) })),
     unallocated: [...lots].map(([lotId, unit]) => ({ lotId, unit, before: before.unallocated.find(u => u.lotId === lotId)?.amount ?? 0, after: after.unallocated.find(u => u.lotId === lotId)?.amount ?? 0 })) };
+}
+
+// The newest decision anywhere in the workbench, said plainly for the "changed in another
+// tab" message, for example "Sam approved Alder Creek Farm's update at 8:03 AM".
+const WORDS: Record<DecisionKind, string> = {
+  received: "received", interpreted: "read", asked: "asked about", replied: "recorded a reply to", corrected: "corrected", "lot-confirmed": "confirmed the lot for",
+  "left-pending": "left pending", returned: "returned", dismissed: "dismissed", refreshed: "refreshed", approved: "approved"
+};
+const RESOLVED: Record<string, string> = {
+  drafted: "drafted a message about", redrafted: "redrafted a message about", edited: "edited a message about", confirmed: "confirmed a message about", discarded: "discarded a message about",
+  sent: "sent a message about", "reply-recorded": "recorded a reply about", "grower-replied": "recorded a grower reply about", "supply-recorded": "recorded supply for"
+};
+export function latestChange(w: Workbench, names: { grower: (id: string) => string; buyer: (id: string) => string } = {
+  grower: id => CONTACTS.find(c => c.id === id)?.name ?? id, buyer: id => BUYERS[id] ?? id
+}): string | undefined {
+  const buyerOf = (orderId: string) => { const o = w.ledger.snapshot.orders.find(x => x.id === orderId); return o ? names.buyer(o.buyerId) : orderId; };
+  const found: { at: string; line: string }[] = [];
+  for (const i of w.items) for (const d of i.decisions) found.push({ at: d.at, line: `${d.actor} ${WORDS[d.kind] ?? d.kind} ${names.grower(i.source.growerId)}'s update` });
+  for (const r of w.resolutions) for (const d of r.decisions) found.push({ at: d.at, line: `${d.actor} ${RESOLVED[d.kind] ?? d.kind} ${buyerOf(r.orderId)}'s order` });
+  for (const e of w.ledger.commitments?.log ?? []) {
+    if (e.kind === "confirmed") found.push({ at: e.at, line: `${e.by} confirmed the plan` });
+    else if (e.kind === "cut") found.push({ at: e.at, line: `${e.by} decided who takes the cut` });
+    else found.push({ at: e.at, line: `${e.by} marked ${buyerOf(e.orderId)}'s order ${e.stage === "packed" ? "packed" : "handed off"}` });
+  }
+  if (!found.length) return undefined;
+  // Later entries win a tie, since each list is in the order things happened.
+  const last = found.reduce((a, b) => Date.parse(b.at) >= Date.parse(a.at) ? b : a);
+  const when = new Date(last.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: HUB_ZONE });
+  return `${last.line} at ${when}`;
 }
