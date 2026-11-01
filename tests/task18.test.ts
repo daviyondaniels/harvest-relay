@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { seedWorkbench } from "../src/seed.ts";
 import { confirmPlan } from "../src/commitments.ts";
 import { arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
-import { keepTyped, readKept } from "../app/lib/kept.ts";
 
 // Task 18: Overview, Pack and layout.
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -98,8 +97,9 @@ test("Pack: pick lists fold, print shows them with a header row, names stay whol
   assert.match(css, /\.sheet td\.who \{ white-space: nowrap; \}/);
 });
 
-test("the ship-short tick keeps its state from the kept values", () => {
-  const f = new FormData(); f.set("shipShort", "yes");
-  assert.equal(readKept(keepTyped(f, "lock"), "lock", "shipShort"), "yes");
-  assert.match(pack, /defaultChecked=\{kept\}/);
+// Kept values are unsigned query parameters, so a consent tick is never restored from them: a crafted
+// link must not be able to pre-tick "ship short". After a refusal the coordinator ticks it again.
+test("the ship-short tick is never pre-ticked from the URL", () => {
+  assert.doesNotMatch(pack, /defaultChecked/);
+  assert.doesNotMatch(source("app/lib/kept.ts"), /shipShort/);
 });

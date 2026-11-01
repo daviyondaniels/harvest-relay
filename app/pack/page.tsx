@@ -16,7 +16,6 @@ import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { readKept } from "../lib/kept.ts";
 import { LEAVE_PROMPT, STALE_HEADING, arrivedLead, leaveSentence, leavesShort, newSinceConfirm, overview, staleSentence, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
 import { AutoPrint } from "./print.tsx";
 
@@ -45,7 +44,6 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   // Same rule as the Overview: a waiting update that would leave a buyer short is reviewed before confirming. The domain
   // still allows confirming on approved updates only, so Pack keeps a secondary "Confirm without it".
   const leave = leavesShort(w, overview(w).previews)[0], cutOpen = conflicts(w.ledger).length > 0;
-  const kept = readKept(params, "lock", "shipShort") === "yes";
   // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
   // With a cut open the one primary on the page is Settle the cut; the second confirm comes after it is settled.
   const confirmForm = c && stale && cutOpen ? <p className="small">Settle the cut first, then confirm again.</p> : (
@@ -53,7 +51,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
       <input type="hidden" name="version" value={version} />
       {leave && <p className="small leave"><b>{leaveSentence(grower(leave.item.source.growerId), buyer(orders.find(o => o.id === leave.order.orderId)?.buyerId ?? leave.order.orderId), weight(leave.order.after.short, leave.order.unit))}</b> {LEAVE_PROMPT} <a href={`/review?item=${encodeURIComponent(leave.item.id)}`}>Review {grower(leave.item.source.growerId)}'s update</a></p>}
       {blocking.length > 0 && (
-        <label className="check"><input type="checkbox" name="shipShort" value="yes" defaultChecked={kept} {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
+        <label className="check"><input type="checkbox" name="shipShort" value="yes" {...invalid(bad, "lock", "shipShort")} /> Ship these orders short without telling the buyer yet. This is recorded.</label>
       )}
       <Problem bad={bad} on="lock" name="shipShort" />
       <div className="row">
