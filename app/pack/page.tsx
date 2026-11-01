@@ -106,7 +106,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         <Conflicts w={w} version={version} known={known} page="/pack" params={params} level={2} />
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
-            {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w)} Each changed line on a sheet says what it was.</p></div>}
+            {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w, cutOpen)} Each changed line on a sheet says what it was.</p></div>}
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && " Print the sheets."}</p>
             {arrived > 0 && <p className="small"><b>{arrivedLead(arrived)}</b> <a className="button primary" href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{CHECK_IT(arrived)}</a></p>}
             <div className="row"><PrintButton primary={!stale && arrived === 0} /><a className="button" href="/export">Download day record</a></div>

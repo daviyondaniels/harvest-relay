@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { seedWorkbench } from "../src/seed.ts";
 import { approve, preview } from "../src/workbench.ts";
-import { confirmPlan, markAllStage } from "../src/commitments.ts";
+import { confirmPlan, conflicts, lockGate, markAllStage } from "../src/commitments.ts";
+import { shortages } from "../src/orders.ts";
 import { CHECK_IT, CONFIRM_WITHOUT, OTHER_UNSETTLED, SETTLE_FIRST, SHIP_SHORT, leaveVisible, reallyShort, unsettledFor } from "../app/lib/view.ts";
 
 // Task 21: Overview and Pack, comprehension.
@@ -11,6 +12,16 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z";
 const seed = () => seedWorkbench(JSON.parse(source("data/seed-readings.json")), NOW);
 const page = source("app/page.tsx"), pack = source("app/pack/page.tsx"), css = source("app/globals.css");
+
+test("against the seed after a late drop, the checklist count is the orders the ledger finds short", async () => {
+  const w = await seed(), t = w.items.find(i => i.source.id === "msg-tomato")!;
+  const c = confirmPlan(w, "A Name", NOW, { shipShort: true });
+  const d = approve(c, t.id, "A Name", preview(c, t.id).reviewHash!, LATER);
+  assert.equal(conflicts(d.ledger).length, 1, "the drop opens a cut");
+  const gaps = new Set(shortages(d.ledger).map(s => s.orderId)), { blocking } = lockGate(d);
+  assert.deepEqual(reallyShort(blocking, gaps), blocking.filter(id => gaps.has(id)));
+  assert.deepEqual(reallyShort(blocking, gaps).sort(), [...gaps].sort(), "every short order is counted and nothing else");
+});
 
 test("the checklist counts only buyers who are actually short", () => {
   assert.deepEqual(reallyShort(["a", "b", "c"], new Set(["b"])), ["b"]);
