@@ -172,7 +172,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
           <tr><td>Delivery day</td><td>{i.deliveryOn ? day(i.deliveryOn) : "not stated"}</td></tr>
         </tbody></table>
-      </> : <p className="blocker">This message has not been read yet. {closed ? "" : live > 0 ? "Use Read automatically below, or enter the reading yourself." : "Enter the reading below."}</p>}
+      </> : <p className="blocker">This message has not been read yet. {closed ? "" : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
 
       {byField.size > 0 && !closed && (
         <div className="blocker" role="status">
@@ -209,7 +209,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           </form>
         </details>}
         {i && <details open={failedOn("correct")}>
-          <summary>Correct the reading</summary>
+          <summary>Correct what was read</summary>
           <form action={correctAction} className="form"><Hidden {...v} />
             <p className="muted small">Use the grower's own words from the message. The change and the quote are kept in the history.</p>
             <ValueFields on="correct" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("correct", "field")} value={kv("correct", "value")} />
@@ -311,7 +311,7 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
   const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
   return (
     <details open>
-      <summary>Enter the reading yourself</summary>
+      <summary>Enter the details yourself</summary>
       <form action={readByHandAction} className="form"><Hidden {...v} />
         <p className="muted small">{call ? "Your call note is the evidence. Add words from it only to point at one part." : "Copy the grower's own words from the message; they are kept as the evidence."} Then check it and approve as usual.</p>
         <label>What changed

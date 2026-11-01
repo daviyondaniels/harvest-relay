@@ -38,12 +38,12 @@ export async function current(): Promise<Stored> {
 }
 
 export class StaleView extends Error {}
-// With rebase, a version mismatch runs the action on the current state instead of refusing.
-// Only actions whose domain check re-validates exactly what the page showed may ask for it.
 export function staleMessage(w: Workbench): string {
   const what = latestChange(w);
   return `Something changed in another tab or window${what ? `: ${what}` : ""}. Check the page and try again.`;
 }
+// With rebase, a version mismatch runs the action on the current state instead of refusing.
+// Only actions whose domain check re-validates exactly what the page showed may ask for it.
 export async function act(expected: number, f: (w: Workbench) => Workbench | Promise<Workbench>, opts: { rebase?: boolean } = {}): Promise<void> {
   const s = await current();
   if (s.version !== expected && !opts.rebase) throw new StaleView(staleMessage(s.state));

@@ -116,3 +116,20 @@ Actions have no authentication, the reviewer is a typed name, and anyone who can
 - One coordinator. The name is self-declared and is provenance, not identity.
 - Only a drop in supply creates a conflict, and a cut is in whole pounds.
 - Hosting blockers are unchanged (see Milestone 4: Order resolution above).
+
+## Ease of use pass, November 1
+
+Wording and flow changes on branch `ux/ease-of-use`. Nothing here adds delivery, authentication or any model call. A browser walk-through of these changes has not been done.
+
+**What works**
+- The coordinator's name is asked on the first action that records something, beside its button, and the action runs in the same submit. Until then the header reads "Not signed in · set name". No action records the label "Coordinator". A refused name keeps the action's other inputs.
+- Overview: a ready update can be approved from its attention row (it uses the same review hash as the Review page, and a changed row is refused with the "changed" message); a message read as no change can be dismissed there. When nothing is waiting an all-clear card offers Confirm today's plan. "New since you confirmed" lists later changes. A Day details fold holds the rest. Log a call is a tab.
+- Review updates: "What changed" is answered by plain choices (a new total, added to what they have, a correction, a forecast not confirmed). The quote is optional and, when left blank, the app picks literal words from the grower's message or reply and never writes its own. A refused submit keeps what was typed. A forecast is "noted" and leaves confirmed supply unchanged. The change shows "before → after (down N)". The cut card is at the top.
+- Orders: Send from the Next step card is one step, and stops at the draft when words need confirming or the check flags something. The buyer's answer is yes or no with no note. Each order shows one status chip and one pending-update line per grower. Split is hidden when only one buyer is affected. The fine print reads "Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to. Messages are recorded, not delivered, in this demo."
+- Pack: Print is in the confirmed group; Confirm again is the primary button when the plan is out of date and names the buyers whose sheets are out of date; Mark all packed and Mark all handed off; a line counts messages since the confirm. Printed sheets start one per page and carry the buyer or grower name and the confirm time. Demo controls sit in a group labelled "Demo".
+- Number limits: 100,000 overall and 2,000 per case. A refused reply leaves no turn or history line.
+- Approve, decide a cut and mark a stage apply when only something unrelated changed, and are refused when what they act on changed. Other actions still refuse any stale page.
+- `tests/app-copy.test.ts` fails if banned on-screen phrases (for example "Kind of update", "Change preview", "proposed allocation", "Not worked out yet", "Allocation rule") return in `app/`.
+
+**Not verified**
+- The layout at 320 to 1280 px, 44 px targets at phone width (including the "set name" link), focus movement and printed pages have not been checked in a browser for this pass.

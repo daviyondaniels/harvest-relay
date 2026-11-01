@@ -180,7 +180,7 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   return { operation, lotId, quantity: { amount: Number(amount), unit }, grade, deliveryOn, ...(str(f, "target") ? { correctsEventId: str(f, "target") } : {}), ...(quote ? { quote } : {}) };
 }
 export async function readByHandAction(f: FormData) {
-  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", keep: "hand", done: "Reading saved. Check it, then approve." });
+  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", keep: "hand", done: "Details saved. Check them, then approve." });
 }
 export async function confirmLotAction(f: FormData) { return run(f, (w, i, who) => confirmLot(w, i, who, now()), { on: "lot", done: "Lot confirmed." }); }
 const note = (f: FormData) => need(f, "note", "Write a note or reason.");
@@ -213,7 +213,7 @@ export async function liveAllowance(): Promise<number> {
   return process.env.MODEL_API_KEY && Number.isSafeInteger(cap) && cap > 0 ? Math.max(0, cap - liveUsed) : 0;
 }
 async function live() {
-  if (await liveAllowance() < 1) throw new Error("Automatic reading is off or used up on this server. Enter the reading yourself.");
+  if (await liveAllowance() < 1) throw new Error("Automatic reading is off or used up on this server. Enter the details yourself.");
   liveUsed += 1;
   return { enabled: true, model: DEMO_MODEL, ...DEMO_SETTINGS, budget: createBudget(1), transport: metaTransport(process.env.MODEL_API_KEY!) };
 }
@@ -222,7 +222,7 @@ export async function liveReadAction(f: FormData) {
     const it = w.items.find(x => x.id === i);
     if (!it) throw new Error("Unknown inbox item");
     const r = await interpretSource(w.ledger, it.source, await live());
-    if (r.status !== "proposed") throw new Error("The automatic reading wasn't usable. Enter the reading yourself.");
+    if (r.status !== "proposed") throw new Error("The automatic reading wasn't usable. Enter the details yourself.");
     return interpret(w, i, r.proposal, `Muse Spark, live, prompt ${PROMPT_VERSION}`, who, now());
   }, { on: "read", done: "Message read. Check the highlighted words." });
 }

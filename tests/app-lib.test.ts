@@ -65,7 +65,9 @@ test("act refuses a stale version with the latest change, and with rebase runs o
   const now = await current(), n = now.state.items.length;
   await assert.rejects(act(start, w => receive(w, src("m-2"), "2026-10-28T09:05:00Z")), (e: Error) => e instanceof StaleView && /^Something changed in another tab or window: .+\. Check the page and try again\.$/.test(e.message));
   assert.equal((await current()).state.items.length, n);
-  await act(start, w => receive(w, src("m-3"), "2026-10-28T09:10:00Z"), { rebase: true });
+  let seen = -1;
+  await act(start, w => { seen = w.items.length; return receive(w, src("m-3"), "2026-10-28T09:10:00Z"); }, { rebase: true });
+  assert.equal(seen, n, "f received the current state, not the one the page showed");
   assert.equal((await current()).state.items.length, n + 1);
 });
 

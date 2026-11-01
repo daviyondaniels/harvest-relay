@@ -26,7 +26,23 @@ test("M6: the supply amount field takes whole numbers and the action says so", (
 test("M8: the Orders fine print says nothing is delivered", () => {
   const page = source("app/orders/page.tsx");
   assert.doesNotMatch(page, /Nothing is reserved, sent to buyers/);
-  assert.match(page, /nothing is delivered/);
+  assert.match(page, /Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to\. Messages are recorded, not delivered, in this demo\./);
+  assert.doesNotMatch(page, /Allocation rule/);
+});
+
+test("Ease task 7: banned words never come back as on-screen text anywhere in app/", async () => {
+  const { readdirSync } = await import("node:fs");
+  const files = (readdirSync(new URL("../app", import.meta.url), { recursive: true }) as string[]).filter(f => /\.tsx?$/.test(f));
+  assert.ok(files.length > 5);
+  // Comment and import lines are skipped; the rest is searched for the banned phrases.
+  const banned = [/Kind of update/, /Change preview/, /proposed allocation/i, /Not worked out yet/, /Invalid operation answer/, /Pack amount must be positive/, /Allocation rule/, />\s*Reading\s*</, /"Reading"/];
+  for (const f of files) {
+    const text = source(`app/${f}`).split("\n").filter(l => !/^\s*(\/\/|\*|import )/.test(l)).join("\n");
+    for (const b of banned) assert.doesNotMatch(text, b, `${f}: ${b}`);
+  }
+  // Raw tokens may appear only as code values, never in a user-facing sentence.
+  const shown = [/>[^<{]*\b(replace-total|add-quantity)\b[^<{]*</, /(error|Error|FieldError)\([^)]*\b(replace-total|add-quantity)\b/];
+  for (const f of files) for (const b of shown) assert.doesNotMatch(source(`app/${f}`), b, `${f}: ${b}`);
 });
 
 test("Task 17: the approver name is asked for beside its field and remembered in a strict, HttpOnly cookie", () => {

@@ -184,6 +184,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
       {picked && <div className="option-group" aria-labelledby="next-step">
         <h2 id="next-step">Next step</h2>
         <PrimaryCard x={picked} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, picked.opt)} known={known} bad={optBadOf(picked.index)} why={why(picked.opt, o.product)}
+          // The kept Send text is read only for the picked option: the other options use "Draft message", which has no text to keep.
           draft={(notice && !notice.ok && notice.res === `opt-${picked.index}` ? typed("send", "body") : undefined) ?? template(factsFor(w, orderId, picked.opt, names))} />
       </div>}
       {offered.length > 0 ? (rest.length > 0 && <details className="option-group" open={rest.some(x => optBadOf(x.index)) || undefined}>
@@ -205,7 +206,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
           <li key={`${r.id}-reply`}><span className="muted">{r.reply!.channel === "call" ? "Call note" : "Reply"}</span> “{r.reply!.text}”</li>
         )))}</ol>
       </div>}
-      <p className="fine-print">Allocation rule: each product goes to direct orders first, by order priority, then to substitutes each buyer has already approved. Nothing is reserved or confirmed for delivery, and Send only records a message: nothing is delivered to buyers or growers.</p>
+      <p className="fine-print">Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to. Messages are recorded, not delivered, in this demo.</p>
     </section>
 
     <aside className="preview" aria-labelledby="drafts">
