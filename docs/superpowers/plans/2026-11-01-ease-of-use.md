@@ -356,3 +356,118 @@ The clicks went from 43 + 7 typed to 37 + 3 typed. Tasks 2 and 10 met their targ
 ### Task 12: Measure again (controller)
 
 Re-run the four audits and the click script on a fresh build, as in Task 8. Loop until every interface criterion is 4.5 or above (overall about 9) and the clicks are at the targets as ruled above.
+
+---
+
+## Round 4: from the round 3 re-audit
+
+Sources (git-ignored), all in `reports/round3/`:
+
+| Report | Score |
+|---|---|
+| `audit-a-first-day.md` | 8.5 |
+| `audit-b-phone-late-drop.md` | 8 |
+| `audit-c-mistakes-keyboard.md` | 8.5 |
+| `interface-rating.md` | 8.5 |
+
+Interface scores now: hierarchy 4.2, layout 4.2, navigation 4.5, comprehension 4.2, visual design 4.5, feedback 4.3. Clicks are 25 + 4; tasks 5 (7) and 9 (4) are still above target.
+
+Rulings for this round:
+- **Values the coordinator can see are enough to approve.** "Apply and approve" and "Save and approve" may approve in one step when every value is visible in the form the coordinator submits. The result must then name the change and every buyer now covered or short, with Resolve.
+- **One-tap Approve on the Overview** is only for an update that leaves no order short. An update that would leave a buyer short goes to Review with its preview, so a cut is never approved blind.
+- **Undo is out of scope this round.**
+- **The demo prompt-injection message stays.** It is part of the safety demo, but it gets a plain label.
+
+### Task 13: Overview and Pack, hierarchy and the stale plan
+
+**Files:** `app/page.tsx`, `app/lib/view.ts`, `app/pack/page.tsx`, `app/pack/print.tsx`, `app/review/page.tsx` (demo fold only), `app/globals.css` (Overview and Pack rules only), and tests.
+
+- **No Confirm trap.**
+  - The Overview offers Confirm only when no waiting update would leave an order short if approved. Compute this with the same preview the Review page uses, per ready update.
+  - Otherwise, in place of Confirm, show "{Grower}'s update would leave {buyer} {n} {unit} short. Review it before confirming." with a link to that update.
+  - The domain gate is unchanged. Test it with the seed: the tomato update is waiting, so Confirm is not offered.
+- **One-tap Approve only when no buyer is left short.** A ready row whose preview leaves any order short shows "Review it" (link) instead of Approve. Test it.
+- **Row order.** The order is:
+  1. settle the cut;
+  2. short orders;
+  3. updates not checked yet (unread or read by hand), so a late message shows above the routine approvals;
+  4. ready;
+  5. needing answers;
+  6. dismissable.
+
+  Update `byAttention` and its test.
+- **One primary per card.** Only the first actionable row's button is `primary`; later rows use the secondary style.
+- **Confirmed card first.**
+  - After confirming, the "Plan confirmed by …" card renders above "Needs your attention".
+  - When the plan is stale, that card leads with the same stale sentence as Pack (who changed). Confirm again becomes the primary button, and Mark all and Print are secondary.
+  - Hide the "Needs your attention" heading and card when no rows remain.
+- **"Review updates"** becomes a text link "Open all {n} updates" next to the attention heading. It is not a full-width bar.
+- **Resolve once.** After an Overview approve that leaves a buyer short, only one Resolve shows: in the result, or on the row, not both.
+- **Density.**
+  - "Supply against orders" moves inside the "Day details" fold.
+  - On phones (≤ 600 px), the stat chips are a 2 × 2 grid, and each buyer row is two lines: the buyer, then "{covered} of {ordered} {unit}" plus a status chip.
+  - The Overview at 1280 should be under about 1,300 px tall with the seed data. Measure and report it.
+- **The instruction-like message.** On the Overview row and in the Review list, a message read as having no lot or amount whose text gives instructions shows "Looks like an instruction, not a harvest update". Use a simple heuristic on the reading (unresolved with no amount), not a new model call. State the rule in the report.
+- **Pack.**
+  - Confirm again shows only when the plan is stale.
+  - When stale, the out-of-date sentence is a heading-led warning box ("Printed sheets are out of date"), and Print sheets is secondary until Confirm again is pressed.
+  - Printed sheets get a column header row, and the card has top margin in print.
+- **Demo tools.** Every demo control (Pack late message, Review grower reply, and any others) moves into one closed "Demo tools" fold at the foot of its page.
+- **Investigate the Riverbend-to-Northside switch.** The same pending tomato cut previews "Riverbend becomes short" before confirming but "Northside" after. Find out why (probably confirmed promises are protected), and make the preview say why when it applies, for example "Riverbend's order was confirmed first, so Northside takes the cut". If it is a defect, fix it and add a test.
+
+- [ ] Tests: the Confirm trap, one-tap eligibility, row order, the stale confirmed card, and copy tests. Measure Overview height at 1280 and 390.
+- [ ] Implement, run all checks, then commit.
+
+### Task 14: Orders and Review, errors and the remaining clicks
+
+**Files:** `app/orders/page.tsx`, `app/review/page.tsx`, `app/value-fields.tsx`, `app/named-submit.tsx`, `app/actions.ts`, `app/lib/format.ts`, `src/orders.ts` (only if needed), the demo extras data (wording only), and tests.
+
+- **No silent refusals.**
+  - The Orders "Record their reply" form: map its errors to `amount` (`fieldOf`: its `on` must map to `amount`, not `value`). Use `noValidate` so the app's message shows, not Chromium's. Set `aria-invalid` and keep the typed values.
+  - Case-contents errors focus the input itself, not the wrapper `#reply-value`.
+  - Sweep every form for a refusal that loses focus: each server error must name a field or land on the form's result. Add a test that every `on` used by `failed()` has a `fieldOf` mapping, or that the error falls back to the form.
+- **The name is saved only on success.** A refused action must not change the remembered name (the header "Recording as …").
+- **Accessible names.** Remove the stray " : " in button accessible names (for example, "Send : Ask Alder Creek Farm …").
+- **Orders, after a notice or offer.**
+  - After "Tell {buyer}" is sent, the Next step shows that state ("Told {buyer} they'll be short {n}"). The Tell button is gone, and no second notice can be sent from that card.
+  - Only one Send shows at a time. A draft in Messages replaces the Next step's Send (the Next step shows "Draft ready below" with a link) until it is sent or discarded.
+- **Task 5 path, 4 clicks.**
+  - After an ask is sent, "Log their call" is open by default.
+  - Logging the call lands on Review for that reply, with the details pre-filled and a **"Save and approve"** button (hand form). It applies only when every value is visible in the form, as ruled.
+  - The result names what changed and who is now covered or short.
+  - On Orders, keep one link to the reply. Drop the other two. "Call logged as their reply." ends in that link.
+- **Task 9 path, 3 taps.** The hand form's primary button is "Save and approve" wherever the details are complete, so the late message path is: the row, Save and approve, Settle the cut.
+- **The Apply and approve result** names the change and every buyer now covered or short (as Approve does). While questions are open, the preview area says "The change will show here once these answers are applied." in place of "Waiting on your answer".
+- **"Done today"** lists a noted forecast as "Noted", not "Approved".
+- **Wording.**
+  - On Review, "Waiting on your answer" becomes "Needs your answer". It shows only when there is an open question; with no details it says "Enter the details below".
+  - On Orders, "Waiting on reply" becomes "Asked, waiting for the grower".
+  - "Planned: we expect to send this, but it isn't promised…" (`app/lib/format.ts:99`) becomes "Not promised to the buyer yet."
+  - A call note opens with "Check what they said" in place of "This message has not been read yet."
+  - In the demo late message, make the numbers agree with the lot shown: it says "not 110" while the lot shows 80 lb.
+
+- [ ] Tests:
+  - the `fieldOf` coverage;
+  - the name not saved on refusal (unit test of the helper);
+  - Tell hides after sending (the pure helper behind the Next step);
+  - "Save and approve" composed with the hand reading;
+  - the forecast listed as "Noted";
+  - copy tests.
+- [ ] Implement, run all checks, then commit.
+
+### Task 15: Phone chrome and small layout
+
+**Files:** `app/layout.tsx`, `app/nav.tsx`, `app/globals.css`, and tests.
+
+- **Tab bar order.** The phone tab bar comes after `<main>` in the DOM, so keyboard focus reaches the content first. It stays fixed at the bottom visually. Each tab link is at least 44 px wide.
+- **195 px.**
+  - No sideways scroll once a cut card shows (`label.check` radio label span, `app/globals.css:307`).
+  - Labels in "What we understood" do not break mid-word: use `overflow-wrap: anywhere` only on values, not labels, or stack the label above the value.
+- **Fine print** is at least 14 px.
+
+- [ ] Tests: copy tests. Measure 195, 320 and 390 px with a cut card showing.
+- [ ] Implement, run all checks, then commit.
+
+### Task 16: Measure again (controller)
+
+Same as Task 12.
