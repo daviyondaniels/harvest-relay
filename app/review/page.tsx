@@ -433,7 +433,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
   if (!p.change) return (
     <div className="tag blocked">
-      <p className="from">{p.error ? "Cannot preview" : "Needs your answer"}</p>
+      <p className="from">{p.error ? "Cannot preview" : p.questions.length ? "Needs your answer" : "Enter the details below"}</p>
       <p className="to">{p.questions.length ? "The change will show here once these answers are applied." : "Check the details above"}</p>
       <p className="what">{p.error ?? "The change can't be worked out until the open details are answered."}</p>
     </div>

@@ -297,7 +297,7 @@ function AltButton({ x, order, buyerName, version, open, known, bad, draft }: { 
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       <input type="hidden" name="body" value={draft} />
       {open ? <OpenNote open={open} sr={` for ${label}`} />
-        : <div><NamedSubmit label={<>{label}<span className="sr-only">{more}</span></>} known={known} on={on} bad={bad} /></div>}
+        : <div><NamedSubmit label={<>{label}<span className="sr-only">{more}</span></>} known={known} on={on} bad={bad} quiet /></div>}
       <span className="fine-print">{opt.kind === "offer-substitute" ? `${amt} of ${opt.product} (${opt.grade}). ` : ""}Recorded only; nothing is delivered.</span>
     </form>
   );
