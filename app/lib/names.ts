@@ -44,6 +44,12 @@ export const NAME_PROBLEM: Record<"long" | "hidden" | "symbols" | "reserved", st
   reserved: `"${RESERVED_NAME}" is the label for unnamed actions. Enter your own name.`
 };
 
+// True when the form would be refused only for lacking a name: nothing typed and none remembered.
+export function needsName(typed: unknown, remembered: string | undefined): boolean {
+  if (remembered) return false;
+  const c = checkName(typed);
+  return "problem" in c && c.problem === "empty";
+}
 export const NAME_NEEDED = "Enter your name to continue.";
 // Runs an action as the coordinator named on the form (checked by the same rules as any name), else
 // as the name remembered for this browser; with neither the form is refused beside its own name field.

@@ -6,7 +6,7 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, shortages, type Option } from "../src/orders.ts";
-import { conflicts, confirmPlan, decideCut, markAllStage, markStage } from "../src/commitments.ts";
+import { conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
@@ -14,13 +14,13 @@ import { FIELDS, type Field } from "../src/updates.ts";
 import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
-import { NAME_NEEDED, NAME_PROBLEM, checkName, runAs } from "./lib/names.ts";
-import { FieldError, fieldOf, type Where } from "./lib/errors.ts";
+import { NAME_NEEDED, NAME_PROBLEM, checkName, needsName, runAs } from "./lib/names.ts";
+import { FieldError, fieldOf, manyMissing, type Missing, type Where } from "./lib/errors.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
-import { buyerChanges } from "./lib/result.ts";
-import { approvalResult, shortMap } from "./lib/view.ts";
+import { answerLine, buyerChanges, sentLine } from "./lib/result.ts";
+import { SHIP_SHORT as SHIP, approvalResult, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
 import { value } from "./lib/values.ts";
 
@@ -81,7 +81,7 @@ function answers(f: FormData, from: "reply" | "message", text?: string): Answer[
       return { field: x, quote, value: v };
     });
   }
-  if (!f.has("field") && FIELDS.some(x => f.has(`value-${x}`))) throw new FieldError("Enter an answer for at least one open detail.", "value");
+  if (!f.has("field") && FIELDS.some(x => f.has(`value-${x}`))) throw new FieldError("Enter an answer for at least one open detail.", [...f.keys()].find(k => /^value-/.test(k)) ?? "value");
   const name = field(f), raw = str(f, "value"), given = str(f, "quote");
   const v = value(name, raw), quote = given || (from === "reply" && text ? pickQuote(text, raw) : "");
   if (!quote) throw new FieldError(`Copy the words in the ${from} that support this value.`, "quote");
@@ -113,7 +113,8 @@ function back(item: string, notice: Notice, on?: string, kept: Record<string, st
 // name field (named); only the demo's scripted arrival of a grower's reply (anon) is not theirs.
 // after: reads the changed workbench, and may replace the result (an approval that opens a conflict says so).
 // supply: on Orders, the reply form that records a supply answer (true) or a buyer's answer (false), so a refusal lands on its own field.
-type Step = { on: string; done: string; keep?: KeptForm; rebase?: boolean; anon?: boolean; supply?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
+// say: the result worded from the changed workbench, by name and amount, replacing done once the change worked.
+type Step = { on: string; done: string; say?: (w: Workbench) => string; keep?: KeptForm; rebase?: boolean; anon?: boolean; supply?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
 // Save/Apply and approve stopped at the preview because the values are not the ones it was worked out from:
 // they are saved, the new outcome is shown, and the page puts focus on Approve (page.tsx, id APPROVE_ID).
 const CHANGED = "You changed the details, so check the change below, then approve.";
@@ -174,8 +175,9 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   if (!KINDS.includes(operation)) throw new FieldError("Choose what kind of update this is.", "operation");
   const lotId = need(f, "lot", "Choose the lot.");
   const amount = need(f, "amount", "Enter the amount.");
+  // A number that is not above zero (0, -5) is told so; only what is not a whole number at all asks for one.
+  if (/^-?\d+$/.test(amount) && Number(amount) <= 0) throw new FieldError("Enter an amount above zero.", "amount");
   if (!/^\d{1,9}$/.test(amount)) throw new FieldError("Enter the amount as a whole number.", "amount");
-  if (Number(amount) === 0) throw new FieldError("Enter an amount above zero.", "amount");
   const unit = str(f, "unit") as (typeof UNIT_CHOICES)[number];
   if (!UNIT_CHOICES.includes(unit)) throw new FieldError("Choose a unit.", "unit");
   const grade = need(f, "grade", "Enter the grade."), deliveryOn = need(f, "day", "Choose the delivery day.");
@@ -313,7 +315,7 @@ async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workb
   const order = str(f, "order");
   let notice: Notice, resId = str(f, "res"), kept: Record<string, string> = {}, landed: string | undefined;
   try {
-    const go = async (who: string) => { await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); landed = review?.(next); return next; }, { rebase: step.rebase }); };
+    const go = async (who: string) => { await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); landed = review?.(next); if (step.say) step.done = step.say(next); return next; }, { rebase: step.rebase }); };
     await (step.anon ? go("") : asNamed(f, go));
     notice = { text: step.done, ok: true, on: step.on, ...(resId ? { res: resId } : {}) };
   } catch (e) { notice = await failed(e, step.on, resId || undefined, { supply: step.supply }); kept = { ...(step.keep ? keepTyped(f, step.keep) : {}), ...keepWho(f) }; }
@@ -357,6 +359,7 @@ export async function sendNowAction(f: FormData) {
     }
     const sent = sendMessage(next, id, CONTACTS, who, now());
     step.on = "send";
+    step.done = sentLine(sent.resolutions.at(-1)!);
     return sent;
   }, step, w => w.resolutions.at(-1)!.id);
 }
@@ -388,7 +391,8 @@ export async function museDraftAction(f: FormData) {
   toOrders(order, resId, notice, kept);
 }
 export async function editDraftAction(f: FormData) { return onOrder(f, (w, who) => editDraft(w, res(w, f).id, words(f, "body", "the message"), who, now()), { on: "edit", done: "Edit saved and checked." }); }
-export async function sendAction(f: FormData) { return onOrder(f, (w, who) => sendMessage(w, res(w, f).id, CONTACTS, who, now()), { on: "send", done: "Recorded as sent." }); }
+const resOf = (w: Workbench, f: FormData) => w.resolutions.find(r => r.id === str(f, "res"))!;
+export async function sendAction(f: FormData) { return onOrder(f, (w, who) => sendMessage(w, res(w, f).id, CONTACTS, who, now()), { on: "send", done: "Recorded as sent.", say: w => sentLine(resOf(w, f)) }); }
 // The words the page showed, so only those are confirmed (resolve.ts confirmDraft).
 const shownWords = (f: FormData) => f.getAll("words").filter((v): v is string => typeof v === "string" && v.length <= 120).slice(0, 50);
 export async function confirmDraftAction(f: FormData) { return onOrder(f, (w, who) => confirmDraft(w, res(w, f).id, shownWords(f), who, now()), { on: "confirm", done: "Words confirmed." }); }
@@ -402,12 +406,14 @@ export async function buyerReplyAction(f: FormData) {
     const accept = yesNo(f, "accept", "Press They said yes or They said no.");
     const given = f.get("quote"), blank = typeof given !== "string" || !given.trim();
     if (str(f, "channel") === "text" && blank) {
+      // A text with nothing pasted: the empty text box is the problem, not the quote.
+      if (!str(f, "text")) throw new FieldError("Enter what they wrote.", "text");
       const quote = quoteFor(str(f, "text"), accept);
       if (!quote) throw new FieldError("Their words don't say plainly yes or no. Select or type the words that answer it.", "quote");
       f.set("quote", quote);
     }
     return recordBuyerReply(w, res(w, f).id, { ...answerOf(f, true), accept }, who, now());
-  }, { on: "reply", done: "Reply recorded.", keep: "buyer", supply: false });
+  }, { on: "reply", done: "Reply recorded.", keep: "buyer", supply: false, say: w => answerLine(resOf(w, f)) });
 }
 export async function supplyReplyAction(f: FormData) {
   return onOrder(f, (w, who) => {
@@ -418,12 +424,12 @@ export async function supplyReplyAction(f: FormData) {
     if (!Number.isSafeInteger(amount)) throw new FieldError("Enter the amount they can supply as a whole number.", "amount");
     if (!w.ledger.snapshot.orders.find(o => o.id === r.orderId)?.acceptedGrades.includes(grade)) throw new FieldError("Choose a grade the order accepts.", "grade");
     return recordSupplyReply(w, r.id, { ...answerOf(f), yes, amount, grade }, who, now());
-  }, { on: "reply", done: "Reply recorded.", keep: "supply", supply: true });
+  }, { on: "reply", done: "Reply recorded.", keep: "supply", supply: true, say: w => answerLine(resOf(w, f)) });
 }
 // A phone reply to an ask: the note is linked to the ask as its reply and goes to review.
 export async function requestedCallAction(f: FormData) {
   const id = str(f, "res");
-  return onOrder(f, (w, who) => receiveRequestedCall(w, res(w, f).id, words(f, "note", "what they said"), who, now()), { on: "call", done: "Call logged as their reply. Check the details, then save and approve.", keep: "call" }, undefined, w => w.resolutions.find(r => r.id === id)?.linkedItemId);
+  return onOrder(f, (w, who) => receiveRequestedCall(w, res(w, f).id, words(f, "note", "what they said"), who, now()), { on: "call", done: "Call logged as their reply.", keep: "call" }, undefined, w => w.resolutions.find(r => r.id === id)?.linkedItemId);
 }
 export async function scriptedRequestReplyAction(f: FormData) {
   return onOrder(f, w => scriptedRequestReply(w, res(w, f).id, extras(), now()), { on: "script", done: "Their reply arrived. It is in Review updates.", anon: true });
@@ -434,6 +440,14 @@ export async function logCallAction(f: FormData) {
   let error: Notice | undefined, item = "", who: Record<string, string> = {};
   const growerId = str(f, "grower"), kept = str(f, "note").slice(0, MAX_TEXT);
   try {
+    // An empty form says everything missing at once, in the order the fields sit on the page, and focuses the first.
+    const all: Missing[] = [
+      ...(!CONTACTS.some(c => c.id === growerId) ? [{ field: "grower", what: "who called" }] : []),
+      ...(!str(f, "note") ? [{ field: "note", what: "the call note" }] : []),
+      ...(needsName(f.get("who"), await rememberedName()) ? [{ field: "who", what: "your name" }] : [])
+    ];
+    const many = manyMissing(all);
+    if (many) throw many;
     await asNamed(f, async who => {
       if (!CONTACTS.some(c => c.id === growerId)) throw new FieldError("Choose who called.", "grower");
       const note = words(f, "note", "the call note");
@@ -463,6 +477,10 @@ export async function confirmAction(f: FormData) {
   try {
     const choice = str(f, "shipShort");
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
+    // No name and no tick where one is needed: both are said at once, on the tick (the first of the two on the page).
+    const w0 = (await current()).state;
+    if (choice !== "yes" && !conflicts(w0.ledger).length && lockGate(w0).blocking.length && needsName(f.get("who"), await rememberedName()))
+      throw manyMissing([{ field: "shipShort", what: `a tick for “${SHIP}”` }, { field: "who", what: "your name" }])!;
     await asNamed(f, who => act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } }));
     notice = { text: home ? "Confirmed. Pack and hand off below." : "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "lock", field: e.field } : { text: e instanceof Error ? e.message : "The plan could not be confirmed" }; kept = keepWho(f); }
@@ -541,7 +559,9 @@ export async function decideCutAction(f: FormData) {
       const cuts = choice === "split" ? ids.map(orderId => ({ orderId, amount: amount(orderId) })) : ids.includes(choice) ? [{ orderId: choice, amount: excess }] : undefined;
       if (!cuts) throw new FieldError("Choose who takes the cut.", "cut");
       const next = decideCut(w, lot, cuts, excess, who, now()), taken = cuts.filter(x => x.amount > 0), product = c!.product, unit = c!.unit;
-      const done = `${taken.map(x => `${buyer(w.ledger.snapshot.orders.find(o => o.id === x.orderId)?.buyerId ?? x.orderId)} takes the ${weight(x.amount, unit)} cut`).join(", ")}. Find more ${product} on Orders.`;
+      // Says what was settled, and where to go next: the order's own Next step when already on Orders, else Orders.
+      const owner = w.ledger.snapshot.lots.find(l => l.id === lot), from = owner ? ` from ${grower(owner.growerId)}` : "";
+      const done = `Settled: ${taken.map(x => `${buyer(w.ledger.snapshot.orders.find(o => o.id === x.orderId)?.buyerId ?? x.orderId)} takes the ${weight(x.amount, unit)} cut`).join(", ")} of ${product}${from}. ${page === "/orders" ? "See the next step." : `Find more ${product} on Orders.`}`;
       notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
       return next;
     }, { rebase: true });

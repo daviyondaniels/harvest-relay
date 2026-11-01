@@ -31,8 +31,9 @@ test("the checklist counts only buyers who are actually short", () => {
 
 test("Pack names the update it confirms without, and one phrase is used for Ship short", () => {
   assert.equal(CONFIRM_WITHOUT("Alder Creek Farm"), "Confirm without Alder Creek Farm's update");
+  assert.equal(CONFIRM_WITHOUT("Alder Creek Farm", "tomato", { amount: 120, unit: "lb" }, { amount: 60, unit: "lb" }), "Confirm without Alder Creek Farm's tomato update (120 lb → 60 lb)");
   assert.equal(SHIP_SHORT, "Ship these orders short");
-  assert.match(pack, /CONFIRM_WITHOUT\(grower\(leave\.item\.source\.growerId\)\)/);
+  assert.match(pack, /CONFIRM_WITHOUT\(grower\(leave\.item\.source\.growerId\), leave\.product, leave\.before, leave\.after\)/);
   assert.match(pack, /needs “\{SHIP_SHORT\}”/);
 });
 

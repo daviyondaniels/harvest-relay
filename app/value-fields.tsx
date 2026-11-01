@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from "react";
 import { Problem, fieldId, invalid, type Bad } from "./lib/field-error.tsx";
 import { NamedSubmit } from "./named-submit.tsx";
+import { APPLY_THEN } from "./lib/format.ts";
 
 // The detail being answered and its value. The value's control fits the detail: a choice of
 // what changed, a date picker for the delivery day, a lot to pick, otherwise a box with an
@@ -65,6 +66,7 @@ export function AnswerFields({ on, details, kinds, lots, bad, kept, known, quiet
       <NamedSubmit label={all ? "Apply and approve" : "Apply answers"} {...(all ? { name: "andApprove", value: "1" } : {})} className={all ? "primary" : undefined} known={known} on={on} bad={bad} quiet={quiet} purpose={all ? "this approval" : "this answer"} />
       {extra}
     </div>
+    {!all && <p className="fine-print">{APPLY_THEN}</p>}
     {all && <p className="fine-print">Applies these answers, then approves the change shown above, in one step. If you change them, you check the new change first.</p>}
   </>;
 }

@@ -58,7 +58,7 @@ test("Ease task 11: the reply form has one value per open detail and the button 
 
 test("Ease task 11: the hand form refuses 0 and shows the limit beside Amount", () => {
   const actions = source("app/actions.ts");
-  assert.match(actions, /if \(Number\(amount\) === 0\) throw new FieldError\("Enter an amount above zero\.", "amount"\)/);
+  assert.match(actions, /Number\(amount\) <= 0\) throw new FieldError\("Enter an amount above zero\.", "amount"\)/);
   assert.match(source("app/lib/errors.ts"), /whole numbers\|more than this hub handles\|above zero/);
 });
 

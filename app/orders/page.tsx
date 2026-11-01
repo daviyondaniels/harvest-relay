@@ -8,7 +8,7 @@ import { options, permissionSource, recommend, type Option } from "../../src/ord
 import { planOf, stageOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { canSend, draftWaiting, factsFor, openFor, orderStatus, toConfirm, toldBuyer, type Resolution } from "../../src/resolve.ts";
+import { canSend, draftWaiting, factsFor, noNote, openFor, orderStatus, toConfirm, toldBuyer, type Resolution } from "../../src/resolve.ts";
 import { REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
 import type { Order } from "../../src/planner.ts";
@@ -90,6 +90,16 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
   return <><input type="hidden" name="order" value={order} /><input type="hidden" name="version" value={version} />{res && <input type="hidden" name="res" value={res} />}</>;
 }
 
+// How the Substitutes row says a buyer agreed. Words are quoted only when they are the buyer's own: an answer recorded
+// with no channel (or no note) has none, and is never put in quotation marks.
+function agreedLine(channel: string, by: string, quote: string): ReactNode {
+  if (channel === "recorded") return `agreed (recorded by ${by}, no note)`;
+  const how = channel === "call" ? " by phone" : channel === "text" ? " by text" : "";
+  if (channel === "call" && quote === noNote(by)) return `agreed${how} (recorded by ${by}, no note)`;
+  return <>agreed{how}, recorded by {by}: <span className="quote">“{quote}”</span></>;
+}
+// The card's title: an ask reads as what was done once it is sent ("Asked Birch Hollow Gardens for more"); a draft has asked no one yet.
+const cardTitle = (r: Resolution): string => r.kind === "ask-grower" ? `${r.status === "drafted" ? "Ask" : "Asked"} ${r.facts.to.name} for more` : `${KIND[r.kind]} to ${r.facts.to.name}`;
 // What a recorded reply is called: an answer recorded with no channel claims no call or text.
 const replyLabel = (channel: string) => channel === "call" ? "Call note" : channel === "recorded" ? "Answer recorded" : "Reply";
 
@@ -187,7 +197,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
         {subs.length > 0 && <tr><td>Gets by substitute</td><td>{subs.map(a => <span key={a.lotId}>{weight(a.amount, unit)} {lots.get(a.lotId)!.product} from {grower(lots.get(a.lotId)!.growerId)}<br /></span>)}</td></tr>}
         <tr><td>Short</td><td className={gap ? "worse" : ""}>{weight(gap, unit)}</td></tr>
         <tr><td>Substitutes this buyer accepts</td><td>{o.approvedSubstitutions.length ? o.approvedSubstitutions.map(s => { const src = permissionSource(w.ledger, orderId, s.product); return (
-          <span key={s.product}>{s.product} ({s.acceptedGrades.join(", ")}){s.maxAmount !== undefined ? `, up to ${weight(s.maxAmount, unit)}` : ""}{src.kind === "on-file" ? ", on file" : <>: {src.record.kind === "substitute-accepted" ? <>agreed{src.record.evidence.channel === "call" ? " by phone" : src.record.evidence.channel === "text" ? " by text" : ""}, recorded by {src.record.recordedBy}: <span className="quote">“{src.record.evidence.quote}”</span></> : "agreed"}</>}<br /></span>
+          <span key={s.product}>{s.product} ({s.acceptedGrades.join(", ")}){s.maxAmount !== undefined ? `, up to ${weight(s.maxAmount, unit)}` : ""}{src.kind === "on-file" ? ", on file" : <>: {src.record.kind === "substitute-accepted" ? <>{agreedLine(src.record.evidence.channel, src.record.recordedBy, src.record.evidence.quote)}</> : "agreed"}</>}<br /></span>
         ); }) : <span className="muted">None yet</span>}</td></tr>
       </tbody></table>
 
@@ -277,7 +287,7 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
         : <>
           <label>Message<span className="sr-only"> ({line})</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
           <Problem bad={bad} on={on} name="body" />
-          <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> ({line})</span></>} className="primary" known={known} on={on} bad={bad} />
+          <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></>} className="primary" known={known} on={on} bad={bad} />
             <span className="fine-print">You can edit the words first.</span></div>
         </>}
     </form>
@@ -360,7 +370,7 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
   const to = r.facts.to.name, ctx = <span className="sr-only"> to {to}</span>;
   return (
     <div className="panel resolution" id={r.id}>
-      <div className="card-head"><h3 id={`${r.id}-title`} tabIndex={-1}>{KIND[r.kind]} to {to}</h3><span className={`chip ${st.tone}`}>{st.label}</span></div>
+      <div className="card-head"><h3 id={`${r.id}-title`} tabIndex={-1}>{cardTitle(r)}</h3><span className={`chip ${st.tone}`}>{st.label}</span></div>
       {r.author === "coordinator" && <p className="small"><span className="chip ready">{r.draftedBy === me ? "Edited by you" : `Edited by ${r.draftedBy}`}</span></p>}
       {r.fallback && <p className="small muted">{failedTheCheck(r.fallback) ? "No other wording passed the check. The template stands." : "Couldn't get other wording just now. The template stands."}</p>}
       <p className="draft">{r.text}</p>

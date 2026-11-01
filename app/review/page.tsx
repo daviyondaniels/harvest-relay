@@ -6,7 +6,7 @@ import { FIELDS, type Field, type Span } from "../../src/updates.ts";
 import { BY_HAND, madeShort, needingRefresh, previewAnswers, previewHand, previewRecordedAnswers, suggestAnswers, suggestReading, type HandReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
 import { SEED } from "../../src/seed.ts";
 import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
-import { FIELD, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, updateName, weight } from "../lib/format.ts";
+import { FIELD, HISTORY_RECHECK, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, updateName, weight } from "../lib/format.ts";
 import { value as parseValue } from "../lib/values.ts";
 import { PreviewGate } from "../preview-gate.tsx";
 import { Result } from "../result.tsx";
@@ -148,8 +148,8 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const handShown = handPreview && handPreview.change && !handPreview.questions.length && !handPreview.error && handPreview.reviewHash ? handPreview : undefined;
   // The outcome sits directly above the button that would act on it, in the form, so nobody reaches the button before
   // the outcome; its review hash travels with the form ("shown") and only those exact values are approved in one step.
-  const handOutcome = handShown && <PreviewGate form="hand-form" note={CHECKED}><Impact title="If saved as shown:" head={lotLine(w, handShown)} p={handShown} names={names} why={cutReason(w, handShown, id => names.get(id) ?? id)} /></PreviewGate>;
-  const answerOutcome = answerPreview && <PreviewGate form="reply-form" note={CHECKED}><Impact title="If these answers are applied:" head={lotLine(w, answerPreview)} p={answerPreview} names={names} why={cutReason(w, answerPreview, id => names.get(id) ?? id)} /></PreviewGate>;
+  const handOutcome = handShown && <PreviewGate form="hand-form" note={CHECKED} id="preview"><Impact title="If saved as shown:" head={lotLine(w, handShown)} p={handShown} names={names} why={cutReason(w, handShown, id => names.get(id) ?? id)} /></PreviewGate>;
+  const answerOutcome = answerPreview && <PreviewGate form="reply-form" note={CHECKED} id="preview"><Impact title="If these answers are applied:" head={lotLine(w, answerPreview)} p={answerPreview} names={names} why={cutReason(w, answerPreview, id => names.get(id) ?? id)} /></PreviewGate>;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
   const decided = !!notice?.ok && (notice.on === "approve" || ((notice.on === "hold" || notice.on === "dismiss") && it.state === "dismissed"));
   // The one form in view that asks for a name when none is saved: Save these details for a message
@@ -175,7 +175,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const focus = bad ? fieldId(bad.on, bad.field) : recheck ? (hasApprove ? "approve-button" : "change") : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : queueFocus ?? (notice ? "msg" : undefined);
   return <>
     <section className="panel" id="item" tabIndex={-1} aria-labelledby="msg">
-      {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} />}
+      {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} plain={recheck && hasApprove} />}
       {top && <p className="error" role="alert">{top.text}</p>}
       <div className="section-head">
         <h1 id="msg" tabIndex={-1}>{from}</h1>
@@ -208,7 +208,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
           <tr><td>Delivery day</td><td>{i.deliveryOn ? day(i.deliveryOn) : "not stated"}</td></tr>
         </tbody></table>
-      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : start?.complete ? "Check the details below, then save and approve." : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
+      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : handShown ? "Check the details below, then save and approve." : start?.complete ? "Save these details, then approve." : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
 
       {byField.size > 0 && !closed && (
         <div className="blocker" role="status" id="open-questions" tabIndex={-1}>
@@ -297,10 +297,9 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
     <aside className="preview" aria-labelledby="change">
       <h2 id="change" tabIndex={-1}>What changes</h2>
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
-      <ChangeTag it={it} p={p} event={event} filled={!!start?.complete} />
+      <ChangeTag it={it} p={p} event={event} previewed={!!handShown} />
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
-      {!closed && !it.proposal && <p className="small" role="status">{handShown ? "The outcome is shown above the Save and approve button." : CHECKED}</p>}
-      {!closed && it.proposal && p.questions.length > 0 && <p className="small" role="status">{answerPreview ? (recordedReply ? "The outcome is shown above the Apply and approve button." : "The outcome is shown above Apply answers. Apply the answers, then approve the change that results.") : CHECKED}</p>}
+      {!closed && it.proposal && p.questions.length > 0 && answerPreview && <p className="small"><a href="#preview">See what applying the answers would change</a></p>}
       {!closed && it.proposal && p.questions.length === 0 && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
@@ -326,7 +325,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   </>;
 }
 
-// After an approval or a dismissal: the orders an approval made short (each with Resolve), the next
+// After an approval or a dismissal: the orders an approval made short (each a Resolve button; the result above says it), the next
 // update to read or, with none left, the way back to Overview, and, for a reply to an ask, the way
 // back to that order.
 function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; decided: boolean; back?: { id: string; buyerId: string } }) {
@@ -337,13 +336,13 @@ function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnT
   return (
     <div className="panel next-steps" aria-label="What to do next">
       {back && it.state === "approved" && !short.some(s => s.orderId === back.id) && (gap
-        ? <ul><li className="worse">{buyer(back.buyerId)} is still {weight(gap.amount, gap.unit)} short{" "}
-            <a className="button" href={`/orders?order=${encodeURIComponent(back.id)}`}>Resolve<span className="sr-only"> {buyer(back.buyerId)}</span></a></li></ul>
+        ? <div><p className="worse">{buyer(back.buyerId)} is still {weight(gap.amount, gap.unit)} short.</p>
+            <a className="button" href={`/orders?order=${encodeURIComponent(back.id)}`}>Resolve {buyer(back.buyerId)}</a></div>
         : <p className="better">{buyer(back.buyerId)} is now covered.</p>)}
-      {short.length > 0 && <ul>{short.map(s => { const o = orders.get(s.orderId)!; return (
-        <li key={s.orderId} className="worse">{buyer(o.buyerId)} is now {weight(s.short, s.unit)} short{" "}
-          <a className="button" href={`/orders?order=${encodeURIComponent(s.orderId)}`}>Resolve<span className="sr-only"> {buyer(o.buyerId)}</span></a></li>
-      ); })}</ul>}
+      {/* Who is now short is already said in the result above; here each one only gets its own Resolve button. */}
+      {short.length > 0 && <div className="row">{short.map(s => { const o = orders.get(s.orderId)!; return (
+        <a key={s.orderId} className="button" href={`/orders?order=${encodeURIComponent(s.orderId)}`}>Resolve {buyer(o.buyerId)}</a>
+      ); })}</div>}
       <div className="row">
         {decided && (next ? <a className="button" href={`/review?item=${encodeURIComponent(next.id)}`}>Next update<span className="sr-only"> ({grower(next.source.growerId)})</span></a> : <a className="button" href="/">Back to Overview</a>)}
         {back && <a className="button" href={`/orders?order=${encodeURIComponent(back.id)}`}>Back to {buyer(back.buyerId)}</a>}
@@ -437,7 +436,7 @@ function HistoryLine({ d, it }: { d: Decision; it: InboxItem }) {
     case "received": return it.source.id.startsWith("call-")
       ? <>Call from {g}{d.note?.startsWith("Call note by ") ? `, noted by ${d.note.slice("Call note by ".length)}` : ""}</>
       : <>{g} sent the message</>;
-    case "interpreted": return d.note === BY_HAND ? <>{d.actor} entered the reading by hand</> : <>Read automatically</>;
+    case "interpreted": return d.note === BY_HAND ? (it.source.id.startsWith("call-") ? <>{d.actor} recorded the call details</> : <>{d.actor} entered the reading by hand</>) : <>Read automatically</>;
     case "asked": { const [f, ...rest] = (d.note ?? "").split(": "); const known = FIELDS.includes(f as Field);
       return <>{d.actor} asked {g}{q(known ? rest.join(": ") : d.note)}</>; }
     case "replied": {
@@ -450,14 +449,14 @@ function HistoryLine({ d, it }: { d: Decision; it: InboxItem }) {
     case "left-pending": return <>{d.actor} left it pending{q(d.note)}</>;
     case "returned": return <>{d.actor} returned it to {g}{q(d.note)}</>;
     case "dismissed": return <>{d.actor} dismissed it{q(d.note)}</>;
-    case "refreshed": return <>{d.actor} checked it again against current supply</>;
+    case "refreshed": return <>{HISTORY_RECHECK}</>;
     case "answered": return <>{d.actor} applied the answers from {g}'s reply</>;
     case "approved": return <>{d.actor} approved the supply change</>;
     default: return <>{d.actor}: {d.kind}</>;
   }
 }
 
-function ChangeTag({ it, p, event, filled }: { it: InboxItem; p: Preview; filled: boolean; event?: { id: string; effect: string; proposal: { interpretation: { quantity?: Quantity } }; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
+function ChangeTag({ it, p, event, previewed }: { it: InboxItem; p: Preview; previewed: boolean; event?: { id: string; effect: string; proposal: { interpretation: { quantity?: Quantity } }; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
   if (event?.effect === "forecast") return (
     <div className="tag done">
       <p className="from">Approved by {event.approval.reviewer}</p>
@@ -473,11 +472,17 @@ function ChangeTag({ it, p, event, filled }: { it: InboxItem; p: Preview; filled
     </div>
   );
   if (it.state === "dismissed") return <div className="tag"><p className="to">No change</p><p className="what">Dismissed: {it.decisions.at(-1)?.note}</p></div>;
-  if (!it.proposal) return (
-    <div className={filled ? "tag" : "tag blocked"}>
+  // The instruction to check and save is said once, in the message panel. Here: where the change is, or that there is none yet.
+  if (!it.proposal) return previewed ? (
+    <div className="tag">
+      <p className="from">Nothing approved yet</p>
+      <p className="to">The change is worked out in the form</p>
+      <p className="what"><a href="#preview">See who gets what</a></p>
+    </div>
+  ) : (
+    <div className="tag blocked">
       <p className="from">Not checked yet</p>
-      <p className="to">{filled ? "Check the details below, then save and approve." : "Enter the details below"}</p>
-      <p className="what">The change appears once the message has a reading.</p>
+      <p className="to">No change to show yet</p>
     </div>
   );
   if (p.needsRefresh) return (

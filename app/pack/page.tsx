@@ -58,7 +58,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
       )}
       <Problem bad={bad} on="lock" name="shipShort" />
       <div className="row">
-        <NamedSubmit label={leave ? CONFIRM_WITHOUT(grower(leave.item.source.growerId)) : c ? "Confirm again" : "Confirm today's plan"} className={leave || arrived > 0 ? undefined : "primary"} known={known} on="lock" bad={bad} />
+        <NamedSubmit label={leave ? CONFIRM_WITHOUT(grower(leave.item.source.growerId), leave.product, leave.before, leave.after) : c ? "Confirm again" : "Confirm today's plan"} className={leave || arrived > 0 ? undefined : "primary"} known={known} on="lock" bad={bad} />
         {blocking.length > 0 && <span className="muted small">Confirming with orders still to resolve needs “{SHIP_SHORT}”.</span>}
       </div>
     </form>
@@ -107,7 +107,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
             {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w, cutOpen)} Each changed line on a sheet says what it was.</p></div>}
-            <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && " Print the sheets."}</p>
+            <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b>{!stale && arrived === 0 && " Print the sheets."}</p>
             {arrived > 0 && <p className="small"><b>{arrivedLead(arrived)}</b> <a className="button primary" href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>{CHECK_IT(arrived)}</a></p>}
             <div className="row"><PrintButton primary={!stale && arrived === 0} /><a className="button" href="/export">Download day record</a></div>
             {stale && confirmForm}

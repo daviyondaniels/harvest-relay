@@ -10,7 +10,7 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 test("I2: the measures card says what was counted, not that each count resolved an order", () => {
   const page = source("app/page.tsx");
   assert.doesNotMatch(page, /covered by a grower|"buyers? told"/, "a corrected notice to one buyer would read as two buyers told");
-  for (const label of ["Short orders found today", "Grower asks that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders sent short"]) assert.ok(page.includes(label), label);
+  for (const label of ["Short orders found today", "Asks to growers that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders sent short"]) assert.ok(page.includes(label), label);
   assert.doesNotMatch(page, /Counts of actions, not of orders/);
 });
 

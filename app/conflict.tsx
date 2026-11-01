@@ -20,11 +20,12 @@ export function Conflicts({ w, version, known, page, id, params, level, lotId }:
   const kept = (c: Conflict) => mine && !mine.ok && mine.res === c.lotId ? params : undefined;
   const bad = (c: Conflict): Bad => mine && !mine.ok && mine.res === c.lotId ? { on: `cut-${c.lotId}`, field: mine.field === "who" ? "who" : "cut", text: mine.text } : undefined;
   const loose = mine && !mine.ok && !list.some(c => c.lotId === mine.res);
-  const done = mine?.ok ? mine.text.match(/^(.*)Orders\.$/) : null;
+  // The cut's result ends in a link: to Orders from Review and Pack, to the order's own Next step on Orders.
+  const done = mine?.ok ? mine.text.match(/^(.*)Orders\.$/) : null, next = mine?.ok ? mine.text.match(/^(.*)See the next step\.$/) : null;
   return <>
     {/* One mechanism: a success moves focus to the paragraph below, which is read once; it is not also said in the status region. */}
     {mine && <Result key={sig} text={undefined} focus={mine.ok ? "cut-done" : loose ? "cut-error" : fieldId(`cut-${mine.res}`, mine.field === "who" ? "who" : "cut")} />}
-    {mine?.ok && <p id="cut-done" tabIndex={-1} className="result">{done ? <>{done[1]}<a href={`/orders?order=${encodeURIComponent(mine.res ?? "")}`}>Orders</a>.</> : mine.text}</p>}
+    {mine?.ok && <p id="cut-done" tabIndex={-1} className="result">{done ? <>{done[1]}<a href={`/orders?order=${encodeURIComponent(mine.res ?? "")}`}>Orders</a>.</> : next ? <>{next[1]}<a href="#next-step">See the next step</a>.</> : mine.text}</p>}
     {loose && <p id="cut-error" tabIndex={-1} className="error" role="alert">{mine.text}</p>}
     {list.map(c => <ConflictPanel key={c.lotId} w={w} version={version} known={known} conflict={c} headingLevel={level} page={page} id={id} bad={bad(c)} kept={kept(c)} />)}
   </>;

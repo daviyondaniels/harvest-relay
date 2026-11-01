@@ -233,7 +233,8 @@ export function suggestReading(w: Workbench, id: string): HandSuggestion {
   else { if (cur?.grade) out.grade = cur.grade; if (cur?.deliveryOn) out.deliveryOn = cur.deliveryOn; }
   if (cur?.quantity) out.quantity = structuredClone(cur.quantity);
   else {
-    const m = t.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(kg|kilos?|lbs?|pounds?|g|grams?|each|cases?)\\b`));
+    // "10 lb", and also "10 more lb" / "10 extra lb": a word that says it is an addition may sit between the number and its unit.
+    const m = t.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(?:(?:more|extra|additional)\\s+)?(kg|kilos?|lbs?|pounds?|g|grams?|each|cases?)\\b`));
     if (m) {
       const u = m[2], unit = u.startsWith("case") ? "case" : u.startsWith("k") ? "kg" : u.startsWith("l") || u.startsWith("p") ? "lb" : u.startsWith("g") ? "g" : "each";
       out.quantity = { amount: /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1]], unit };

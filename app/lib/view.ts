@@ -2,12 +2,15 @@ import { changedSinceConfirm, planOf, stageOf } from "../../src/commitments.ts";
 import { CONTACTS } from "../../src/demo.ts";
 import { recommend, shortages } from "../../src/orders.ts";
 import { changedBuyers } from "../../src/pack.ts";
-import { buyer, changeLine, grower, time, weight } from "./format.ts";
-import { normalize } from "../../src/quantity.ts";
+import { buyer, changeLine, grower, moveLine, time, weight } from "./format.ts";
+import { normalize, type Quantity } from "../../src/quantity.ts";
 import { BY_HAND, preview, type InboxItem, type OrderImpact, type Preview, type Workbench } from "../../src/workbench.ts";
 
 // Read models for the pages, computed from the stored workbench on every request.
-export type ProductRow = { product: string; supply: number; ordered: number; direct: number; substitutedIn: number; short: number; unallocated: number; forecast: number };
+export type ProductRow = { product: string; supply: number; ordered: number; direct: number; substitutedIn: number; substitutes: { product: string; amount: number }[]; short: number; unallocated: number; forecast: number };
+// What was actually sent in place of a product, by the product sent: "30 lb of zucchini sent in place of tomato".
+export const substituteLine = (r: Pick<ProductRow, "product" | "substitutes">, unit: "g" | "lb" | "each"): string =>
+  r.substitutes.map(x => `${weight(x.amount, unit)} of ${x.product.toLowerCase()}`).join(" and ") + ` sent in place of ${r.product.toLowerCase()}`;
 export function overview(w: Workbench) {
   const s = w.ledger.snapshot, plan = planOf(w.ledger);
   const products = [...new Set([...s.lots.map(l => l.product), ...s.orders.map(o => o.product)])].sort();
@@ -21,6 +24,7 @@ export function overview(w: Workbench) {
       ordered: orders.reduce((n, o) => n + normalize(o.quantity).amount, 0),
       direct: plan.allocations.filter(a => ids.has(a.orderId) && a.kind === "requested").reduce((n, a) => n + a.amount, 0),
       substitutedIn: plan.allocations.filter(a => ids.has(a.orderId) && a.kind === "approved-substitution").reduce((n, a) => n + a.amount, 0),
+      substitutes: [...plan.allocations.filter(a => ids.has(a.orderId) && a.kind === "approved-substitution").reduce((m, a) => { const p = lotProduct.get(a.lotId) ?? "another product"; return m.set(p, (m.get(p) ?? 0) + a.amount); }, new Map<string, number>())].map(([product, amount]) => ({ product, amount })),
       short: plan.unfilled.filter(u => ids.has(u.orderId)).reduce((n, u) => n + u.amount, 0),
       unallocated: plan.unallocated.filter(u => lotProduct.get(u.lotId) === product).reduce((n, u) => n + u.amount, 0),
       forecast: w.ledger.forecasts.filter(f => lotProduct.get(f.lotId) === product).reduce((n, f) => n + f.amount, 0)
@@ -91,11 +95,12 @@ export const becomesShort = (p: Preview): OrderImpact[] => p.orders.filter(o => 
 
 // Waiting updates that could be approved from where they are but would leave an order short, with
 // the first such order each. Confirm is only offered when this is empty. The same preview as Review.
-export type Leaves = { item: InboxItem; order: OrderImpact };
+export type Leaves = { item: InboxItem; order: OrderImpact; product?: string; before?: Quantity; after?: Quantity };
 export function leavesShort(w: Workbench, previews: Map<string, Preview>): Leaves[] {
   return w.items.filter(i => i.state !== "approved" && i.state !== "dismissed").flatMap(item => {
     const p = previews.get(item.id), order = item.proposal && p && readyToApprove(item, p) ? becomesShort(p)[0] : undefined;
-    return order ? [{ item, order }] : [];
+    const c = order && p && readyToApprove(item, p) ? p.change : undefined, lot = c && w.ledger.snapshot.lots.find(l => l.id === c.lotId);
+    return order ? [{ item, order, ...(lot ? { product: lot.product } : {}), ...(c ? { before: c.before, after: c.after } : {}) }] : [];
   });
 }
 // Why the cut lands where the preview says. Once the plan is confirmed, each order keeps what it was
@@ -143,12 +148,21 @@ export const LEAVE_PROMPT = "Review it before confirming.";
 // nothing left to confirm or pack, so it is never shown.
 export function leaveVisible(w: Workbench): boolean {
   if (!w.ledger.commitments) return true;
-  const n = stageCounts(w);
-  return staleSinceConfirm(w) && n.handed < n.total;
+  return !dayDone(w) && staleSinceConfirm(w);
 }
+// Every order is handed off: there is nothing left to confirm or pack.
+export function dayDone(w: Workbench): boolean {
+  const n = stageCounts(w);
+  return !!w.ledger.commitments && n.total > 0 && n.handed === n.total;
+}
+// The orders an update row says it would leave short. Once the day is done the row no longer says it (the update still
+// waits in Review, and its button there is Review it, never a one-tap Approve).
+export const rowShorts = (w: Workbench, p: Preview): OrderImpact[] => dayDone(w) ? [] : becomesShort(p);
 // Orders on the checklist that are actually short now (a covered buyer on a cut lot is not).
 export const reallyShort = (blocking: string[], gapIds: Set<string>) => blocking.filter(id => gapIds.has(id));
-export const CONFIRM_WITHOUT = (growerName: string) => `Confirm without ${growerName}'s update`;
+// The button names the update it leaves out, and what that update would have done to its lot.
+export const CONFIRM_WITHOUT = (growerName: string, product?: string, before?: Quantity, after?: Quantity) =>
+  `Confirm without ${growerName}'s ${product ? `${product.toLowerCase()} ` : ""}update${before && after ? ` (${moveLine(before, after)})` : ""}`;
 export const SHIP_SHORT = "Ship these orders short";
 export const firstMessageLine = (d: string) => `First message to a short buyer: ${d} after their order went short`;
 export const CHECK_IT = (n: number) => n === 1 ? "Check it" : "Check the first one";

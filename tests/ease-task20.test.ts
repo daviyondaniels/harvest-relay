@@ -41,9 +41,9 @@ test("the preview sits in the form above its button, and the form carries the ha
 
 test("copy: a pre-filled hand form says to check and save; the empty form says to enter the details", () => {
   const review = source("app/review/page.tsx");
-  assert.match(review, /start\?\.complete \? "Check the details below, then save and approve\."/);
-  assert.match(review, /filled \? "Check the details below, then save and approve\." : "Enter the details below"/);
-  assert.match(review, /className=\{filled \? "tag" : "tag blocked"\}/);
+  // Task 23: the instruction is said once, only where "Save and approve" is the button on offer.
+  assert.match(review, /handShown \? "Check the details below, then save and approve\." : start\?\.complete \? "Save these details, then approve\."/);
+  assert.match(review, /: "Enter the details below"/);
   assert.match(review, /className=\{p\.questions\.length && !p\.error \? "tag" : "tag blocked"\}/, "the waiting state is neutral");
 });
 

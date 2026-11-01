@@ -8,6 +8,19 @@ export class FieldError extends Error {
   constructor(message: string, field: string) { super(message); this.field = field; }
 }
 
+// An empty form with several required fields says every one at once, in the order they sit on the page,
+// as a single message on the first of them (WCAG 3.3.1). Pure, so a test can check the wording.
+export type Missing = { field: string; what: string };
+export function stillNeeded(items: string[]): string {
+  const list = items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+  return `Still needed: ${list}.`;
+}
+// One FieldError for two or more missing fields, focused on the first; undefined when fewer than two are missing
+// (a single missing field keeps its own, more specific message).
+export function manyMissing(missing: Missing[]): FieldError | undefined {
+  return missing.length > 1 ? new FieldError(stillNeeded(missing.map(m => m.what)), missing[0].field) : undefined;
+}
+
 // The forms a refusal can name (the `on` of a step), and the fields each one renders. A refusal that
 // maps to a field outside this list would show nothing and lose focus, so fieldOf stays inside it.
 // "value-<detail>" fields exist when the form answers several open details at once.

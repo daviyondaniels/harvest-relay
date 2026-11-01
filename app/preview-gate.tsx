@@ -7,7 +7,8 @@ import { useEffect, useState, type ReactNode } from "react";
 // press the button, before anything is approved. The name, the reply text and the quote do not
 // change what the outcome is worked out from, so editing them leaves it standing.
 const KEEPS = new Set(["who", "reply", "quote", "andApprove", "recorded"]);
-export function PreviewGate({ form, note, children }: { form: string; note: string; children: ReactNode }) {
+// id: where the aside links to, so the outcome can be reached from anywhere on the page whichever of the two it is showing.
+export function PreviewGate({ form, note, id, children }: { form: string; note: string; id?: string; children: ReactNode }) {
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     const el = document.getElementById(form);
@@ -16,5 +17,5 @@ export function PreviewGate({ form, note, children }: { form: string; note: stri
     el.addEventListener("input", on); el.addEventListener("change", on);
     return () => { el.removeEventListener("input", on); el.removeEventListener("change", on); };
   }, [form]);
-  return changed ? <p className="small" role="status">{note}</p> : <>{children}</>;
+  return <div id={id} tabIndex={id ? -1 : undefined}>{changed ? <p className="small" role="status">{note}</p> : children}</div>;
 }

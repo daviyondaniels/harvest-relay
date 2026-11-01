@@ -5,6 +5,10 @@ import type { Change, Field, Operation, Span, UpdateProposal } from "../../src/u
 import type { InboxItem, Preview } from "../../src/workbench.ts";
 import { HUB_ZONE } from "../../src/hub.ts";
 
+// Under "Apply answers": the second step is said before it is needed.
+export const APPLY_THEN = "Then approve the change it makes, on the next step.";
+// A re-check is the app's own step, so its history line names nobody.
+export const HISTORY_RECHECK = "Checked again against current supply";
 export const HUB_NAME = "Riverside Food Hub";
 
 // Display helpers shared by the dashboard and the review workspace.
@@ -38,6 +42,10 @@ export function updateName(growerId: string, product: string, after: Quantity): 
 }
 export const OPERATION_CHOICE = { "replace-total": "A new total", "add-quantity": "Added to what they have", correction: "A correction", forecast: "A forecast, not confirmed" } as const;
 // "120 lb → 60 lb (down 60 lb)": the lot before and after, and by how much.
+export function moveLine(before: Quantity, after: Quantity): string {
+  const b = normalize(before), a = normalize(after);
+  return `${weight(b.amount, b.unit)} → ${weight(a.amount, a.unit)}`;
+}
 export function changeLine(before: Quantity, after: Quantity): string {
   const b = normalize(before), a = normalize(after), d = a.amount - b.amount;
   return `${weight(b.amount, b.unit)} → ${weight(a.amount, a.unit)} (${d === 0 ? "no change" : `${d > 0 ? "up" : "down"} ${weight(Math.abs(d), a.unit)}`})`;

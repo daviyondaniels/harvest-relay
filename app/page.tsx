@@ -13,7 +13,7 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, rowShorts, substituteLine, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { Result } from "./result.tsx";
@@ -81,7 +81,7 @@ function SupplyCard({ rows, unit }: { rows: ProductRow[]; unit: Unit }) {
           <p className="legend">
             <span><b>{weight(r.supply, unit)}</b> confirmed</span>
             <span><b>{weight(r.ordered, unit)}</b> ordered</span>
-            {r.substitutedIn > 0 && <span><b>{weight(r.substitutedIn, unit)}</b> by approved substitute</span>}
+            {r.substitutedIn > 0 && <span>{substituteLine(r, unit)}</span>}
             {r.short > 0 && <span className="bad"><b>{weight(r.short, unit)}</b> short</span>}
             {r.unallocated > 0 && <span><b>{weight(r.unallocated, unit)}</b> unallocated</span>}
             {r.forecast > 0 && <span><b>{weight(r.forecast, unit)}</b> forecast, not confirmed</span>}
@@ -100,7 +100,7 @@ function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
       <div className="card-head"><h2 id="day">This delivery day</h2></div>
       <div className="stats">
         <span className="stat"><b>{m.shortsDetected}</b><span>Short orders found today</span></span>
-        <span className="stat"><b>{r.grower}</b><span>Grower asks that added supply</span></span>
+        <span className="stat"><b>{r.grower}</b><span>Asks to growers that added supply</span></span>
         <span className="stat"><b>{r.substitute}</b><span>Substitutes agreed</span></span>
         <span className="stat"><b>{r.notice}</b><span>Buyers told they'd be short</span></span>
         <span className="stat"><b>{r.shipShort}</b><span>Orders sent short</span></span>
@@ -254,8 +254,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 const forecast = ready?.change.effect === "forecast";
                 const lot = ready ? s.lots.find(l => l.id === ready.change.lotId) : undefined;
                 const line = ready ? (forecast ? (forecastTag(ready.change) ?? "Forecast, not confirmed") : changeLine(ready.change.before, ready.change.after)) : undefined;
-                const shorts = ready ? becomesShort(ready) : [];
-                const why = ready && shorts.length ? cutReason(w, ready, id => names.get(id) ?? id) : undefined;
+                // Once every order is handed off the row stops saying who would be left short (leave: view.ts rowShorts); it still has Review it.
+                const shorts = ready ? becomesShort(ready) : [], said = ready ? rowShorts(w, ready) : [];
+                const why = ready && said.length ? cutReason(w, ready, id => names.get(id) ?? id) : undefined;
                 const on = (form: string) => `${form}-${i.id}`;
                 return (
                   <div key={i.id} className="item">
@@ -264,13 +265,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       <a href={`/review?item=${i.id}`}><b>{grower(i.source.growerId)}</b></a>
                       <span>{i.source.text}</span>
                       {ready && <span className="change"><b>{lot ? `${lot.product}: ` : ""}{line}</b>{forecast && " (forecast, not confirmed supply)"}</span>}
-                      {shorts.map(o => <span key={o.orderId} className="bad">{names.get(o.orderId) ?? o.orderId} becomes short {weight(o.after.short, o.unit)}</span>)}
+                      {said.map(o => <span key={o.orderId} className="bad">{names.get(o.orderId) ?? o.orderId} becomes short {weight(o.after.short, o.unit)}</span>)}
                       {why && <span className="why">{why}</span>}
                       {!ready && instructionLike(i) && <span className="flag-note">{INSTRUCTION_LABEL}</span>}
                     </span>
                     <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
                     {ready && shorts.length > 0 ? (
-                      <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update, it leaves a buyer short</span></a></span>
+                      <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update{said.length > 0 ? ", it leaves a buyer short" : ""}</span></a></span>
                     ) : ready ? (
                       <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
                         <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet(on("approve"))} />
