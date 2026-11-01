@@ -1,7 +1,7 @@
 import { canonicalGrade } from "./grades.ts";
 import { digest } from "./planner.ts";
-import type { Quantity } from "./quantity.ts";
-import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Clarification, type Field, type Interpretation, type Ledger, type Source, type UpdateProposal } from "./updates.ts";
+import { checkPack, normalize, type Quantity } from "./quantity.ts";
+import { FIELDS, OPERATIONS, locate, reviewUpdate, validateSource, type Clarification, type Field, type Interpretation, type Ledger, type Operation, type Source, type UpdateProposal } from "./updates.ts";
 
 // A grower's reply settles open questions only through quoted words. Answers come from
 // the coordinator or from a model proposal; either way they are checked here and applied
@@ -33,13 +33,35 @@ function shape(v: unknown, keys: string[]): Record<string, unknown> {
 // Pounds stay pounds, never converted.
 function pack(v: unknown): NonNullable<Quantity["pack"]> {
   const o = shape(v, ["amount", "unit"]), amount = whole(o.amount);
-  if (o.unit === "kg") { if (!Number.isSafeInteger(amount * 1000)) throw new Error("Answer quantities must be nonnegative whole numbers"); return { amount: amount * 1000, unit: "g" }; }
+  if (o.unit === "kg") {
+    if (!Number.isSafeInteger(amount * 1000)) throw new Error("Answer quantities must be nonnegative whole numbers");
+    const grams = { amount: amount * 1000, unit: "g" as const };
+    checkPack(grams);
+    return grams;
+  }
   if (o.unit !== "g" && o.unit !== "lb" && o.unit !== "each") throw new Error("Case contents must be g, kg, lb or each");
-  return { amount, unit: o.unit };
+  const made: NonNullable<Quantity["pack"]> = { amount, unit: o.unit };
+  checkPack(made);
+  return made;
+}
+// The plain words a coordinator might type for the kind of update, mapped to the operation.
+// Anything that fits two kinds, or none, is left for the coordinator to choose.
+const PHRASES: [Operation, RegExp][] = [
+  ["replace-total", /\b(new total|total|replaces?|replacing|instead)\b/],
+  ["add-quantity", /\b(add|adds|adding|more|in addition|extra)\b/],
+  ["correction", /\b(correction|fix|mistake)\b/],
+  ["forecast", /\b(forecast|maybe|might|expect|expected)\b/]
+];
+export function parseOperation(raw: string): Operation | undefined {
+  const t = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  const exact = OPERATIONS.find(o => o !== "unresolved" && o === t);
+  if (exact) return exact;
+  const hits = PHRASES.filter(([, re]) => re.test(t)).map(([o]) => o);
+  return hits.length === 1 ? hits[0] : undefined;
 }
 function read(field: Field, v: unknown): unknown {
   switch (field) {
-    case "operation": if (v === "unresolved" || !OPERATIONS.includes(v as never)) throw new Error("Invalid operation answer"); return v;
+    case "operation": if (v === "unresolved" || !OPERATIONS.includes(v as never)) throw new Error("Choose what kind of update this is"); return v;
     case "lot": case "correction-target": return name(v);
     case "grade": return canonicalGrade(name(v));
     case "date": {
@@ -51,7 +73,9 @@ function read(field: Field, v: unknown): unknown {
       const o = shape(v, ["amount", "unit", "pack"]);
       if (!UNITS.includes(o.unit as string)) throw new Error("Unsupported unit in answer");
       if (o.pack !== undefined && o.pack !== null && o.unit !== "case") throw new Error("Case contents given for a non-case unit");
-      return { amount: whole(o.amount), unit: o.unit, ...(o.pack ? { pack: pack(o.pack) } : {}) };
+      const q = { amount: whole(o.amount), unit: o.unit, ...(o.pack ? { pack: pack(o.pack) } : {}) } as Quantity;
+      if (q.unit !== "case" || q.pack) normalize(q);
+      return q;
     }
     case "pack": return pack(v);
   }

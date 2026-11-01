@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { propose } from "../evaluation/scenario.ts";
-import { changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markStage, planOf, stageOf } from "../src/commitments.ts";
-import { lockGate, orderSheets, pickLists } from "../src/pack.ts";
+import { changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markAllStage, markStage, planOf, stageOf, stageable } from "../src/commitments.ts";
+import { changedBuyers, lockGate, orderSheets, pickLists } from "../src/pack.ts";
 import { acceptSubstitute, addLot } from "../src/orders.ts";
 import { proposeAllocations, snapshotHash } from "../src/planner.ts";
 import { LATE, canReceiveLate, lateRefusal, needsReset } from "../src/seed.ts";
@@ -282,4 +282,33 @@ test("an order cut to 0 after a confirm still reads as promised, 0 of N", () => 
   const never = stageOf(morning().ledger, "order-b");
   assert.deepEqual([never.stage, never.confirmedBefore], ["planned", false]);
   assert.deepEqual(promiseText(never, 0), []);
+});
+
+test("mark all marks every order that can take the stage, and refuses the rest as markStage would", () => {
+  const c = confirmed(), ids = c.ledger.snapshot.orders.map(o => o.id), before = JSON.stringify(c);
+  const both = stageable(c, "packed");
+  assert.ok(both.length >= 2);
+  assert.deepEqual(stageable(c, "handed-off"), [], "nothing is packed yet, so nothing can be handed off");
+  assert.throws(() => markAllStage(c, "handed-off", ME, T(60)), /No order can be marked handed off/);
+  const one = markStage(c, both[0], "packed", ME, T(55)), rest = markAllStage(one, "packed", ME, T(56));
+  assert.deepEqual(rest.marked, both.slice(1), "an order already packed is skipped");
+  assert.ok(ids.every(id => !both.includes(id) || stageOf(rest.next.ledger, id).stage === "packed"));
+  assert.equal(JSON.stringify(c), before, "input unchanged");
+  assert.deepEqual(stageable(rest.next, "handed-off"), both);
+  assert.equal(markAllStage(rest.next, "handed-off", ME, T(57)).marked.length, both.length);
+  assert.throws(() => markAllStage(c, "packed", " ", T(60)), /Actor name/);
+});
+
+test("mark all skips an order an open cut touches, exactly as markStage refuses it", () => {
+  const w = drop(confirmed(), 70);
+  assert.throws(() => markStage(w, "order-b", "packed", ME, T(70)), /Decide who takes the cut first/);
+  assert.ok(!stageable(w, "packed").includes("order-b") && !stageable(w, "packed").includes("order-a"));
+});
+
+test("the stale banner names the buyers whose lines changed", () => {
+  const c = confirmed();
+  assert.deepEqual(changedBuyers(c.ledger), []);
+  const w = drop(c, 70), owner = (id: string) => w.ledger.snapshot.orders.find(o => o.id === id)!.buyerId;
+  assert.deepEqual(changedBuyers(w.ledger), [owner("order-b")]);
+  assert.deepEqual(changedBuyers(morning().ledger), [], "nothing is stale before a confirm");
 });

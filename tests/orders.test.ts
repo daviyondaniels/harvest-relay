@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { scenario, shortage, surplus } from "../evaluation/scenario.ts";
+import { propose, scenario, shortage, surplus } from "../evaluation/scenario.ts";
 import { proposeAllocations, type Lot } from "../src/planner.ts";
 import { commitUpdate, createLedger, reviewUpdate, type Evidence, type Ledger } from "../src/updates.ts";
 import { acceptSubstitute, addLot, options, pendingCover, permissionSource, recommend as recommendFor, shortages } from "../src/orders.ts";
 import type { Contact } from "../src/demo.ts";
-import { createWorkbench } from "../src/workbench.ts";
+import { createWorkbench, interpret, receive } from "../src/workbench.ts";
+import { normalize } from "../src/quantity.ts";
 
 const evidence: Evidence = { messageId: "in-1", channel: "call", quote: "Zucchini is fine" };
 const zucchini = { product: "zucchini", acceptedGrades: ["standard"] };
@@ -140,10 +141,12 @@ test("Task 20: pendingCover lists unreviewed updates from growers who hold the o
   assert.deepEqual(pendingCover(w, "order-b"), []);
   w = logCall(w, "grower-b", "Called: we can add 30 lb of standard tomatoes for Friday.", ME, T(30));
   w = receive(w, { id: "msg-zuke", revision: 1, growerId: "grower-b", text: "Zucchini is up to six cases." }, T(31));
-  assert.deepEqual(pendingCover(w, "order-b").map(i => i.id), ["item-4", "item-5"]);
-  assert.deepEqual(pendingCover(w, "order-c"), []);
+  const ids = (o: string) => pendingCover(w, o).map(g => g.items.map(i => i.id));
+  assert.deepEqual(ids("order-b"), [["item-4", "item-5"]]);
+  assert.deepEqual(pendingCover(w, "order-b").map(g => g.growerId), ["grower-b"]);
+  assert.deepEqual(ids("order-c"), []);
   w = dismiss(w, "item-4", "not now", ME, T(32));
-  assert.deepEqual(pendingCover(w, "order-b").map(i => i.id), ["item-5"]);
+  assert.deepEqual(ids("order-b"), [["item-5"]]);
   assert.throws(() => pendingCover(w, "order-x"), /Unknown order/);
 });
 
@@ -178,4 +181,43 @@ test("Task 21: recommend follows the hubs' order of moves and breaks ties by id"
   assert.equal((recommend(none, "order-b", [...contacts].reverse()) as { contactId: string }).contactId, "grower-a");
   // 4. nobody left: tell the buyer
   assert.deepEqual(recommend(none, "order-b", []), { kind: "notify-short", amount: 40000, unit: "g" });
+});
+
+test("Task 4: pendingCover keeps only updates that could raise supply, one group per grower", async () => {
+  const { morning, ME, T } = await import("./story.ts");
+  const { propose } = await import("../evaluation/scenario.ts");
+  const { interpret, receive } = await import("../src/workbench.ts");
+  let w = morning();
+  const lot = w.ledger.snapshot.lots.find(l => l.id === "lot-b")!, base = normalize(lot.quantity).amount;
+  const read = (id: string, text: string, operation: "add-quantity" | "replace-total" | "forecast", amount: number, quote: string) => {
+    const src = { id, revision: 1, growerId: "grower-b", text };
+    w = receive(w, src, T(30));
+    const item = w.items.at(-1)!.id;
+    w = interpret(w, item, propose(w.ledger, `p-${id}`, src, { operation, lotId: "lot-b", quantity: { amount, unit: "lb" }, grade: "standard", deliveryOn: "2026-10-30", quotes: [quote, "Friday"] }), "test reading", ME, T(30));
+    return item;
+  };
+  const add = read("m-add", "Add 5 lb more tomatoes Friday.", "add-quantity", 5, "Add 5 lb more tomatoes");
+  const below = read("m-low", "Total is 1 lb of tomatoes Friday.", "replace-total", 1, "Total is 1 lb of tomatoes");
+  const above = read("m-high", `Total is ${base + 50} lb of tomatoes Friday.`, "replace-total", base + 50, `Total is ${base + 50} lb of tomatoes`);
+  const forecast = read("m-fc", "Maybe 20 lb of tomatoes Friday.", "forecast", 20, "Maybe 20 lb of tomatoes");
+  w = receive(w, { id: "m-raw", revision: 1, growerId: "grower-b", text: "Hello" }, T(31));
+  const raw = w.items.at(-1)!.id;
+  const groups = pendingCover(w, "order-b");
+  assert.equal(groups.length, 1, "one line per grower");
+  assert.deepEqual(groups[0].items.map(i => i.id), [add, above, raw]);
+  assert.ok(![below, forecast].some(id => groups[0].items.some(i => i.id === id)), "a lower total and a forecast cannot cover");
+});
+
+test("Ease task 11: recommend skips a grower whose pending update cuts the lot it would ask about", () => {
+  const l = approved(), base = createWorkbench(l);
+  const asks = (w: ReturnType<typeof createWorkbench>) => { const r = recommendFor(w, "order-b", contacts); return r?.kind === "ask-grower" ? r.contactId : r?.kind; };
+  assert.equal(asks(base), "grower-b", "with nothing waiting, the holder who was not cut is the pick");
+  const pending = (operation: "replace-total" | "add-quantity", kg: number) => {
+    const src = { id: `msg-${operation}`, revision: 1, growerId: "grower-b", text: `Tomatoes: ${kg} kg Friday.` };
+    const w = receive(base, src, "2026-10-28T10:00:00.000Z");
+    return interpret(w, "item-1", propose(w.ledger, "p-1", src, { operation, lotId: "lot-b", quantity: { amount: kg, unit: "kg" }, grade: "standard", deliveryOn: "2026-10-30", quotes: [`${kg} kg`, "Friday"] }), "test reading", "Hub coordinator", "2026-10-28T10:01:00.000Z");
+  };
+  assert.notEqual(asks(pending("replace-total", 10)), "grower-b", "a cut to the lot is read first, not asked past");
+  assert.equal(asks(pending("replace-total", 90)), "grower-b", "a raise is not a cut");
+  assert.equal(asks(pending("add-quantity", 5)), "grower-b", "an addition is not a cut");
 });

@@ -7,6 +7,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 // a notice can't be moved to another page or shown beside another item. Notices expire after
 // ten minutes, and a restart forgets the key, which only hides old notices.
 export type Notice = { text: string; on?: string; res?: string; field?: string; ok?: boolean };
+// The notice form for an edited-value stop: the details were saved but not approved (actions.ts).
+export const RECHECK = "recheck";
 // Where a notice is shown: the page's path, and the item or order the page has open.
 export type Place = { page: string; id?: string };
 type Params = Record<string, string | string[] | undefined>;
@@ -40,3 +42,8 @@ export function cutPage(p: string): { page: string; key: string } {
   const page = Object.hasOwn(CUT_PAGES, p) ? p : "/orders";
   return { page, key: CUT_PAGES[page] };
 }
+
+// Pages an action can return to, besides its own: only the Overview, where some rows act in
+// place. Anything else is ignored, so a form can never choose where the browser goes next.
+const RETURN_PAGES = ["/"];
+export const returnPage = (p: string): string | undefined => RETURN_PAGES.includes(p) ? p : undefined;

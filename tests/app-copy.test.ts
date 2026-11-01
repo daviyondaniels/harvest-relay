@@ -1,7 +1,8 @@
 import test from "node:test";
+import { SHIP_SHORT } from "../app/lib/view.ts";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { forecastTag } from "../app/lib/format.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { OPERATION, OPERATION_CHOICE, FIELD, changeLine, forecastTag } from "../app/lib/format.ts";
 
 // The app's own words, checked where a unit test cannot render the page.
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -9,7 +10,8 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 test("I2: the measures card says what was counted, not that each count resolved an order", () => {
   const page = source("app/page.tsx");
   assert.doesNotMatch(page, /covered by a grower|"buyers? told"/, "a corrected notice to one buyer would read as two buyers told");
-  for (const label of ["grower asks that added supply", "substitutes agreed", "shortfall notices sent", "shipped short"]) assert.match(page, new RegExp(label));
+  for (const label of ["Short orders found today", "Asks to growers that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders sent short"]) assert.ok(page.includes(label), label);
+  assert.doesNotMatch(page, /Counts of actions, not of orders/);
 });
 
 test("I1: the Orders page takes the open rule from the domain", () => {
@@ -26,12 +28,29 @@ test("M6: the supply amount field takes whole numbers and the action says so", (
 test("M8: the Orders fine print says nothing is delivered", () => {
   const page = source("app/orders/page.tsx");
   assert.doesNotMatch(page, /Nothing is reserved, sent to buyers/);
-  assert.match(page, /nothing is delivered/);
+  assert.match(page, /Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to\./);
+  assert.equal(page.match(/Recorded only; nothing is delivered\./g)?.length, 1, "said once, in the page intro, not on every form");
+  assert.doesNotMatch(page, /Allocation rule/);
+});
+
+test("Ease task 7: banned words never come back as on-screen text anywhere in app/", async () => {
+  const { readdirSync } = await import("node:fs");
+  const files = (readdirSync(new URL("../app", import.meta.url), { recursive: true }) as string[]).filter(f => /\.tsx?$/.test(f));
+  assert.ok(files.length > 5);
+  // Comment and import lines are skipped; the rest is searched for the banned phrases.
+  const banned = [/Kind of update/, /Change preview/, /proposed allocation/i, /Not worked out yet/, /Invalid operation answer/, /Pack amount must be positive/, /Allocation rule/, />\s*Reading\s*</, /"Reading"/];
+  for (const f of files) {
+    const text = source(`app/${f}`).split("\n").filter(l => !/^\s*(\/\/|\*|import )/.test(l)).join("\n");
+    for (const b of banned) assert.doesNotMatch(text, b, `${f}: ${b}`);
+  }
+  // Raw tokens may appear only as code values, never in a user-facing sentence.
+  const shown = [/>[^<{]*\b(replace-total|add-quantity)\b[^<{]*</, /(error|Error|FieldError)\([^)]*\b(replace-total|add-quantity)\b/];
+  for (const f of files) for (const b of shown) assert.doesNotMatch(source(`app/${f}`), b, `${f}: ${b}`);
 });
 
 test("Task 17: the approver name is asked for beside its field and remembered in a strict, HttpOnly cookie", () => {
   const actions = source("app/actions.ts"), name = source("app/lib/name.ts");
-  assert.match(actions, /"Enter your name at the top to continue\."/, "fix round 3: the name is asked once, in the header");
+  assert.match(source("app/lib/names.ts"), /"Enter your name to continue\."/, "the name is asked beside the form's own name field");
   assert.match(name, /NAME_COOKIE = "hr_name"/);
   assert.match(source("src/hub.ts"), /NAME_MAX = 80/, "the same limit as the name field");
   assert.match(source("app/lib/names.ts"), /import \{ NAME_MAX \} from "..\/..\/src\/hub.ts"/, "one limit for the field and every recorded name");
@@ -44,23 +63,46 @@ test("Task 17: the approver name is asked for beside its field and remembered in
   // Task 18: the name field, its error and "Recording as … · not you?" live in the header (app/who.tsx).
 });
 
-test("Fix round 1 / Task 18 fix 3: forms that record a name rely on the header name and are refused without it", () => {
-  const review = source("app/review/page.tsx"), orders = source("app/orders/page.tsx"), actions = source("app/actions.ts");
-  for (const page of [review, orders]) {
-    assert.doesNotMatch(page, /Recorder|name="who"/, "no per-form name field");
-    assert.match(page, /notice\?\.field === "who" && <NameNeeded key=\{String\(params\.sig\)\} text=\{notice\.text\} \/>/);
+test("Ease task 2: the name is asked on the first action, in the same form, and every recording action takes it", () => {
+  const actions = source("app/actions.ts"), orders = source("app/orders/page.tsx"), pack = source("app/pack/page.tsx"), review = source("app/review/page.tsx");
+  assert.doesNotMatch(actions, /actor\(\)|RESERVED_NAME|NameNeeded|NAME_AT_TOP/, "no action records the reserved label or points at the header");
+  assert.match(actions, /async function asNamed<T>\(f: FormData, fn: \(who: string\) => Promise<T>\): Promise<T> \{[\s\S]*?runAs\(f\.get\("who"\), await rememberedName\(\), rememberName, fn\)/);
+  assert.match(source("app/lib/names.ts"), /export async function runAs[\s\S]*?checkName\(typed\)[\s\S]*?new FieldError\(NAME_NEEDED, "who"\)[\s\S]*?const done = await fn\(who\);[\s\S]*?await remember\(c\.name\)/, "the name is remembered only after the action worked");
+  // Every exported action that changes records through act( also asks named(.
+  const exported = actions.split(/\nexport async function /).slice(1).map(b => ({ name: b.slice(0, b.indexOf("(")), body: b.split(/\n(?:export |\/\/ )/)[0] }));
+  const acting = exported.filter(x => /\bact\(/.test(x.body));
+  assert.ok(acting.length >= 6, "the actions that call act( directly");
+  for (const x of acting) assert.match(x.body, /asNamed\(f/, `${x.name} records a person's name`);
+  // The ones that go through run( or onOrder( do so by their step, which names unless it is the scripted arrival.
+  assert.equal(actions.match(/step\.anon \? go\(""\) : asNamed\(f, go\)/g)?.length, 2, "run( and onOrder( both name, unless it is the scripted arrival");
+  assert.doesNotMatch(actions, /\bnamed\(f\)/, "no action reads the name outside asNamed");
+  assert.equal(actions.match(/anon: true/g)?.length, 1, "only the demo's scripted arrival of a reply is not the coordinator's");
+  for (const page of [review, orders, pack, source("app/call/page.tsx"), source("app/conflict.tsx")]) assert.doesNotMatch(page, /NameNeeded|name-needed/, "no redirect to the header");
+  assert.equal(existsSync(new URL("../app/name-needed.tsx", import.meta.url)), false, "NameNeeded is gone");
+  // A refusal for want of a name is shown beside the form's own name field, which takes focus.
+  assert.match(actions, /resId && !notice\.field/);
+  assert.match(pack, /field === "who"/);
+  assert.match(orders, /optBad/);
+});
+
+test("Ease task 2: NamedSubmit shows the name input only when no name is known, and every recording submit uses it", () => {
+  const ns = source("app/named-submit.tsx");
+  assert.match(ns, /^"use client";/);
+  assert.match(ns, /if \(known\) return null;/, "a known name shows nothing extra");
+  assert.match(ns, /<input name="who" aria-required="true" defaultValue=\{kept\} aria-label=\{`Your name, for \$\{purpose \?\? purposeOf\(on\)\}`\} maxLength=\{NAME_MAX\} autoComplete="name"/);
+  assert.match(ns, /<Problem bad=\{bad\} on=\{on\} name="who" \/>/, "a refused name is explained beside the input");
+  assert.match(ns, /<NameField known=\{known\}[^>]*\/>\s*<button type="submit"/, "the input comes directly before the button, in the same form");
+  assert.doesNotMatch(ns, />\s*Save\s*</, "no separate Save button");
+  // Every form that records a name has the field: none of these actions is posted by a bare button.
+  const plain = /<form[^>]*action=\{(?:approve|ask|reply|correct|readByHand|confirmLot|dismissNoChange|refresh|refreshAll|scriptedReply|liveRead|decideCut|logCall|confirm|lateMessage|stage|startResolution|sendNow|confirmDraft|editDraft|museDraft|send|discardDraft|requestedCall|buyerReply|supplyReply)Action\}[^>]*>[^]*?<\/form>/g;
+  let seen = 0;
+  for (const path of ["app/review/page.tsx", "app/orders/page.tsx", "app/pack/page.tsx", "app/call/page.tsx", "app/conflict.tsx"]) {
+    for (const form of source(path).match(plain) ?? []) {
+      seen += 1;
+      assert.match(form, /NamedSubmit|NameField/, `${path}: ${form.slice(0, 90)}`);
+    }
   }
-  assert.match(actions, /async function named\(\): Promise<string> \{[\s\S]*?if \(!kept\) throw new NameNeeded\(NAME_AT_TOP\);/);
-  for (const fn of ["stageAction", "confirmAction"]) {
-    const body = actions.slice(actions.indexOf(`export async function ${fn}`)).split(/\nexport /)[0];
-    assert.match(body, /await named\(\)/, `${fn} records a person's name`);
-    assert.doesNotMatch(body, /await actor\(\)/, `${fn} never falls back to the reserved name`);
-    assert.match(body, /instanceof NameNeeded/, `${fn} sends a missing name to the header field`);
-  }
-  assert.match(source("app/pack/page.tsx"), /field === "who" && <NameNeeded/);
-  assert.match(actions, /resId && notice\?\.field !== "who"/, "a name refusal on Orders lands at the top, by the header field");
-  assert.match(source("app/who.tsx"), /window\.addEventListener\(ASK_NAME/);
-  assert.match(orders, /name="words"/, "confirm posts the words shown");
+  assert.ok(seen >= 25, `${seen} forms checked`);
 });
 
 test("Fix round 1: no page renders error text taken straight from the URL", () => {
@@ -96,7 +138,8 @@ test("Task 17: Orders confirms and discards drafts, and both pages show a capped
 
 test("Task 18: a skip link, a main target and a title for every page", () => {
   const layout = source("app/layout.tsx");
-  assert.match(layout, /className="skip" href="#main"/);
+  // The skip link sits in the header (it knows the page) and lands on the message or order panel (Task 9).
+  assert.match(source("app/nav.tsx"), /className="skip" href=\{SKIP\[path\] \?\? "#main"\}/);
   assert.match(layout, /<main id="main"/);
   assert.match(layout, /template: "%s · Harvest Relay"/);
   assert.match(source("app/page.tsx"), /title: \{ absolute: "Overview · Harvest Relay" \}/);
@@ -115,13 +158,13 @@ test("Task 18: the header menu is a disclosure that closes on Escape and returns
   assert.match(nav, /This clears today's decisions and the remembered name\./);
   assert.match(nav, /showModal\(\)/);
   const menu = nav.slice(nav.indexOf('id="site-menu"'));
-  assert.ok(menu.indexOf("Log a call") < menu.indexOf("<ThemeToggle") && menu.indexOf("<ThemeToggle") < menu.indexOf("Reset demo"), "Reset demo is last in the menu, after the theme");
+  assert.ok(menu.indexOf("{links}") < menu.indexOf("<ThemeToggle") && menu.indexOf("<ThemeToggle") < menu.indexOf("Reset demo"), "Reset demo is last in the menu, after the theme");
   assert.doesNotMatch(source("app/layout.tsx"), /Reset demo/, "no Reset demo button in the header row");
 });
 
 test("Task 18: the header says who is recording, once, and the name can be changed there", () => {
   const who = source("app/who.tsx"), actions = source("app/actions.ts");
-  for (const s of [/Recording as/, /not you\?/, /Who is working\?/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
+  for (const s of [/Recording as/, /not you\?/, /Not signed in/, /set name/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
   assert.match(actions, /export async function setNameAction\([^)]*\)[^{]*\{[\s\S]*?checkName\([\s\S]*?rememberName\(/);
   // Fix round 3 (N1): only the name is cut short; "not you?" is its own flex item, at least 24 px.
   const css = source("app/globals.css");
@@ -133,9 +176,8 @@ test("Task 18: the header says who is recording, once, and the name can be chang
 test("Task 18: on a phone the selected message comes before the queue, which folds to N messages; actions return to their result", () => {
   const review = source("app/review/page.tsx");
   assert.match(review, /className="panel" id="item"/);
-  // Fix round 3 (N4): the list comes first in the page order, as drawn from 761 px; only the
-  // phone grid places the item first.
-  assert.ok(review.indexOf('<nav className="queue"') < review.indexOf("{it ? <Item"), "queue first in the page order");
+  // Task 9: the panel comes first in the page order and the queue after it; the grid draws the queue beside it.
+  assert.ok(review.indexOf('<nav className="queue"') > review.indexOf("{it ? <Item"), "queue after the panel in the page order");
   assert.match(source("app/globals.css"), /\.workspace\.item-first \{ grid-template-areas: "item" "preview" "queue"; \}/);
   assert.match(source("app/queue-fold.tsx"), /setOpen\(e\.matches\)/, "folds again when narrowed (N6)");
   assert.match(review, /<QueueFold count=\{todo\.length\}/);
@@ -146,7 +188,7 @@ test("Task 18: on a phone the selected message comes before the queue, which fol
   assert.match(actions, /const anchor = notice\.field \? "" :/, "no fragment for a name or field problem, so focus can go to the field");
   assert.match(actions, /redirect\(`\/review\?\$\{new URLSearchParams\(\{ item, \.\.\.signNotice\(\{ text: "Call logged\. Review it below\.", ok: true, on: "call" \}[^`]*\}#item`\)/, "a logged call lands on its message");
   const css = source("app/globals.css");
-  assert.match(css, /\.overview \.needs \{ order: -1; \}/, "the attention card follows the heading (R13)");
+  assert.match(css, /\.overview \.needs, \.overview \.notice-slot, \.overview \.confirmed-card \{ order: -1; \}/, "the confirmed card and the attention card follow the heading (R13)");
   assert.match(css, /\.overview \.hero \{ order: -2; \}/, "the page heading stays above the attention card (N5)");
 });
 
@@ -159,7 +201,7 @@ test("Task 18 round 2: the header stays one row on tablets, with the phone layou
 test("Task 18 round 2: Orders puts the selected order first on phones and folds the list", () => {
   const orders = source("app/orders/page.tsx");
   assert.match(orders, /className="workspace item-first"/);
-  assert.ok(orders.indexOf('<nav className="queue"') < orders.indexOf("{o ? <Order"), "list first in the page order; the phone grid puts the order first");
+  assert.ok(orders.indexOf('<nav className="queue"') > orders.indexOf("{o ? <Order"), "the order first in the page order, the list after it");
   assert.match(orders, /<QueueFold count=\{orders\.length\} noun="orders"/);
   assert.match(source("app/review/page.tsx"), /className="workspace item-first"/);
 });
@@ -176,8 +218,8 @@ test("Task 18 fix round 3: the menu shows the full name with Change name, closes
 
 test("H2: the forecast tag shows the forecast amount, not the lot total", () => {
   const lb = (amount: number) => ({ amount, unit: "lb" as const });
-  assert.equal(forecastTag({ effect: "forecast", lotId: "lot-d", before: lb(40), after: lb(40), expected: lb(20) }), "+20 lb expected");
-  assert.equal(forecastTag({ effect: "forecast", lotId: "lot-d", before: lb(40), after: lb(40) }), undefined, "no expected amount, no tag, never +0");
+  assert.equal(forecastTag({ expected: lb(20) }), "+20 lb expected");
+  assert.equal(forecastTag({}), undefined, "no expected amount, no tag, never +0");
   assert.match(source("app/review/page.tsx"), /forecastTag\(c\)/);
   assert.match(source("app/pack/page.tsx"), /!\(g && orderStatus\(w, id\) === "short"\)/, "no Short chip beside \"X short\"");
 });
@@ -258,7 +300,7 @@ test("Task 19 (R9): errors in plain words, beside their field, with names instea
   assert.match(actions, /function withNames\(/);
   assert.doesNotMatch(orders, /\(\$\{d\.note\}\)/, "the thread no longer prints a note such as item-6");
   assert.match(orders, /function ThreadLine/);
-  assert.match(actions, /class FieldError extends Error/);
+  assert.match(source("app/lib/errors.ts"), /class FieldError extends Error/);
   // The review page uses the one shared helper (app/lib/field-error.tsx) instead of its own copy.
   assert.match(review, /from "\.\.\/lib\/field-error\.tsx"/);
   assert.match(orders, /from "\.\.\/lib\/field-error\.tsx"/);
@@ -294,7 +336,7 @@ test("Task 19 (R15): repeated buttons carry hidden context, and the 404 page lea
   assert.match(orders, /Draft message<span className="sr-only">/);
   assert.match(orders, /Send<span className="sr-only">/);
   assert.match(orders, /Record reply<span className="sr-only"> from \{to\}/);
-  assert.match(source("app/page.tsx"), /Resolve<span className="sr-only"> \{buyer\(x\.g\.buyerId\)\}/);
+  assert.match(source("app/page.tsx"), /Resolve\{hint && `: \$\{hint\}`\}<span className="sr-only"> \{buyer\(x\.g\.buyerId\)\}/);
   assert.match(source("app/globals.css"), /\.sr-only \{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset\(50%\);/);
   const missing = source("app/not-found.tsx");
   assert.match(missing, /href="\/"/);
@@ -360,15 +402,15 @@ test("Task 22 (R18): quieter review controls", () => {
   assert.match(review, /Done today \(\{done\.length\}\)/);
   assert.match(review, /aria-describedby=\{off \? "approve-why" : undefined\}/);
   assert.match(review, /Answer the open detail above to approve\./);
-  assert.match(review, /Approving does not need it\./, "Confirm lot is explained");
-  assert.doesNotMatch(review, /<div className="row">\s*\{hasScript[\s\S]{0,400}Confirm lot/, "Confirm lot is off the main row");
+  assert.doesNotMatch(review, /Mark the lot as checked|Confirm lot|confirmLotAction/, "the lot check is gone from the page");
+  assert.match(source("app/actions.ts"), /export async function confirmLotAction/, "its action stays, unused");
 });
 
 test("Task 23: reset clears the remembered name, and a dismissal offers the next update or the way back to Overview", () => {
   assert.match(source("app/actions.ts"), /await resetDemo\(\);\s*await forgetName\(\);/);
   assert.match(source("app/lib/name.ts"), /delete\(NAME_COOKIE\)/);
   const review = source("app/review/page.tsx");
-  assert.match(review, /notice\.on === "hold" && it\.state === "dismissed"/);
+  assert.match(review, /\(notice\.on === "hold" \|\| notice\.on === "dismiss"\) && it\.state === "dismissed"/);
   assert.match(review, /Back to Overview/);
   assert.doesNotMatch(review, /No more updates waiting/);
 });
@@ -377,7 +419,8 @@ test("Final review: recording a buyer's consent or a new lot needs the header na
   const actions = source("app/actions.ts"), orders = source("app/orders/page.tsx");
   for (const name of ["buyerReplyAction", "supplyReplyAction"]) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport async function /)[0];
-    assert.match(body, /done: "Reply recorded\.", named: true/, name);
+    assert.match(body, /done: "Reply recorded\."/, name);
+    assert.doesNotMatch(body, /anon: true/, name);
   }
   assert.match(orders, /failedTheCheck\(r\.fallback\)/);
   assert.match(orders, /Couldn't get other wording just now\. The template stands\./);
@@ -400,7 +443,7 @@ test("Task 4: the conflict panel is a fieldset with a legend, reports errors bes
 
 test("a11y: order sheets name their columns, and a changed line's note can wrap", () => {
   const pack = source("app/pack/page.tsx"), css = source("app/globals.css");
-  for (const col of ["Amount", "Product and grade", "Grower"]) assert.match(pack, new RegExp(`<th scope="col">${col}</th>`));
+  for (const col of ["Amount", "Product and grade", "Grower"]) assert.match(pack, new RegExp(`<th scope="col"[^>]*>${col}</th>`));
   assert.match(pack, /className="was muted small"/);
   assert.doesNotMatch(css, /\.sheet td\.num[^{]*\{[^}]*nowrap/, "the whole amount cell must not be forced onto one line");
 });
@@ -422,4 +465,141 @@ test("a11y: stage results name the buyer, the late-message link takes focus, a s
 test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
   assert.match(source("app/actions.ts"), /You entered \$\{sum\} lb; the cuts must total \$\{excess\} lb\./);
   assert.match(source("app/conflict.tsx"), /amount to cut if splitting/);
+});
+
+test("Ease task 3: plain words on the review page, and the demo control sits in its own labelled box", () => {
+  const review = source("app/review/page.tsx"), fields = source("app/value-fields.tsx"), css = source("app/globals.css");
+  for (const banned of [/>Reading</, /Kind of update/, /Change preview/, /proposed allocation/, /Not worked out yet/, /A separate proposal/, /Unallocated/, /Mark the lot as checked/])
+    assert.doesNotMatch(review + fields, banned);
+  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Needs your answer", "Not going to anyone yet", "Words in the reply that answer these (optional)", "Note this forecast"])
+    assert.ok(review.includes(label), label);
+  assert.equal(FIELD.operation, "What changed");
+  assert.deepEqual(Object.values(OPERATION_CHOICE), ["A new total", "Added to what they have", "A correction", "A forecast, not confirmed"]);
+  assert.match(review, /<div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>[\s\S]*?Receive the grower's reply \(demo\)/);
+  assert.match(css, /\.demo \{[^}]*dashed/);
+  for (const raw of Object.keys(OPERATION_CHOICE)) assert.notEqual(OPERATION[raw as keyof typeof OPERATION], raw, "the history says the plain name, not the token");
+  assert.match(source("app/actions.ts"), /Forecast noted\. Confirmed supply is unchanged\./);
+  assert.match(review, /Forecast noted/);
+});
+
+test("Ease task 3: the change line says before, after and by how much", () => {
+  const lb = (amount: number) => ({ amount, unit: "lb" as const });
+  assert.equal(changeLine(lb(120), lb(60)), "120 lb → 60 lb (down 60 lb)");
+  assert.equal(changeLine(lb(40), lb(70)), "40 lb → 70 lb (up 30 lb)");
+  assert.equal(changeLine(lb(40), lb(40)), "40 lb → 40 lb (no change)");
+  assert.equal(changeLine({ amount: 2, unit: "kg" }, { amount: 1, unit: "kg" }), "2 kg → 1 kg (down 1 kg)");
+});
+
+test("Ease task 3: every review form that can be refused keeps what was typed", () => {
+  const actions = source("app/actions.ts");
+  for (const on of ["ask", "reply", "correct", "hold", "hand"]) assert.match(actions, new RegExp(`keep: "${on}"`), on);
+  assert.match(actions, /back\(item, notice, step\.on, kept, returnPage/);
+  assert.match(actions, /\.\.\.kept, \.\.\.signNotice\(notice/, "kept values sit beside the signed notice, not inside it");
+});
+
+test("Ease task 4: Orders wording, the one-step send, the single status chip and the Demo group", () => {
+  const orders = source("app/orders/page.tsx"), actions = source("app/actions.ts"), cover = source("app/pending-cover.tsx"), conflict = source("app/conflict.tsx");
+  assert.match(orders, /Substitutes this buyer accepts/);
+  assert.match(orders, /None yet/);
+  assert.doesNotMatch(orders, /Substitute permissions|>None</);
+  assert.match(orders, /Sent by \{out\.sentBy\}, \{time\(out\.sentAt\)\}\. \(This demo records messages; it doesn't deliver them\.\)/);
+  assert.doesNotMatch(orders, /Recorded as sent \(demo/);
+  // The Next step sends in one step from an editable message; the other options still draft first.
+  assert.match(orders, /<form action=\{sendNowAction\} className="option-card primary-card" noValidate>/);
+  assert.match(orders, /<textarea name="body" required maxLength=\{480\} rows=\{4\} defaultValue=\{draft\}/);
+  assert.doesNotMatch(orders, /Use this message/);
+  assert.match(orders, /<form action=\{startResolutionAction\} className="option-card">/);
+  assert.match(actions, /canSend\(next, r, hubDay\(now\(\)\)\)/, "the domain's own rule decides whether it can be sent");
+  assert.match(actions, /sendMessage\(next, id, CONTACTS, who, now\(\)\)/);
+  assert.match(actions, /keep: "send"/);
+  // One status chip: how short, or the stage.
+  assert.match(orders, /orderChip\(/);
+  assert.equal((orders.match(/className=\{`chip \$\{st\.tone\}`\}>\{st\.label\}<\/span>\n        \{unsent/g) ?? []).length, 1);
+  assert.doesNotMatch(orders, /STAGE\[/);
+  // The buyer's answer: nothing prefilled, a call needs no note, and a refusal keeps what was typed.
+  assert.doesNotMatch(orders, /BUYER_REPLIES|prefill=/);
+  assert.match(actions, /keep: "buyer"/);
+  assert.match(actions, /answerOf\(f, true\)/);
+  // Demo-only control sits in the Demo group.
+  assert.match(orders, /<details className="demo-tools"[^\n]*>\s*<summary>Demo tools<\/summary>[\s\S]*?className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>\s*<form action=\{scriptedRequestReplyAction\}/);
+  assert.match(cover, /waitingCover\(/);
+  assert.match(conflict, /\{!sole && <label className="check"><input type="radio" name="choice" value="split"/, "no Split with one promise");
+});
+
+test("Ease task 4: the order chip and the cover line", async () => {
+  const { orderChip, coverLine } = await import("../app/lib/format.ts");
+  assert.deepEqual(orderChip("short", "planned", 60, "lb"), { label: "Short 60 lb", tone: "block" });
+  assert.equal(orderChip("resolving", "planned", 30, "lb").label, "Short 30 lb, waiting on reply");
+  assert.equal(orderChip("buyer-told", "planned", 30, "lb").label, "Short 30 lb, buyer told");
+  assert.equal(orderChip("covered", "promised", 0, "lb").label, "Promised");
+  assert.equal(orderChip("substitute-agreed", "packed", 0, "lb").label, "Packed, substitute agreed");
+  for (const st of ["covered", "short", "resolving", "buyer-told", "substitute-agreed"] as const) for (const stage of ["planned", "promised", "packed", "handed-off"] as const)
+    assert.ok(!(/Short/.test(orderChip(st, stage, st === "covered" || st === "substitute-agreed" ? 0 : 5, "lb").label) && /Promised/.test(orderChip(st, stage, 5, "lb").label)), "never both Short and Promised");
+  assert.equal(coverLine("Alder Creek Farm", 2), "Alder Creek Farm has 2 updates to review that may cover this.");
+  assert.equal(coverLine("Alder Creek Farm", 1), "Alder Creek Farm has 1 update to review that may cover this.");
+});
+
+test("Task 5: the header tabs, the Overview's folded day details, all-clear card and in-place actions", () => {
+  const nav = source("app/nav.tsx"), page = source("app/page.tsx"), css = source("app/globals.css");
+  const tabs = nav.match(/const PAGES = \[(.*?)\] as const;/)![1];
+  assert.deepEqual([...tabs.matchAll(/"([^"/][^"]*)"\]/g)].map(m => m[1]), ["Overview", "Review updates", "Orders", "Pack", "Log a call"]);
+  assert.match(nav, /aria-current=\{here\(href\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
+  assert.doesNotMatch(page, /Open review workspace/);
+  assert.match(page, /openAllLabel\(open\.length\)/, "a text link next to the heading, not a full-width bar");
+  // The measures, gauge, donut and grower lots sit in one closed fold below Buyer orders; the export link stays out of it.
+  const fold = page.indexOf('<details className="day-details">'), end = page.indexOf("</details>", fold);
+  assert.ok(fold > page.indexOf('id="orders"') && page.indexOf("<summary>Day details</summary>") > fold);
+  assert.ok(page.indexOf("<SupplyCard", fold) > fold && page.indexOf("<SupplyCard", fold) < end, "Supply against orders is inside the fold");
+  assert.doesNotMatch(page.slice(fold, fold + 40), /open/);
+  for (const t of ["<DayCard", "<Gauge", "<Donut", 'id="lots"']) assert.ok(page.indexOf(t, fold) > fold && page.indexOf(t, fold) < end, t);
+  assert.ok(page.indexOf('href="/export"') < fold, "the export link stays visible, in the hero line");
+  for (const t of ["confirmLead(gaps.length > 0", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "reviewCoverLink(grower(cover.growerId)", "Review it"]) assert.ok(page.includes(t), t);
+  // Approve and Dismiss post from the Overview and come back to it; Confirm too.
+  assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{ready\.reviewHash\}/);
+  assert.match(page, /action=\{dismissNoChangeAction\}/);
+  assert.match(page, /updateKind\(i, p\)/, "Dismiss only on a message that names no lot or no amount");
+  assert.match(page, /action=\{confirmAction\}/);
+  assert.match(source("app/actions.ts"), /returnPage\(str\(f, "from"\)\)/);
+  // A phone sees one card per buyer, and focus lands on the page heading after Reset demo.
+  assert.match(css, /@media \(max-width: 600px\) \{\s*table\.buyers/);
+  assert.match(page, /<h1 id="hub" tabIndex=\{-1\}>/);
+  assert.match(source("app/actions.ts"), /on: "reset"/);
+});
+
+test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and print rules", () => {
+  const pack = source("app/pack/page.tsx"), css = source("app/globals.css"), domain = source("src/commitments.ts");
+  assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
+  assert.match(pack, /\{SHIP_SHORT\} without telling the buyer/);
+  assert.equal(SHIP_SHORT, "Ship these orders short");
+  assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
+  for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w, cutOpen)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
+  assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
+  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
+  const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
+  assert.doesNotMatch(print, /\.sheets \.card-head/, "the buyer name's header is not hidden in print");
+  assert.match(print, /\.sheets > \.card-head, \.sheets > h3 \{ display: none; \}/, "only the page's own heading is hidden");
+  assert.match(print, /\.sheet-grid \{ display: block; \}/, "block layout, not the grid");
+  assert.match(print, /\.sheet \{[^}]*break-before: page/);
+  assert.match(print, /\.sheet:first-child \{ break-before: auto/);
+  assert.match(css, /@media \(max-width: 600px\) \{\s*button, \.button, \.menu-button, \.who-line \.link, \.menu-who \.link \{ min-height: 44px; \}/);
+  assert.doesNotMatch(css, /\.sheet td \{ overflow-wrap: anywhere; vertical-align/, "desktop order-sheet columns do not split words");
+});
+
+test("Task 10: Overview and Pack wording and structure", () => {
+  const page = source("app/page.tsx"), pack = source("app/pack/page.tsx"), actions = source("app/actions.ts");
+  assert.doesNotMatch(page, /Allocation is a proposal/);
+  assert.match(page, /\{open\.length > 0 && <a className="open-all" href="\/review">\{openAllLabel/, "a text link, hidden with nothing to review");
+  assert.doesNotMatch(page, /bar-action/);
+  assert.match(page, /<a className="button" href=\{resolve\}>\{resolveLabel\}/, "Resolve is a secondary button beside a Review button");
+  assert.ok(page.indexOf('aria-label="Plan confirmed"') < page.indexOf('id="needs"'), "the confirmed card comes before Needs your attention");
+  assert.match(page, /Plan confirmed by \{c\.confirmed\.by\} at \{time\(c\.confirmed\.at\)\}/);
+  assert.equal(page.split("Plan confirmed by").length, 2, "said once");
+  assert.match(page, /\{counts2\.packed\} of \{counts2\.total\} packed, \{counts2\.handed\} of \{counts2\.total\} handed off/);
+  assert.match(page, /href="\/pack\?print=1"/);
+  assert.match(page, /unsettledLine\(warnings\.length\)/, "same line as Pack");
+  assert.match(pack, /unsettledFor\(/);
+  assert.match(pack, /Show checklist/);
+  assert.match(pack, /\/review\?item=\$\{encodeURIComponent\(fresh\[0\]\.id\)\}/, "the arrived-messages link goes to the first one");
+  assert.match(pack, /<AutoPrint \/>/);
+  assert.match(actions, /text: home \? "Confirmed\. Pack and hand off below\."/, "the result does not repeat the card's words");
 });

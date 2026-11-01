@@ -1,7 +1,8 @@
 import { amendFromMessage, applyAnswers, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash, type Plan, type Snapshot } from "./planner.ts";
 import { normalize, type BaseUnit, type Quantity } from "./quantity.ts";
-import { NAME_MAX } from "./hub.ts";
+import { NAME_MAX, HUB_ZONE } from "./hub.ts";
+import { BUYERS, CONTACTS } from "./demo.ts";
 import { planOf } from "./commitments.ts";
 import type { OutboxMessage, Resolution } from "./resolve.ts";
 import { commitUpdate, locate, reviewUpdate, validateSource, type Change, type Field, type Ledger, type Operation, type Question, type Source, type UpdateProposal } from "./updates.ts";
@@ -11,7 +12,7 @@ import { commitUpdate, locate, reviewUpdate, validateSource, type Change, type F
 // the item's history. Inventory changes only through commitUpdate, so the review rules
 // (blocking questions, exact review hash, stale-inventory checks) are the ledger's own.
 export type ItemState = "open" | "pending" | "returned" | "dismissed" | "approved";
-export type DecisionKind = "received" | "interpreted" | "asked" | "replied" | "corrected" | "lot-confirmed" | "left-pending" | "returned" | "dismissed" | "refreshed" | "approved";
+export type DecisionKind = "received" | "interpreted" | "asked" | "replied" | "corrected" | "lot-confirmed" | "left-pending" | "returned" | "dismissed" | "refreshed" | "approved" | "answered";
 // by: for a reply, who or what read it ("coordinator" when the coordinator entered the answer).
 export type Decision = { at: string; actor: string; kind: DecisionKind; note?: string; by?: string; reviewHash?: string; eventId?: string; corrections?: Correction[] };
 export type InboxItem = {
@@ -101,6 +102,54 @@ export function ask(w: Workbench, id: string, field: Field, question: string, ac
 export function reply(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
   return takeReply(w, id, source, (l, p) => applyAnswers(l, p, source, answers, unclear), "coordinator", actor, at);
 }
+// The coordinator's answers and the approval in one step. The approval is checked against the review
+// hash of the state the answers produce, so it approves exactly the change that state previews. When the
+// answers leave a question open, or no change can be worked out, only the reply is kept (approved: false).
+export type Approved = { next: Workbench; approved: boolean; changed: boolean };
+// shown: the review hash of the preview the coordinator was shown (a hidden field of the form). The approval is
+// made only when the produced state has exactly that hash; values the coordinator edited after the preview,
+// or a form that had no preview, are saved without approving (changed: true), so the new outcome is shown first.
+function approveIfShown(saved: Workbench, id: string, actor: string, at: string, shown: string | undefined, open: (p: Preview) => boolean): Approved {
+  const p = preview(saved, id);
+  if (open(p) || !p.reviewHash) return { next: saved, approved: false, changed: false };
+  if (!shown || shown !== p.reviewHash) return { next: saved, approved: false, changed: true };
+  return { next: approve(saved, id, actor, p.reviewHash, at), approved: true, changed: false };
+}
+export function replyAndApprove(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(reply(w, id, source, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
+}
+// Answers to the open details from a reply that is already recorded (an earlier "Apply answers" left a question
+// open). The reply is not recorded a second time: the history gets one "answered" line, never another "replied".
+// Whether the grower's reply is already recorded and a detail is still open: it came after the last question
+// asked, so the answers go against it and it is not pasted again. The server works this out itself; a form never says so.
+export function replyIsRecorded(w: Workbench, id: string): boolean {
+  const it = item(w, id), last = (k: string) => it.decisions.findLastIndex(d => d.kind === k);
+  return it.replies.length > 0 && last("replied") > last("asked") && preview(w, id).questions.length > 0;
+}
+export function answerRecorded(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
+  const source = item(w, id).replies.at(-1);
+  if (!source) throw new Error("No reply is recorded yet");
+  w = refreshIfStale(w, id, actor, at);
+  let corrections: Correction[] = [];
+  const next = update(w, id, (i, l) => {
+    const r = applyAnswers(l, editable(i), source, answers, unclear);
+    i.proposal = structuredClone(r.proposal); corrections = r.corrections;
+    if (i.state === "returned" || i.state === "pending") i.state = "open";
+  }, { kind: "answered", note: answers.map(a => a.field).join(", ").slice(0, LIMIT.note) }, actor, at);
+  if (corrections.length) next.items.find(i => i.id === id)!.decisions.at(-1)!.corrections = corrections;
+  return next;
+}
+export function answerRecordedAndApprove(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(answerRecorded(w, id, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
+}
+// What the answers would do, worked out on a copy: the preview of the state they produce. Undefined when they are refused.
+export function previewAnswers(w: Workbench, id: string, source: Source, answers: Answer[], at: string): Preview | undefined {
+  try { return preview(reply(w, id, source, answers, [], "Preview", at), id); } catch { return undefined; }
+}
+export function previewRecordedAnswers(w: Workbench, id: string, answers: Answer[], at: string): Preview | undefined {
+  try { return preview(answerRecorded(w, id, answers, [], "Preview", at), id); } catch { return undefined; }
+}
+
 // A grower reply read by the model: interpretReply has already applied its answers with
 // applyAnswers to this item's proposal. Checked again here before it is kept.
 export function replyRead(w: Workbench, id: string, source: Source, read: { proposal: UpdateProposal; corrections: Correction[] }, by: string, actor: string, at: string): Workbench {
@@ -155,6 +204,20 @@ export function readByHand(w: Workbench, id: string, r: HandReading, actor: stri
   return correct(next, id, answers, actor, at);
 }
 
+// The coordinator's reading and the approval in one step ("Save and approve"). Every value is in the form the
+// coordinator submitted, so nothing hidden is approved: the approval is checked against the review hash of
+// the state the reading produces, exactly the change that state previews. When the reading leaves a question
+// open, or no change can be worked out, only the reading is kept (approved: false). It does not rebase.
+export function readByHandAndApprove(w: Workbench, id: string, r: HandReading, actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(readByHand(w, id, r, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || p.needsRefresh || !p.change));
+}
+
+// What the coordinator's reading would do if it were saved as shown, worked out on a copy: the preview of the state the
+// hand reading produces. Undefined when the reading is refused. The input is never changed.
+export function previewHand(w: Workbench, id: string, r: HandReading, at: string): Preview | undefined {
+  try { return preview(readByHand(w, id, r, "Preview", at), id); } catch { return undefined; }
+}
+
 // Values found in a message, to prefill the hand-entry form. A reading already on the item
 // wins; otherwise the words are searched, and the lot's own grade and day fill the rest.
 export type HandSuggestion = { operation?: Exclude<Operation, "unresolved">; lotId?: string; quantity?: Quantity; grade?: string; deliveryOn?: string };
@@ -167,17 +230,33 @@ export function suggestReading(w: Workbench, id: string): HandSuggestion {
   else if (/\b(might|maybe|may have|could|expect(ing)?|hoping|forecast)\b/.test(t)) out.operation = "forecast";
   else if (/\b(another|more|extra|add(ing|ed)?|additional)\b/.test(t)) out.operation = "add-quantity";
   else if (/\b(only|total|now (have|got)|down to|replac\w*|whole lot)\b/.test(t)) out.operation = "replace-total";
+  // A grower answering an ask for more supply is adding to what they have.
+  if (!out.operation && i.requestId) out.operation = "add-quantity";
   const mine = s.lots.filter(l => l.growerId === i.source.growerId), named = mine.filter(l => t.includes(l.product.toLowerCase()));
   const lot = s.lots.find(l => l.id === cur?.lotId) ?? (named.length === 1 ? named[0] : named.length === 0 && mine.length === 1 ? mine[0] : undefined);
   if (lot) { out.lotId = lot.id; out.grade = cur?.grade ?? lot.grade; out.deliveryOn = cur?.deliveryOn ?? lot.deliveryOn; }
   else { if (cur?.grade) out.grade = cur.grade; if (cur?.deliveryOn) out.deliveryOn = cur.deliveryOn; }
   if (cur?.quantity) out.quantity = structuredClone(cur.quantity);
   else {
-    const m = t.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(kg|kilos?|lbs?|pounds?|g|grams?|each|cases?)\\b`));
+    // "10 lb", and also "10 more lb" / "10 extra lb": a word that says it is an addition may sit between the number and its unit.
+    const m = t.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(?:(?:more|extra|additional)\\s+)?(kg|kilos?|lbs?|pounds?|g|grams?|each|cases?)\\b`));
     if (m) {
       const u = m[2], unit = u.startsWith("case") ? "case" : u.startsWith("k") ? "kg" : u.startsWith("l") || u.startsWith("p") ? "lb" : u.startsWith("g") ? "g" : "each";
       out.quantity = { amount: /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1]], unit };
     }
+  }
+  return out;
+}
+
+// Values for the open details of a reply form, taken from words already on the page: the kind of update from the
+// message, and the contents of a case from a reply already recorded ("6 lb in each", "five kg per case").
+export function suggestAnswers(w: Workbench, id: string, open: Field[]): Partial<Record<Field, string>> {
+  const i = item(w, id), out: Partial<Record<Field, string>> = {};
+  if (open.includes("operation")) { const op = suggestReading(w, id).operation; if (op) out.operation = op; }
+  const last = i.replies.at(-1)?.text.toLowerCase();
+  if (open.includes("pack") && last) {
+    const m = last.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(kg|kilos?|lbs?|pounds?|g|grams?|each)\\b`));
+    if (m) { const u = m[2], unit = u.startsWith("k") ? "kg" : u.startsWith("l") || u.startsWith("p") ? "lb" : u.startsWith("g") ? "g" : "each"; out.pack = `${/^\d+$/.test(m[1]) ? m[1] : NUMBER_WORDS[m[1]]} ${unit}`; }
   }
   return out;
 }
@@ -317,4 +396,33 @@ export function preview(w: Workbench, id: string): Preview {
   return { ...base,
     orders: l.snapshot.orders.map(o => ({ orderId: o.id, unit: normalize(o.quantity).unit, requested: normalize(o.quantity).amount, before: fill(before, o.id), after: fill(after, o.id) })),
     unallocated: [...lots].map(([lotId, unit]) => ({ lotId, unit, before: before.unallocated.find(u => u.lotId === lotId)?.amount ?? 0, after: after.unallocated.find(u => u.lotId === lotId)?.amount ?? 0 })) };
+}
+
+// The newest decision anywhere in the workbench, said plainly for the "changed in another
+// tab" message, for example "Sam approved Alder Creek Farm's update at 8:03 AM".
+const WORDS: Record<DecisionKind, string> = {
+  received: "received", interpreted: "read", asked: "asked about", replied: "recorded a reply to", corrected: "corrected", "lot-confirmed": "confirmed the lot for",
+  "left-pending": "left pending", returned: "returned", dismissed: "dismissed", refreshed: "refreshed", approved: "approved", answered: "answered for"
+};
+const RESOLVED: Record<string, string> = {
+  drafted: "drafted a message about", redrafted: "redrafted a message about", edited: "edited a message about", confirmed: "confirmed a message about", discarded: "discarded a message about",
+  sent: "sent a message about", "reply-recorded": "recorded a reply about", "grower-replied": "recorded a grower reply about", "supply-recorded": "recorded supply for"
+};
+export function latestChange(w: Workbench, names: { grower: (id: string) => string; buyer: (id: string) => string } = {
+  grower: id => CONTACTS.find(c => c.id === id)?.name ?? id, buyer: id => BUYERS[id] ?? id
+}): string | undefined {
+  const buyerOf = (orderId: string) => { const o = w.ledger.snapshot.orders.find(x => x.id === orderId); return o ? names.buyer(o.buyerId) : orderId; };
+  const found: { at: string; line: string }[] = [];
+  for (const i of w.items) for (const d of i.decisions) found.push({ at: d.at, line: `${d.actor} ${WORDS[d.kind] ?? d.kind} ${names.grower(i.source.growerId)}'s update` });
+  for (const r of w.resolutions) for (const d of r.decisions) found.push({ at: d.at, line: `${d.actor} ${RESOLVED[d.kind] ?? d.kind} ${buyerOf(r.orderId)}'s order` });
+  for (const e of w.ledger.commitments?.log ?? []) {
+    if (e.kind === "confirmed") found.push({ at: e.at, line: `${e.by} confirmed the plan` });
+    else if (e.kind === "cut") found.push({ at: e.at, line: `${e.by} decided who takes the cut` });
+    else found.push({ at: e.at, line: `${e.by} marked ${buyerOf(e.orderId)}'s order ${e.stage === "packed" ? "packed" : "handed off"}` });
+  }
+  if (!found.length) return undefined;
+  // Later entries win a tie, since each list is in the order things happened.
+  const last = found.reduce((a, b) => Date.parse(b.at) >= Date.parse(a.at) ? b : a);
+  const when = new Date(last.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: HUB_ZONE });
+  return `${last.line} at ${when}`;
 }

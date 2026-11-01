@@ -5,6 +5,10 @@ import type { Change, Field, Operation, Span, UpdateProposal } from "../../src/u
 import type { InboxItem, Preview } from "../../src/workbench.ts";
 import { HUB_ZONE } from "../../src/hub.ts";
 
+// Under "Apply answers": the second step is said before it is needed.
+export const APPLY_THEN = "Then approve the change it makes, on the next step.";
+// A re-check is the app's own step, so its history line names nobody.
+export const HISTORY_RECHECK = "Checked again against current supply";
 export const HUB_NAME = "Riverside Food Hub";
 
 // Display helpers shared by the dashboard and the review workspace.
@@ -21,7 +25,7 @@ export function quantity(q: Quantity | undefined): string {
 }
 // A forecast's tag: the amount the grower said might come, never the lot it would join.
 // With no expected amount there is no tag, never "+0".
-export function forecastTag(c: Change): string | undefined {
+export function forecastTag(c: { expected?: Quantity }): string | undefined {
   if (!c.expected) return undefined;
   const x = normalize(c.expected);
   return `+${weight(x.amount, x.unit)} expected`;
@@ -29,8 +33,25 @@ export function forecastTag(c: Change): string | undefined {
 export const OPERATION: Record<Operation, string> = {
   "replace-total": "New total", "add-quantity": "Addition", correction: "Correction", forecast: "Forecast", unresolved: "Not clear yet"
 };
+// The four kinds of change, said the way a coordinator would say them (the select's values are the tokens).
+// An earlier update named in plain words, for the hand form's "being corrected" list:
+// "Birch Hollow Gardens' zucchini update (4 cases of 10 lb)". The amount is what that update set the lot to.
+export function updateName(growerId: string, product: string, after: Quantity): string {
+  const g = grower(growerId);
+  return `${g}${g.endsWith("s") ? "'" : "'s"} ${product.toLowerCase()} update (${quantity(after)})`;
+}
+export const OPERATION_CHOICE = { "replace-total": "A new total", "add-quantity": "Added to what they have", correction: "A correction", forecast: "A forecast, not confirmed" } as const;
+// "120 lb → 60 lb (down 60 lb)": the lot before and after, and by how much.
+export function moveLine(before: Quantity, after: Quantity): string {
+  const b = normalize(before), a = normalize(after);
+  return `${weight(b.amount, b.unit)} → ${weight(a.amount, a.unit)}`;
+}
+export function changeLine(before: Quantity, after: Quantity): string {
+  const b = normalize(before), a = normalize(after), d = a.amount - b.amount;
+  return `${weight(b.amount, b.unit)} → ${weight(a.amount, a.unit)} (${d === 0 ? "no change" : `${d > 0 ? "up" : "down"} ${weight(Math.abs(d), a.unit)}`})`;
+}
 export const FIELD: Record<Field, string> = {
-  operation: "Kind of update", lot: "Lot", quantity: "Quantity", unit: "Unit", pack: "Case contents", grade: "Grade", date: "Delivery day", "correction-target": "Update being corrected"
+  operation: "What changed", lot: "Lot", quantity: "Quantity", unit: "Unit", pack: "Case contents", grade: "Grade", date: "Delivery day", "correction-target": "Update being corrected"
 };
 export function day(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
@@ -43,15 +64,24 @@ export const buyer = (id: string) => BUYERS[id] ?? id;
 
 export type Status = { label: string; tone: "block" | "ready" | "wait" | "done" | "quiet" };
 export const ORDER_STATUS: Record<OrderStatus, Status> = {
-  covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Waiting on reply", tone: "wait" },
+  covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Asked, waiting for the grower", tone: "wait" },
   "buyer-told": { label: "Buyer told", tone: "quiet" }, "substitute-agreed": { label: "Substitute agreed", tone: "done" }
 };
-export function status(i: InboxItem, p: Preview | undefined): Status {
-  if (i.state === "approved") return { label: "Approved", tone: "done" };
+// The one chip an order shows: how short it is (and what is being done), or, once covered, how far it has got.
+export function orderChip(st: OrderStatus, stage: keyof typeof STAGE, short: number, unit: "g" | "lb" | "each"): Status {
+  if (st === "covered" || st === "substitute-agreed") return { label: st === "covered" ? STAGE[stage].label : `${STAGE[stage].label}, substitute agreed`, tone: STAGE[stage].tone };
+  const gap = `Short ${weight(short, unit)}`;
+  return { label: st === "resolving" ? `${gap}, waiting on reply` : st === "buyer-told" ? `${gap}, buyer told` : gap, tone: ORDER_STATUS[st].tone };
+}
+// One line per grower under a shortfall: their unreviewed updates that could raise supply.
+export const coverLine = (name: string, n: number) => `${name} has ${n} ${n === 1 ? "update" : "updates"} to review that may cover this.`;
+// noted: the approved update was a forecast, which is noted and leaves confirmed supply unchanged.
+export function status(i: InboxItem, p: Preview | undefined, noted = false): Status {
+  if (i.state === "approved") return { label: noted ? "Noted" : "Approved", tone: "done" };
   if (i.state === "dismissed") return { label: "Dismissed", tone: "quiet" };
   if (i.state === "returned") return { label: "Returned to grower", tone: "wait" };
   if (i.state === "pending") return { label: "Pending", tone: "wait" };
-  if (!i.proposal) return { label: "Not read yet", tone: "wait" };
+  if (!i.proposal) return { label: "Not checked yet", tone: "wait" };
   // Supply moved and the rebased review differs from what was shown. A stale item whose
   // rebased review is unchanged is checked again read-only and shows as normal.
   if (p?.needsRefresh) return { label: "Supply changed", tone: "wait" };
@@ -78,8 +108,10 @@ export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Sta
   planned: { label: "Planned", tone: "quiet" }, promised: { label: "Promised", tone: "ready" }, packed: { label: "Packed", tone: "done" }, "handed-off": { label: "Handed off", tone: "done" }
 };
 // "Promised 40 of 50 lb", and what the live plan gives the order beyond that, when it does.
-export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number): string[] {
+// settled: the buyer has already agreed to a substitute or been told they will be short, so "not promised yet" would mislead.
+export const NOT_PROMISED = "Not promised to the buyer yet";
+export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number, settled = false): string[] {
   const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
   const extra = planned - s.promised;
-  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? [`${weight(extra, s.unit)} planned, not yet promised`] : [])];
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 && !settled ? [NOT_PROMISED] : [])];
 }

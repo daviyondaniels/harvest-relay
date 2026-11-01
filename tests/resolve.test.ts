@@ -188,7 +188,7 @@ test("Review Focus 5: edits are bounded, call notes required, checker problems k
 
   w = start(w, pick(w, zucchini), 20);
   w = sendMessage(w, "res-2", CONTACTS, ME, T(21));
-  assert.throws(() => recordBuyerReply(w, "res-2", { channel: "call", text: "", accept: true }, ME, T(22)), /note/);
+  assert.throws(() => recordBuyerReply(w, "res-2", { channel: "text", text: "", quote: "yes", accept: true }, ME, T(22)), /Reply text/);
   assert.throws(() => recordBuyerReply(w, "res-2", { channel: "call", text: "x".repeat(501), accept: true }, ME, T(22)), /note/);
 });
 
@@ -601,4 +601,46 @@ test("Task 21: quoteFor takes the sentence that says yes or no, and leaves uncle
   assert.equal(quoteFor("Thanks. Yes, but no to the zucchini.", true), undefined, "a no that is not just \"no problem\" still leaves it to the coordinator");
   assert.equal(quoteFor("Yes, thanks. No, not Friday.", true), undefined, "a second sentence that says no leaves it to the coordinator");
   assert.equal(quoteFor("Zucchini, yes, and no problem.", true), undefined, "the word does not start the sentence");
+});
+
+test("Ease task 4: a phone answer with no note records the fixed wording, and a text still needs its words", () => {
+  let w = start(morning(), pick(morning(), zucchini), 20);
+  w = sendMessage(w, "res-1", CONTACTS, ME, T(21));
+  assert.throws(() => recordBuyerReply(w, "res-1", { channel: "text", text: "", accept: true }, ME, T(22)), /Reply text/);
+  for (const blank of ["", "   ", undefined as unknown as string]) {
+    const done = recordBuyerReply(w, "res-1", { channel: "call", text: blank, accept: true }, "Sam Rivera", T(22));
+    assert.equal(done.resolutions[0].reply?.text, "Answer recorded by Sam Rivera without a note");
+    assert.equal(done.resolutions[0].reply?.quote, "Answer recorded by Sam Rivera without a note");
+    assert.equal(done.resolutions[0].status, "accepted");
+  }
+  const written = recordBuyerReply(w, "res-1", { channel: "call", text: "Spoke to the chef", accept: false }, ME, T(22));
+  assert.equal(written.resolutions[0].reply?.text, "Spoke to the chef");
+});
+
+test("Ease task 4: the one-step send drafts with the edited words and sends, unless words need confirming", () => {
+  const w0 = morning(), opt = pick(w0, askB);
+  // What sendNowAction does inside one act(): start, edit if changed, then send only if the check passes and nothing is open.
+  const oneStep = (body: string, at: string) => {
+    let w = start(w0, opt, 10);
+    if (body !== w.resolutions[0].text) w = editDraft(w, "res-1", body, ME, at);
+    const r = w.resolutions[0];
+    return !r.check.ok || !canSend(w, r, hubDay(at)) ? { w, sent: false } : { w: sendMessage(w, "res-1", CONTACTS, ME, at), sent: true };
+  };
+  const plain = oneStep(start(w0, opt, 10).resolutions[0].text, T(11));
+  assert.ok(plain.sent);
+  assert.equal(plain.w.resolutions[0].status, "sent");
+  assert.deepEqual(plain.w.resolutions[0].decisions.map(d => d.kind), ["drafted", "sent"]);
+  const edited = oneStep("Hi Birch Hollow Gardens, could you bring another 60 lb of tomato for Friday? Thanks, the hub.", T(11));
+  assert.ok(edited.sent);
+  assert.equal(edited.w.outbox[0].text, "Hi Birch Hollow Gardens, could you bring another 60 lb of tomato for Friday? Thanks, the hub.");
+  assert.deepEqual(edited.w.resolutions[0].decisions.map(d => d.kind), ["drafted", "edited", "sent"]);
+  const frid = oneStep("Hi Birch Hollow Gardens, could you bring another 60 lb of tomato for Frid? Maybe this week.", "2026-10-25T14:00:00Z");
+  assert.ok(toConfirm(frid.w, frid.w.resolutions[0], "2026-10-25").length > 0);
+  assert.equal(frid.sent, false, "words to confirm stop the send at the draft");
+  assert.equal(frid.w.resolutions[0].status, "drafted");
+  assert.equal(frid.w.outbox.length, 0);
+  assert.throws(() => sendMessage(frid.w, "res-1", CONTACTS, ME, "2026-10-25T14:00:00Z"), /Confirm the words/);
+  const tmrw = oneStep("Hi Birch Hollow Gardens, could you bring another 60 lb of tomato for Friday, tmrw? Thanks!", "2026-10-28T14:00:00Z");
+  assert.equal(tmrw.sent, false, "a message that fails the check is looked over first");
+  assert.equal(tmrw.w.outbox.length, 0);
 });

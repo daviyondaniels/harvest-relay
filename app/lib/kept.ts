@@ -1,0 +1,51 @@
+// What a coordinator typed into a form that was refused comes back with the redirect, so
+// nothing has to be typed again. The values travel as plain query parameters, one per field,
+// each cut to its field's own limit. They are only ever shown as a field's starting text: they
+// are never signed and never trusted, and they are not part of the signed notice.
+import { NAME_MAX } from "../../src/hub.ts";
+type Params = Record<string, string | string[] | undefined>;
+export const KEEP = {
+  ask: { field: 40, question: 500 },
+  // value-<detail>: one value for each open detail of the reply form (src/updates.ts FIELDS).
+  reply: { reply: 2000, field: 40, value: 200, "value-operation": 200, "value-lot": 200, "value-quantity": 200, "value-unit": 200, "value-pack": 200, "value-grade": 200, "value-date": 200, "value-correction-target": 200, quote: 500 },
+  correct: { field: 40, value: 200, quote: 500 },
+  hold: { note: 500 },
+  send: { body: 480 },
+  buyer: { channel: 10, text: 480, quote: 480 },
+  // The Orders supply reply: how it came, the text and quote, whether they can supply, how much and what grade.
+  supply: { channel: 10, text: 480, quote: 480, yes: 4, amount: 12, grade: 80 },
+  call: { note: 480 },
+  hand: { operation: 40, lot: 80, amount: 12, unit: 8, grade: 80, day: 10, target: 80, quote: 500 }
+} as const satisfies Record<string, Record<string, number>>;
+export type KeptForm = keyof typeof KEEP;
+const key = (on: string, name: string) => `k_${on}_${name}`;
+const cut = (s: string, max: number) => Array.from(s).slice(0, max).join("");
+
+// The name typed beside a refused form is kept too, so a refusal about something else does not empty it.
+// It is the same kind of starting text as any other kept field (NameField reads it back).
+// k_who carries the name; k_who_on carries the form whose name field it was typed in (the NameField's own "on", sent
+// with the form as "who_on"), so only that form's name field starts with it and no other form's field fills.
+export const KEPT_WHO = "k_who", KEPT_WHO_ON = "k_who_on";
+export function keepWho(f: FormData): Record<string, string> {
+  const v = f.get("who"), on = f.get("who_on");
+  return typeof v === "string" && v.trim() ? { [KEPT_WHO]: cut(v.trim(), NAME_MAX), ...(typeof on === "string" && on.trim() ? { [KEPT_WHO_ON]: cut(on.trim(), 60) } : {}) } : {};
+}
+// The kept name for the name field of form `on`: only when it was typed in that form.
+export function keptWho(p: { get(k: string): string | null }, on: string): string | undefined {
+  return p.get(KEPT_WHO_ON) === on ? p.get(KEPT_WHO) ?? undefined : undefined;
+}
+
+// The query parameters that carry a refused form's typed fields.
+export function keepTyped(f: FormData, on: KeptForm): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, max] of Object.entries(KEEP[on])) {
+    const v = f.get(name);
+    if (typeof v === "string" && v.trim()) out[key(on, name)] = cut(v, max);
+  }
+  return out;
+}
+// One kept field, if the URL carries it. Only the form's own fields are read, each cut to its limit.
+export function readKept(p: Params, on: KeptForm, name: string): string | undefined {
+  const max = (KEEP[on] as Record<string, number>)[name], v = p[key(on, name)];
+  return max !== undefined && typeof v === "string" && v ? cut(v, max) : undefined;
+}

@@ -13,7 +13,7 @@ function check(evidence: Evidence, recordedBy: string): Evidence {
   const quote = typeof evidence?.quote === "string" ? evidence.quote.trim().slice(0, 500) : "";
   if (!quote) throw new Error("Evidence quote required");
   if (typeof evidence.messageId !== "string" || !evidence.messageId.trim() || evidence.messageId.length > 160) throw new Error("Evidence message ID required");
-  if (evidence.channel !== "text" && evidence.channel !== "call") throw new Error("Evidence channel must be text or call");
+  if (evidence.channel !== "text" && evidence.channel !== "call" && evidence.channel !== "recorded") throw new Error("Evidence channel must be text, call or recorded");
   if (typeof recordedBy !== "string" || !recordedBy.trim() || recordedBy.length > NAME_MAX) throw new Error("Named recorder required");
   return { messageId: evidence.messageId, channel: evidence.channel, quote };
 }
@@ -114,7 +114,7 @@ export type Recommendation = Option | { kind: "review-reply"; contactId: string;
 // waiting in Review comes first: read it before asking anyone else. Then a grower who holds the product and
 // was not cut recently (largest lot first); a substitute covering at least a quarter of the short (the one covering
 // most) unless the buyer already declined it for this order; another grower or outside source; telling the
-// buyer. A contact who already answered an ask for this order is not asked again for it. Ties go by id.
+// buyer. A grower whose pending update lowers the lot is not asked for it. A contact who already answered an ask for this order is not asked again for it. Ties go by id.
 export function recommend(w: Workbench, orderId: string, contacts: Contact[]): Recommendation | undefined {
   const l = w.ledger, opts = options(l, orderId, contacts);
   if (!opts.length) return undefined;
@@ -124,7 +124,7 @@ export function recommend(w: Workbench, orderId: string, contacts: Contact[]): R
   const answered = new Set(mine.filter(r => r.linkedItemId || r.status === "accepted" || r.status === "declined").map(r => (r.option as Extract<Option, { kind: "ask-grower" }>).contactId));
   const short = opts.find(o => o.kind === "notify-short")!.amount, lots = new Map(l.snapshot.lots.map(x => [x.id, x]));
   const byId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0, size = (id: string) => normalize(lots.get(id)!.quantity).amount;
-  const holders = opts.filter((o): o is Extract<Option, { hasLot: true }> => o.kind === "ask-grower" && o.hasLot && !answered.has(o.contactId));
+  const holders = opts.filter((o): o is Extract<Option, { hasLot: true }> => o.kind === "ask-grower" && o.hasLot && !answered.has(o.contactId) && !cutByPending(w, o.lotId));
   const best = holders.filter(o => !o.reducedRecently).sort((a, b) => size(b.lotId) - size(a.lotId) || byId(a.lotId, b.lotId))[0];
   if (best) return best;
   const refused = new Set(w.resolutions.filter(r => r.orderId === orderId && r.option.kind === "offer-substitute" && r.status === "declined")
@@ -137,19 +137,54 @@ export function recommend(w: Workbench, orderId: string, contacts: Contact[]): R
   return others[0] ?? holders.sort((a, b) => byId(a.lotId, b.lotId))[0] ?? opts.find(o => o.kind === "notify-short");
 }
 
+// An update waiting in Review from the lot's own grower that would lower the lot: asking them for more now
+// would ask about a lot they have just said is smaller. It is read first (pendingCover), not asked past.
+function cutByPending(w: Workbench, lotId: string): boolean {
+  const lot = w.ledger.snapshot.lots.find(l => l.id === lotId);
+  if (!lot) return false;
+  return w.items.some(i => {
+    const p = i.proposal?.interpretation;
+    if (i.state === "approved" || i.state === "dismissed" || i.source.growerId !== lot.growerId || !p || p.lotId !== lotId || !p.quantity) return false;
+    if (p.operation !== "replace-total" && p.operation !== "correction") return false;
+    try { const a = normalize(p.quantity), b = normalize(lot.quantity); return a.unit === b.unit && a.amount < b.amount; } catch { return false; }
+  });
+}
+
 // Latest grower update (forecasts excluded) that lowered the lot.
 function reduced(l: Ledger, lotId: string): boolean {
   const e = l.events.filter(x => x.lotId === lotId && x.effect !== "forecast").at(-1);
   return !!e && normalize(e.lotAfter).amount < normalize(e.lotBefore).amount;
 }
 
-// Updates not yet reviewed from growers who hold this order's product: one of them may
-// already cover the shortfall, so the coordinator reads it before calling anyone. An update
-// that is plainly about another product is left out.
-export function pendingCover(w: Workbench, orderId: string): InboxItem[] {
+// Could this unreviewed message raise supply of the order's product? An unread message might.
+// A reading counts when it adds, or sets a total above the lot it names (or names no lot, or a
+// quantity that cannot be compared). Forecasts, corrections and cuts cannot cover a shortfall.
+function couldRaise(i: InboxItem, lots: Lot[]): boolean {
+  const p = i.proposal?.interpretation;
+  if (!p) return true;
+  if (p.operation === "add-quantity") return true;
+  if (p.operation !== "replace-total") return false;
+  const lot = lots.find(l => l.id === p.lotId);
+  if (!lot || !p.quantity) return true;
+  try { const a = normalize(p.quantity), b = normalize(lot.quantity); return a.unit !== b.unit || a.amount > b.amount; }
+  catch { return true; }
+}
+
+// Updates not yet reviewed, from growers who hold this order's product, that could raise its
+// supply: one of them may already cover the shortfall, so the coordinator reads it before calling
+// anyone. Grouped by grower, in the order the first of each arrived. An update that is plainly
+// about another product, or that cannot raise supply, is left out.
+export function pendingCover(w: Workbench, orderId: string): { growerId: string; items: InboxItem[] }[] {
   const order = w.ledger.snapshot.orders.find(o => o.id === orderId);
   if (!order) throw new Error("Unknown order");
   const lots = w.ledger.snapshot.lots, holders = new Set(lots.filter(l => l.product === order.product).map(l => l.growerId));
-  return w.items.filter(i => i.state !== "approved" && i.state !== "dismissed" && holders.has(i.source.growerId) &&
-    !(i.proposal?.interpretation.lotId && lots.some(l => l.id === i.proposal!.interpretation.lotId && l.product !== order.product)));
+  const out = new Map<string, InboxItem[]>();
+  for (const i of w.items) {
+    if (i.state === "approved" || i.state === "dismissed" || !holders.has(i.source.growerId)) continue;
+    const named = i.proposal?.interpretation.lotId;
+    if (named && lots.some(l => l.id === named && l.product !== order.product)) continue;
+    if (!couldRaise(i, lots)) continue;
+    out.set(i.source.growerId, [...out.get(i.source.growerId) ?? [], i]);
+  }
+  return [...out].map(([growerId, items]) => ({ growerId, items }));
 }

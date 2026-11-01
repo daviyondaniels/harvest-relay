@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { scenario, surplus } from "../evaluation/scenario.ts";
-import { applyAnswers, type Answer } from "../src/answers.ts";
+import { applyAnswers, parseOperation, type Answer } from "../src/answers.ts";
 import { createBudget, interpretReply, replySchema, type ChatRequest, type InterpretOptions } from "../src/interpret.ts";
 import { commitUpdate, createLedger, reviewUpdate, type Ledger, type Source } from "../src/updates.ts";
 
@@ -78,7 +78,7 @@ test("answers need a verbatim quote, the same grower, valid values and one answe
   assert.throws(() => applyAnswers(l, p, { ...reply(REPLY), id: p.source.id }, ANSWERS), /separate source/);
   assert.throws(() => applyAnswers(l, p, reply(REPLY), [ANSWERS[0], ANSWERS[0]]), /one answer per field/);
   assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[1], value: { amount: 5, unit: "oz" } }]), /g, kg, lb or each/);
-  assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[0], value: "unresolved" }]), /Invalid operation/);
+  assert.throws(() => applyAnswers(l, p, reply(REPLY), [{ ...ANSWERS[0], value: "unresolved" }]), /Choose what kind of update/);
   assert.throws(() => applyAnswers(l, p, reply("each case is 2.5 kg"), [{ field: "pack", quote: "2.5 kg", value: { amount: 2.5, unit: "kg" } }]), /whole numbers/);
 });
 
@@ -170,4 +170,25 @@ test("reply schema satisfies the strict-mode subset", () => {
     for (const v of (s.anyOf as Record<string, unknown>[] | undefined) ?? []) walk(v);
   };
   walk(replySchema(["lot-b", "lot-d"], []), true);
+});
+
+test("answers are checked against the same limits as the review: case contents of 0 or over 2,000, and huge amounts", () => {
+  const l = createLedger(scenario()), p = surplus(l);
+  const pack = (amount: number, unit: string) => [{ field: "pack", quote: "Each case", value: { amount, unit } }] as Answer[];
+  const r = reply("Each case is whatever.");
+  assert.throws(() => applyAnswers(l, p, r, pack(0, "lb")), /more than zero/);
+  assert.throws(() => applyAnswers(l, p, r, pack(2001, "lb")), /more than this hub handles \(over 100,000 lb, or 2,000 per case\)\. Check it\./);
+  assert.throws(() => applyAnswers(l, p, r, pack(2001, "kg")), /more than this hub handles/);
+  assert.throws(() => applyAnswers(l, p, r, [{ field: "quantity", quote: "Each case", value: { amount: 99_999_999_999, unit: "lb" } }]), /more than this hub handles/);
+});
+
+test("parseOperation maps tokens and plain phrases, and leaves ambiguity to the coordinator", () => {
+  const cases: [string, string | undefined][] = [
+    ["replace-total", "replace-total"], ["New total", "replace-total"], ["total", "replace-total"], ["it replaces the old one", "replace-total"], ["Instead", "replace-total"],
+    ["add-quantity", "add-quantity"], ["ADD", "add-quantity"], ["some more", "add-quantity"], ["in addition", "add-quantity"], ["extra", "add-quantity"],
+    ["correction", "correction"], ["fix", "correction"], ["my mistake", "correction"],
+    ["forecast", "forecast"], ["maybe", "forecast"], ["might come", "forecast"], ["we expect it", "forecast"],
+    ["", undefined], ["hello", undefined], ["unresolved", undefined], ["add to the total", undefined]
+  ];
+  for (const [raw, want] of cases) assert.equal(parseOperation(raw), want, raw);
 });

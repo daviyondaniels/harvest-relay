@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { checkName } from "../app/lib/names.ts";
 import { cutPage, readNotice, signNotice } from "../app/lib/notice.ts";
+import { KEEP, keepTyped, readKept } from "../app/lib/kept.ts";
+import { QUOTE_MAX, numberSpan, pickQuote } from "../app/lib/quote.ts";
 
 // Pure app helpers: the remembered-name rules and the signed page notices.
 test("names: trimmed, NFC, at most 80 characters, no hidden characters, not the reserved label", () => {
@@ -51,4 +53,141 @@ test("cutPage: only the allowlist's own pages are honoured; inherited keys fall 
   assert.deepEqual(cutPage("/pack"), { page: "/pack", key: "" });
   assert.deepEqual(cutPage("/review"), { page: "/review", key: "item" });
   for (const p of ["constructor", "toString", "__proto__", "hasOwnProperty", "https://x.test", ""]) assert.deepEqual(cutPage(p), { page: "/orders", key: "order" }, p);
+});
+
+test("act refuses a stale version with the latest change, and with rebase runs on the current state", async () => {
+  const { mkdtempSync } = await import("node:fs"), { tmpdir } = await import("node:os"), { join } = await import("node:path");
+  process.env.HARVEST_DB = join(mkdtempSync(join(tmpdir(), "hr-act-")), "w.db");
+  const { act, current, StaleView } = await import("../app/lib/hub.ts");
+  const { receive } = await import("../src/workbench.ts");
+  const start = (await current()).version, src = (id: string) => ({ id, revision: 1, growerId: "grower-a", text: "Cucumbers." });
+  await act(start, w => receive(w, src("m-1"), "2026-10-28T09:00:00Z"));
+  const now = await current(), n = now.state.items.length;
+  await assert.rejects(act(start, w => receive(w, src("m-2"), "2026-10-28T09:05:00Z")), (e: Error) => e instanceof StaleView && /^Something changed in another tab or window: .+\. Check the page and try again\.$/.test(e.message));
+  assert.equal((await current()).state.items.length, n);
+  let seen = -1;
+  await act(start, w => { seen = w.items.length; return receive(w, src("m-3"), "2026-10-28T09:10:00Z"); }, { rebase: true });
+  assert.equal(seen, n, "f received the current state, not the one the page showed");
+  assert.equal((await current()).state.items.length, n + 1);
+});
+
+test("quote picker: the literal span with the value's number and its unit word, else the whole reply, never words of its own", () => {
+  const reply = "That's the whole lot, 10 lb in each case.";
+  assert.equal(pickQuote(reply, "10 lb"), "10 lb");
+  assert.equal(pickQuote("6lb each", "6 lb"), "6lb");
+  assert.equal(pickQuote("We have 1,200 lb and 12 cases", "1200 lb"), "1,200 lb");
+  assert.equal(pickQuote("Delivery 2026-10-30, 4 cases", "2026-10-30"), "Delivery 2026-10-30, 4 cases", "a date value looks for no number");
+  assert.equal(pickQuote("We have 120 lb", "12 lb"), "We have 120 lb", "12 is not inside 120");
+  assert.equal(pickQuote("Sorry, none left", "A new total"), "Sorry, none left", "no number: the whole reply");
+  assert.equal(pickQuote("Friday works", "2026-10-30"), "Friday works", "a date's digits are not in the reply");
+  assert.equal(numberSpan("no digits here", "5 lb"), undefined);
+  const long = ("word ".repeat(200)).trim();
+  for (const [text, value] of [[reply, "10 lb"], [reply, "standard"], [long, "x"], ["a 5 b 50 c", "50 lb"], ["é 7 ü", "7 lb"], ["", "3"]] as const) {
+    const q = pickQuote(text, value);
+    assert.ok(text.includes(q), `a literal part of the reply: ${JSON.stringify(q)}`);
+    assert.ok(q.length <= QUOTE_MAX || q === text);
+  }
+  assert.ok(pickQuote(long, "x").length <= QUOTE_MAX, "a long reply gives a bounded stretch of its own words");
+});
+
+test("kept values: typed text round trips through the redirect, cut to each field's limit, and is not part of the signed notice", () => {
+  const f = new FormData();
+  f.set("reply", "Line one\nLine two, “quoted” & more"); f.set("field", "quantity"); f.set("value", "x".repeat(5000)); f.set("quote", "  "); f.set("who", "Someone");
+  const kept = keepTyped(f, "reply");
+  assert.deepEqual(Object.keys(kept).sort(), ["k_reply_field", "k_reply_reply", "k_reply_value"], "blank and unlisted fields are dropped");
+  const q = new URLSearchParams({ item: "item-1", ...kept, ...signNotice({ text: "Enter the value.", on: "reply", field: "value" }, { page: "/review", id: "item-1" }) });
+  const back = Object.fromEntries(new URLSearchParams(q.toString()));
+  assert.equal(readKept(back, "reply", "reply"), "Line one\nLine two, “quoted” & more");
+  assert.equal(readKept(back, "reply", "value")?.length, KEEP.reply.value, "cut to the field's own limit");
+  assert.equal(readKept(back, "reply", "quote"), undefined);
+  assert.equal(readKept(back, "ask", "question"), undefined, "another form's values are not read");
+  assert.equal(readKept({ ...back, k_reply_who: "x" }, "reply", "who"), undefined, "only the form's own fields");
+  const plain = readNotice(back, { page: "/review", id: "item-1" });
+  assert.equal(plain?.text, "Enter the value.", "the notice still verifies with kept values beside it");
+  assert.equal(readNotice({ ...back, k_reply_value: "changed" }, { page: "/review", id: "item-1" })?.text, "Enter the value.", "kept values are display-only");
+});
+
+// Task 5: the Overview's new-since-confirm count, the ready test and the return page.
+import { becomesShort, dismissable, newSinceConfirm, readyToApprove } from "../app/lib/view.ts";
+import { returnPage } from "../app/lib/notice.ts";
+import type { InboxItem, Preview, Workbench } from "../src/workbench.ts";
+
+const item = (id: string, receivedAt: string, state: string = "open") => ({ id, receivedAt, state }) as unknown as InboxItem;
+const bench = (confirmedAt: string | undefined, items: InboxItem[]) =>
+  ({ items, ledger: { commitments: confirmedAt ? { confirmed: { at: confirmedAt } } : undefined } }) as unknown as Workbench;
+
+test("Task 5: newSinceConfirm counts unread messages that arrived after the latest confirm", () => {
+  const items = [item("a", "2026-11-02T09:00:00.000Z"), item("b", "2026-11-02T11:00:00.000Z"), item("c", "2026-11-02T12:00:00.000Z", "approved"), item("d", "2026-11-02T13:00:00.000Z", "dismissed")];
+  assert.deepEqual(newSinceConfirm(bench("2026-11-02T10:00:00.000Z", items)).map(i => i.id), ["b"]);
+  assert.equal(newSinceConfirm(bench("2026-11-02T08:00:00.000Z", items)).length, 2, "approved and dismissed messages are not new");
+  assert.equal(newSinceConfirm(bench("2026-11-02T14:00:00.000Z", items)).length, 0);
+  assert.equal(newSinceConfirm(bench(undefined, items)).length, 0, "before a confirm nothing is new since it");
+});
+
+test("Task 5: only a current, fully answered review can be approved from the Overview, and becomesShort lists who gets shorter", () => {
+  const change = { effect: "replace-total", lotId: "lot-1", before: { amount: 1, unit: "lb" }, after: { amount: 2, unit: "lb" } };
+  const p = (over: object) => ({ stale: false, needsRefresh: false, questions: [], change, reviewHash: "h", orders: [], unallocated: [], ...over }) as unknown as Preview;
+  const read = { proposal: {} } as unknown as InboxItem;
+  assert.equal(readyToApprove(read, p({})), true);
+  assert.equal(readyToApprove({} as InboxItem, p({})), false, "no reading");
+  for (const over of [{ questions: [{ field: "quantity" }] }, { error: "x" }, { needsRefresh: true }, { change: undefined }, { reviewHash: undefined }]) assert.equal(readyToApprove(read, p(over)), false, JSON.stringify(over));
+  const o = (orderId: string, before: number, after: number) => ({ orderId, unit: "lb", requested: 9, before: { direct: 0, substitute: 0, short: before }, after: { direct: 0, substitute: 0, short: after } });
+  assert.deepEqual(becomesShort(p({ orders: [o("x", 0, 5), o("y", 5, 2), o("z", 3, 3), o("w", 2, 4)] })).map(x => x.orderId), ["x", "w"]);
+});
+
+test("Task 5: an action can return only to the Overview", () => {
+  assert.equal(returnPage("/"), "/");
+  for (const other of ["", "/review", "//evil.example", "https://evil.example", "constructor", "__proto__"]) assert.equal(returnPage(other), undefined, other);
+});
+
+const read = (lotId: string | undefined, quantity: object | undefined, operation = "unresolved") => ({ proposal: { interpretation: { operation, lotId, quantity } } }) as unknown as InboxItem;
+test("Task 10: dismissable is a read message that names no lot or no amount; an unread one never is", () => {
+  assert.equal(dismissable({ proposal: undefined } as unknown as InboxItem), false, "unread: link to Review instead");
+  assert.equal(dismissable(read(undefined, undefined)), true, "no lot, no amount");
+  assert.equal(dismissable(read("lot-a", undefined)), true, "a lot but no amount");
+  assert.equal(dismissable(read(undefined, { amount: 5, unit: "lb" })), true, "an amount but no lot");
+  assert.equal(dismissable(read("lot-a", { amount: 60, unit: "lb" }, "replace-total")), false);
+  assert.equal(dismissable(read("lot-d", { amount: 4, unit: "case" })), false, "a real update with open questions is not dismissable even when unresolved");
+});
+
+import { readFileSync } from "node:fs";
+import { seedWorkbench } from "../src/seed.ts";
+import { ATTENTION_ROWS, approvalResult, byAttention, shortMap, stageCounts, updateKind } from "../app/lib/view.ts";
+import { preview, approve } from "../src/workbench.ts";
+import { confirmPlan, markStage, stageable } from "../src/commitments.ts";
+const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8"));
+const NOW = "2026-10-28T14:00:00.000Z";
+
+test("Task 10: against the seed, zucchini and cucumber are not dismissable; the instruction-like message is, because it names no amount", async () => {
+  const w = await seedWorkbench(readings(), NOW), by = (id: string) => w.items.find(i => i.source.id === id)!;
+  assert.equal(dismissable(by("msg-zucchini")), false, "Birch zucchini: a real update with open questions");
+  assert.equal(dismissable(by("msg-cucumber")), false);
+  assert.equal(dismissable(by("msg-tomato")), false);
+  assert.equal(dismissable(by("msg-injection")), true, "read as unresolved with no amount");
+  const kind = (id: string) => updateKind(by(id), preview(w, by(id).id));
+  assert.deepEqual(["msg-tomato", "msg-forecast", "msg-zucchini", "msg-cucumber", "msg-injection"].map(kind), ["ready", "ready", "asks", "asks", "dismiss"]);
+});
+
+test("Task 10: rows are ordered cut, short, ready, asks, dismiss, each kind keeping its order; up to eight", () => {
+  const rows = ["dismiss", "asks", "ready", "short", "cut", "ready", "short"].map((kind, n) => ({ kind: kind as "cut", n }));
+  assert.deepEqual(byAttention(rows).map(r => `${r.kind}${r.n}`), ["cut4", "short3", "short6", "ready2", "ready5", "asks1", "dismiss0"]);
+  assert.equal(ATTENTION_ROWS, 8);
+});
+
+test("Task 10: packed and handed-off counts, and what an approval changed", async () => {
+  let w = await seedWorkbench(readings(), NOW);
+  const tomato = w.items.find(i => i.source.id === "msg-tomato")!, before = shortMap(w);
+  w = approve(w, tomato.id, "A Name", preview(w, tomato.id).reviewHash!, NOW);
+  const r = approvalResult(w, tomato.id, before);
+  assert.match(r.text, /^Tomato from .+: 120 lb → 60 lb \(down 60 lb\)\./);
+  assert.match(r.text, / is now \d+ lb short\./);
+  assert.match(r.res ?? "", /^order:/);
+  assert.deepEqual(stageCounts(w), { packed: 0, handed: 0, total: w.ledger.snapshot.orders.length });
+  const planned = confirmPlan(w, "A Name", NOW, { shipShort: true });
+  assert.equal(stageCounts(planned).packed, 0);
+  const id = planned.ledger.snapshot.orders.find(o => stageable(planned, "packed").includes(o.id))!.id;
+  const one = markStage(planned, id, "packed", "A Name", NOW);
+  assert.deepEqual(stageCounts(one), { packed: 1, handed: 0, total: planned.ledger.snapshot.orders.length });
+  const two = markStage(one, id, "handed-off", "A Name", NOW);
+  assert.deepEqual(stageCounts(two), { packed: 1, handed: 1, total: planned.ledger.snapshot.orders.length }, "a handed-off order counts as packed");
 });

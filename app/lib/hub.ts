@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEMO_EXTRAS_PATH, needsReset, seedWorkbench, type Extras, type Recording } from "../../src/seed.ts";
 import { openStore, type Store, type Stored } from "../../src/store.ts";
-import type { Workbench } from "../../src/workbench.ts";
+import { latestChange, type Workbench } from "../../src/workbench.ts";
 
 // Server-only access to the demo hub's stored workbench. Every action names the stored
 // version its page was rendered from; if anything changed since, the action is refused
@@ -38,10 +38,16 @@ export async function current(): Promise<Stored> {
 }
 
 export class StaleView extends Error {}
-export async function act(expected: number, f: (w: Workbench) => Workbench | Promise<Workbench>): Promise<void> {
+export function staleMessage(w: Workbench): string {
+  const what = latestChange(w);
+  return `Something changed in another tab or window${what ? `: ${what}` : ""}. Check the page and try again.`;
+}
+// With rebase, a version mismatch runs the action on the current state instead of refusing.
+// Only actions whose domain check re-validates exactly what the page showed may ask for it.
+export async function act(expected: number, f: (w: Workbench) => Workbench | Promise<Workbench>, opts: { rebase?: boolean } = {}): Promise<void> {
   const s = await current();
-  if (s.version !== expected) throw new StaleView("Something changed since this page loaded. Review the current state and try again.");
-  db().save(expected, await f(s.state));
+  if (s.version !== expected && !opts.rebase) throw new StaleView(staleMessage(s.state));
+  db().save(s.version, await f(s.state));
 }
 
 export async function resetDemo(): Promise<void> { db().reset(await seedWorkbench(recording())); }

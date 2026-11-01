@@ -97,7 +97,7 @@ test("after confirming, Birch Hollow's late drop is one conflict, settled by the
   const before = northside();
   assert.deepEqual(conflicts(w.ledger), []);
   w = take(w, { ...LATE.source }, w => propose(w.ledger, "p-late", LATE.source,
-    { operation: "replace-total", lotId: "lot-b", quantity: { amount: 70, unit: "lb" }, grade: "standard", deliveryOn: "2026-10-30", quotes: ["only have 70 lb of standard", "Friday", "not 110"] }), 55);
+    { operation: "replace-total", lotId: "lot-b", quantity: { amount: 70, unit: "lb" }, grade: "standard", deliveryOn: "2026-10-30", quotes: ["only have 70 lb of standard", "Friday", "not 80"] }), 55);
   const found = conflicts(w.ledger);
   assert.equal(found.length, 1);
   assert.equal(found[0].lotId, "lot-b");
