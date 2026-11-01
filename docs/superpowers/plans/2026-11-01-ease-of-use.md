@@ -585,3 +585,102 @@ Rulings for this round:
 ### Task 19: Measure again (controller)
 
 Same as Task 12.
+
+---
+
+## Round 6: from the round 5 re-audit
+
+Sources (git-ignored): `reports/round5/` holds four reports:
+
+| Report | Score |
+|---|---|
+| `audit-a-first-day.md` | 9 |
+| `audit-b-phone-late-drop.md` | 9 |
+| `audit-c-mistakes-keyboard.md` | 9 |
+| `interface-rating.md` | 9.0 |
+
+Interface scores by criterion:
+
+| Criterion | Score |
+|---|---|
+| Hierarchy | 4.5 |
+| Layout | 4.5 |
+| Navigation | 4.6 |
+| Comprehension | 4.4 |
+| Visual design | 4.5 |
+| Feedback | 4.5 |
+
+Clicks are 22 + 4.
+
+Rulings:
+- **Edited values stop at the preview (safety).** "Save and approve" and "Apply and approve" approve in one step only when the submitted values are exactly the ones the preview was computed from.
+  - The form carries a fingerprint of the previewed values: the review hash of the previewed state, or a hash of the values.
+  - When the produced state's review hash differs, the server saves the details or answers but does not approve. It returns to Review with the new preview and the message "You changed the details, so check the change below, then approve." Focus goes to Approve.
+  - This keeps the round 5 promise "Changes you make here will be checked before approving".
+- **"They said yes" with no channel stays one tap.** No undo is in scope, as already ruled.
+- **Split-the-cut has not been audited with two promised buyers.** The demo has no such lot. This is noted as a gap for the final report and not added to the seed this round.
+
+### Task 20: Review and Orders — the edited-value check, comprehension and forms
+
+**Files:** `app/review/page.tsx`, `app/value-fields.tsx`, `app/preview-gate.tsx`, `app/named-submit.tsx`, `app/orders/page.tsx`, `app/actions.ts`, `app/lib/format.ts`, `app/lib/errors.ts`, `src/*` (only as needed), and tests. Do not touch `app/page.tsx`, `app/pack/`, `app/lib/view.ts` or `app/globals.css` (Task 21 owns those).
+
+- **The edited-value check**, as ruled.
+  - It applies to both `readByHandAndApprove` and `answerRecordedAndApprove`/`replyAndApprove` paths.
+  - Pure domain tests:
+    - unedited values approve;
+    - edited values save without approving;
+    - the second Approve press works against the new hash.
+- **On a phone, the preview sits above its button.** The "If saved as shown:" or "If these answers are applied:" block renders directly above the Save and approve / Apply and approve button in the form (and stays in the aside on wide screens if that is simpler). Nobody should reach the button before the outcome.
+- **No contradiction.**
+  - When the hand form is pre-filled, the aside, the blocker and the pink note say "Check the details below, then save and approve." (`app/review/page.tsx:206`, `:473`, `:486`).
+  - "Not checked yet / Enter the details below" shows only when the form is empty.
+  - The waiting state "The change will show here once these answers are applied." is neutral (not the blocked or red style).
+- **No browser bubbles anywhere.**
+  - Use `noValidate` plus app messages on:
+    - the Review reply textarea (`:226`) and "Note or reason" (`:263`);
+    - the Review Approve name;
+    - all three Log a call fields;
+    - the follow-up Case contents box.
+  - Add a source test: every `<form` with a `required` field has `noValidate`.
+- **Errors clear when corrected.** Editing a field marked invalid removes `aria-invalid` and its message on input (small client helper). Stale messages never sit above an empty field.
+- **Names.**
+  - A refused name typed in one form fills only that form's name field. `k_who` carries the form `on`, and only the matching `NameField` reads it.
+  - Every refusal redirect keeps `k_who`, including Pack confirm (`confirmAction`).
+- **Result wording.**
+  - Fix "(up 30 lb). No buyer's order changes." when a buyer is still short (`app/actions.ts:221`). Name each buyer whose shortfall changed, for example "Riverbend School Kitchen is now 30 lb short (was 60).", and say "No buyer's order changes." only when none did.
+  - "They said yes" with no channel shows "Answer recorded by {name}, no note" and does not quote it as the buyer's words (`src/resolve.ts:232`).
+  - The sent link's accessible name is one sentence: "Message to Alder Creek Farm, sent, waiting on the answer".
+- **The Orders short row** uses the Overview wording and link name: "Alder Creek Farm has an update waiting that may cover this." / "Review Alder Creek Farm's update". Find the helper in `app/lib/` or `app/pending-cover.tsx`.
+- **Orders card notes.** "Recorded only; nothing is delivered." and "Not promised to the buyer yet." don't head a buyer card. The first is in the page intro only. The second shows once, beside the planned amount.
+
+- [ ] Tests: the edited-value check (domain), the `noValidate` source scan, `k_who` per form, and the result wording (helper unit test).
+- [ ] Implement, run all checks plus a browser check of the late message with an edited amount, then commit.
+
+### Task 21: Overview and Pack — comprehension
+
+**Files:** `app/page.tsx`, `app/pack/page.tsx`, `app/lib/view.ts`, `app/globals.css`, and tests. Do not touch the files listed for Task 20.
+
+- **The Pack checklist** in the stale or cut state must not mark a covered buyer with a red cross and Resolve. "{n} orders are still short" counts buyers who are actually short (`app/pack/page.tsx` ~69).
+- **Pack before confirming.**
+  - "Confirm without it" becomes "Confirm without {Grower}'s update".
+  - The not-settled line ("{n} grower updates not settled… does not block confirming") must not contradict the "Review it before confirming" warning. When that warning shows, the line says "Other grower updates are not settled. They don't change what is promised."
+  - The hint and the checkbox use the same words: "Ship these orders short".
+- **The "would leave {buyer} short" warning** shows only before confirming, or when the plan is stale. It never shows after everything is handed off.
+- **The Overview stale box** when a cut is open says "Settle the cut first, then confirm again." and its primary is Settle the cut (verify). When no cut is open, it has a Confirm again button, not text alone.
+- **Unchecked late message.** While a message that arrived since confirming is unchecked, "Mark all packed" is secondary, and the only primary is "Check it" (the message link).
+- **"Confirm today's plan"** is not both the card heading and the button. Make the heading "Ready to confirm".
+- **Mark all on Pack.** "Mark all packed" and "Mark all handed off" also appear on Pack, at the top of the sheets, using the same `stageAction`.
+- **Overview name fields.** After a refused Dismiss, the Overview shows one name field (beside the refused form). Other rows' fields are quiet.
+- **Day details** reads as plain words for a coordinator:
+  - remove "Measured in this demo session";
+  - "Shortages caught" becomes "Short orders found today";
+  - "Orders shipped short" becomes "Orders sent short";
+  - the duration line becomes "First message to a short buyer: {duration} after their order went short".
+- **The Dismiss result banner** uses the normal result style (visible), not the pale one.
+
+- [ ] Tests: the checklist count, the confirm wording, warning visibility after hand-off, the stale box, the unchecked-message primary, Mark all on Pack, and copy tests.
+- [ ] Implement, run all checks, then commit.
+
+### Task 22: Measure again (controller)
+
+Same as Task 12.
