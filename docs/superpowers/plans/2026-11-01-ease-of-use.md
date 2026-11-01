@@ -471,3 +471,117 @@ Rulings for this round:
 ### Task 16: Measure again (controller)
 
 Same as Task 12.
+
+---
+
+## Round 5: from the round 4 re-audit
+
+Sources (git-ignored), all in `reports/round4/`:
+
+| Report | Score |
+|---|---|
+| `audit-a-first-day.md` | 9 |
+| `audit-b-phone-late-drop.md` | 8 |
+| `audit-c-mistakes-keyboard.md` | 9 |
+| `interface-rating.md` | 9.0 |
+
+Interface scores are now:
+
+| Criterion | Score |
+|---|---|
+| Hierarchy | 4.4 |
+| Layout | 4.3 |
+| Navigation | 4.6 |
+| Comprehension | 4.4 |
+| Visual design | 4.5 |
+| Feedback | 4.5 |
+
+Clicks are 22 + 4, with every task at its ruled target.
+
+Rulings for this round:
+- **One-step approve shows its outcome first.** "Save and approve" and "Apply and approve" must show, before the press, who will be short or covered if the details are saved as shown. For pre-filled values, the server computes this preview at render time. When the coordinator types or changes values, the preview says "Changes you make here will be checked before approving." The result still names everything. This closes the "approves blind" finding from auditors A and B.
+- **Overview and Pack agree on confirming.**
+  - Both show "{Grower}'s update would leave {buyer} {n} {unit} short. Review it before confirming." with a link.
+  - Pack keeps a secondary "Confirm without it", because the domain allows confirming on approved updates only. The Overview shows the link only.
+- **The 195 px tab bar** stays at about 39 px per tab (ruled in Task 15).
+- **Unchanged from earlier rounds:**
+  - stale-view refusals of unrelated actions stay, for safety;
+  - signed result URLs stay;
+  - there is no undo.
+
+### Task 17: Review, Orders and forms — preview before one-step approve, kept input, wording
+
+**Files:** `app/review/page.tsx`, `app/value-fields.tsx`, `app/named-submit.tsx`, `app/orders/page.tsx`, `app/actions.ts`, `app/lib/format.ts`, `src/resolve.ts`, `src/*` (only as needed), and tests. Do not touch `app/page.tsx`, `app/pack/`, `app/lib/view.ts` or `app/globals.css` (Task 18 owns those).
+
+- **Preview before Save and approve.**
+  - On the hand form with pre-filled details (late message, logged call), show "If saved as shown:" with the same impact lines as Approve, computed on a clone. Use a pure helper that applies the hand reading to a copy and previews it, and test it.
+  - The demo late message must show "Riverbend School Kitchen becomes short 10 lb" (or whatever the seed gives) before the press.
+- **Preview before Apply and approve.** When the reading suggests values for the open details, pre-fill them. The preview then shows "If these answers are applied:" with impact lines. When no suggestion exists, show "Changes you make here will be checked before approving."
+- **Logged call to Save and approve.** When the call note names the lot and amount (the demo Alder call), pre-fill "What changed" with the best guess, so the button reads "Save and approve" (`app/review/page.tsx:329`).
+- **A partial "Apply answers" keeps the reply.** It must not empty a reply the coordinator must retype. If the reply is already recorded, the follow-up form says "Their reply is recorded above" and needs only the remaining value. It must not record a second "replied" line.
+- **Kept input on refusal.**
+  - The name input keeps its typed value (`defaultValue` from the kept values, `app/named-submit.tsx:27`).
+  - Every other required field gets the app's message, not the browser bubble: `noValidate` plus a server check on Send, Log a call and hand Amount.
+- **One name field per view.**
+  - Orders "Other options" forms are `quiet`.
+  - On Review, a refused secondary form shows its own field only, and the primary form's field hides while that refusal shows.
+  - Fix "Your name , for …" so there is no space before the comma.
+- **One Approve.** On Review, when the reply form offers "Apply and approve", hide the aside's blocked "Approve supply change", or replace it with a link "Answer the questions to approve".
+- **"They said yes"** with no channel picked records "Answer recorded by {name}", with no channel claimed (`src/resolve.ts:228`). Name the channel only if one was picked.
+- **Wording.**
+  - The accessible name "Sent. Waiting on the answer. to Alder Creek Farm" becomes a proper sentence (`app/orders/page.tsx:283`).
+  - "Not promised to the buyer yet." no longer shows after the buyer has agreed or been told.
+  - The approval result names who is covered for every approval; check zucchini.
+  - "Recorded only; nothing is delivered." appears once per Orders page, in the page intro, not on every form.
+  - The hand form's "Earlier update being corrected" options read as plain words, for example "Birch Hollow Gardens' zucchini update (4 cases of 10 lb)".
+
+- [ ] Tests:
+  - the hand-preview helper with the late message seed;
+  - Apply-and-approve suggested values;
+  - a partial apply keeps the reply (domain);
+  - "They said yes" with no channel;
+  - name `defaultValue`;
+  - copy tests.
+- [ ] Implement, run all checks plus a browser check of the late message on a phone (390), then commit.
+
+### Task 18: Overview, Pack and layout — hierarchy, density and the zoomed cut card
+
+**Files:** `app/page.tsx`, `app/pack/page.tsx`, `app/pack/print.tsx`, `app/lib/view.ts`, `app/globals.css`, and tests. Do not touch `app/review/`, `app/orders/`, `app/actions.ts` or `app/named-submit.tsx` (Task 17 owns those).
+
+- **The zoomed cut card (regression).** At 195 px the radio label breaks one letter per line, so the card is 1,459 px tall.
+  - Use `overflow-wrap: break-word` (not `anywhere`) on `label.check > span`, and reduce the nested padding at ≤ 300 px (`app/globals.css:309`, `:384`).
+  - Measure the cut card height and the "Settle the cut" position at 195, 320 and 390. "Settle the cut" must be within 1.5 screen heights at 195.
+- **Agreement on confirming**, as ruled: Overview and Pack say the same thing; Pack has a secondary "Confirm without it". Test it.
+- **The stale card when a cut is open.** The Overview's primary is "Settle the cut" (link to the cut). On Pack, only one primary shows: Settle the cut first, then Confirm again after it is settled.
+- **The confirmed card's lead.** When a message has arrived since confirming and isn't checked yet, the card's first sentence says so ("1 grower message arrived since you confirmed. Check it before packing.") with a link to it. The packed and handed-off counts sit directly beside the Mark all and Print buttons.
+- **After Tell.** "Nothing is short. You can confirm today's plan." becomes "Every short order has been told or settled. You can confirm today's plan." whenever an order is still short but told.
+- **Short row.**
+  - Don't repeat the grower name or the review prompt.
+  - Use one line, "Alder Creek Farm has an update waiting that may cover this.", and give the link a full name ("Review Alder Creek Farm's update").
+  - Resolve gets a hint of what it will do, for example "Resolve: ask Birch Hollow Gardens for 60 lb", from `recommend`.
+- **"Open all 1 update"** becomes "Open the 1 update" when there is one, and "Open all {n} updates" otherwise.
+- **Density.**
+  - The Overview at 1280 is ≤ 1,300 px with the seed. Trim the attention row padding, and the hero if needed. Measure it.
+  - On Pack on a phone, fold the grower pick lists into "Pick lists for growers ({n})", closed on screen and always printed.
+  - Phone stat chips in a row are equal height.
+- **Fine print.** Every small-text rule listed by the rater (`app/globals.css:75, 120, 143, 154, 185, 211, 214`) is at least 0.875rem (14 px), except chips, which stay at 13 px.
+- **Targets.** "Download the day record", "Open all N updates" and `.attention .more` are at least 44 px tall at ≤ 600 px.
+- **Pack screen.** Order-sheet name columns don't break mid-name ("Birch / Hollow / Gardens"). Printed pick lists get a column header row.
+- **Day details.** "Time to first message to the buyer: 106 minutes" becomes plain words, for example "First message to a short buyer: 1 h 46 min after the order went short". The other measure labels are kept.
+- **The Orders "Tell {buyer}" button** wraps inside its card and doesn't overflow (CSS only).
+- **Pack's "Ship these orders short" tick** keeps its state when the name is refused (`defaultChecked` from the kept values, `app/pack/page.tsx:49`).
+
+- [ ] Tests:
+  - confirm agreement;
+  - the stale card with a cut;
+  - the lead sentence;
+  - the told wording;
+  - the update-count wording;
+  - copy tests for the CSS sizes.
+
+  Measure Overview height at 1280, and the cut card at 195, 320 and 390.
+- [ ] Implement, run all checks, then commit.
+
+### Task 19: Measure again (controller)
+
+Same as Task 12.
