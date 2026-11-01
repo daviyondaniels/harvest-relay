@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { conflicts, planOf } from "../../src/commitments.ts";
+import { commitKey, conflicts, planOf } from "../../src/commitments.ts";
 import type { Quantity } from "../../src/quantity.ts";
 import { FIELDS, type Field, type Span } from "../../src/updates.ts";
-import { BY_HAND, madeShort, needingRefresh, previewAnswers, previewHand, previewRecordedAnswers, suggestAnswers, suggestReading, type HandReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
+import { BY_HAND, madeShort, needingRefresh, previewAnswers, previewHand, previewRecordedAnswers, replyIsRecorded, suggestAnswers, suggestReading, type HandReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
 import { SEED } from "../../src/seed.ts";
 import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
 import { FIELD, HISTORY_RECHECK, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, updateName, weight } from "../lib/format.ts";
@@ -127,8 +127,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const detailChoices = (only?: Field[]) => (only ?? FIELDS.filter(f => f !== "unit")).map(f => ({ value: f, label: FIELD[f] }));
   const openDetails = byField.size ? [...byField.keys()] : undefined;
   // The reply is already recorded when it came after the last question asked (an earlier Apply answers left a detail open).
-  const lastOf = (kind: string) => it.decisions.findLastIndex(d => d.kind === kind);
-  const recordedReply = !!openDetails && it.replies.length > 0 && lastOf("replied") > lastOf("asked");
+  const recordedReply = !!openDetails && replyIsRecorded(w, it.id);
   // Values for the open details taken from words already on the page; typed values from a refused form win.
   const suggested = openDetails ? suggestAnswers(w, it.id, openDetails) : {};
   const answerKept: Record<string, string | undefined> = Object.fromEntries((openDetails ?? []).map(f => [f, kv("reply", `value-${f}`) ?? suggested[f]]));
@@ -227,7 +226,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <summary>{recordedReply ? "Answer the remaining details" : "Add the grower's reply"}</summary>
           <form action={replyAction} className="form" id="reply-form" noValidate><Hidden {...v} />
             {recordedReply
-              ? <><input type="hidden" name="recorded" value="1" /><p className="small">Their reply is recorded above. Give {byField.size === 1 ? "the remaining value" : "the remaining values"}; it does not need to be pasted again.</p></>
+              ? <><p className="small">Their reply is recorded above. Give {byField.size === 1 ? "the remaining value" : "the remaining values"}; it does not need to be pasted again.</p></>
               : <><label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
                 <Problem bad={bad} on="reply" name="reply" /></>}
             {openDetails
@@ -313,7 +312,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
         <form action={approveAction} className="panel"><Hidden {...v} />
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
           {recheck && <p className="result" aria-hidden="true">{notice!.text}</p>}
-          <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
+          <input type="hidden" name="hash" value={p.reviewHash ?? ""} /><input type="hidden" name="cs" value={commitKey(w.ledger)} />
           <div className="row">
             <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} id="approve-button" className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve" || elsewhere} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
             {off && <span id="approve-why" tabIndex={-1} className="small muted">{why}</span>}

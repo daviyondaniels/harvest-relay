@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { measures, type Measures } from "../src/measures.ts";
-import { conflicts, stageable } from "../src/commitments.ts";
+import { commitKey, conflicts, stageable } from "../src/commitments.ts";
 import { lockGate } from "../src/pack.ts";
 import { shortages } from "../src/orders.ts";
 import { normalize } from "../src/quantity.ts";
@@ -198,7 +198,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               {stale && canConfirm && <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet(lockOn)} /></form>}
               {nextStage && (
                 <form action={stageAllAction}>
-                  <input type="hidden" name="version" value={version} /><input type="hidden" name="stage" value={nextStage} /><input type="hidden" name="from" value="/" />
+                  <input type="hidden" name="version" value={version} /><input type="hidden" name="stage" value={nextStage} /><input type="hidden" name="orders" value={stageable(w, nextStage).join(",")} /><input type="hidden" name="cs" value={commitKey(w.ledger)} /><input type="hidden" name="from" value="/" />
                   <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className={stale || fresh.length > 0 ? undefined : "primary"} known={known} on="stageall-stageall" bad={bad} quiet={quiet("stageall-stageall")} />
                 </form>
               )}
@@ -273,7 +273,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     {ready && shorts.length > 0 ? (
                       <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update{said.length > 0 ? ", it leaves a buyer short" : ""}</span></a></span>
                     ) : ready ? (
-                      <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
+                      <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} /><input type="hidden" name="cs" value={commitKey(w.ledger)} />
                         <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet(on("approve"))} />
                       </form>
                     ) : (

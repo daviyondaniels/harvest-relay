@@ -1,9 +1,10 @@
-import { proposeAllocations, verifyPlan, type Plan, type Promised } from "./planner.ts";
+import { digest, proposeAllocations, verifyPlan, type Plan, type Promised } from "./planner.ts";
 import { NAME_MAX } from "./hub.ts";
 import { normalize, type BaseUnit } from "./quantity.ts";
 import { orderStatus, unresolved } from "./resolve.ts";
 import type { Ledger } from "./updates.ts";
-import { stamp, text, type Workbench } from "./workbench.ts";
+import { refreshAndApprove, stamp, text, type Workbench } from "./workbench.ts";
+import { shortages } from "./orders.ts";
 
 // What the coordinator promised when they confirmed the plan, and what happened to those
 // promises since. Promises and the log live beside the snapshot, never inside it, so the
@@ -176,9 +177,10 @@ export function stageable(w: Workbench, stage: "packed" | "handed-off"): string[
   return w.ledger.snapshot.orders.filter(o => { try { markStage(w, o.id, stage, "x", "2000-01-01T00:00:00.000Z"); return true; } catch { return false; } }).map(o => o.id);
 }
 // Marks every order that can take the stage, and skips the rest. Nothing to mark is a refusal, not a silent success.
-export function markAllStage(w: Workbench, stage: "packed" | "handed-off", by: string, at: string): { next: Workbench; marked: string[] } {
+// only: the orders the page counted; with it, an order the page never showed is not marked even if it could be.
+export function markAllStage(w: Workbench, stage: "packed" | "handed-off", by: string, at: string, only?: string[]): { next: Workbench; marked: string[] } {
   text(by, NAME_MAX, "Actor name"); stamp(at);
-  const marked = stageable(w, stage);
+  const marked = stageable(w, stage).filter(id => !only || only.includes(id));
   if (marked.length === 0) throw new Error(`No order can be marked ${stage === "packed" ? "packed" : "handed off"} right now.`);
   return { next: marked.reduce((n, id) => markStage(n, id, stage, by, at), w), marked };
 }
@@ -198,4 +200,30 @@ export function changedSinceConfirm(l: Ledger, plan = planOf(l)): ChangedLine[] 
     if (a !== b) out.push({ orderId: x.orderId, lotId: x.lotId, was: a, now: b, unit: x.unit });
   }
   return out.sort((a, b) => cmp(a.orderId, b.orderId) || cmp(a.lotId, b.lotId));
+}
+
+// What a page's promises looked like: the current promises, the latest confirm and the shipped-short record.
+// Stage marks are left out, so marking another order packed in another tab does not change it; a confirm or a
+// cut decision does. Neither moves the ledger version or the snapshot hash, so a form carries this beside them.
+export const commitKey = (l: Ledger): string => {
+  const c = l.commitments;
+  return digest(c ? { promised: c.promised, confirmed: c.confirmed, shippedShort: c.shippedShort } : null);
+};
+// Raised when a form's page showed other promises than the ones now stored, and acting would make things worse.
+export class PromisesMoved extends Error {}
+// Whether a change opened a cut that was not open, deepened one, or left an order short or shorter.
+export function madeWorse(before: Workbench, after: Workbench): boolean {
+  const was = new Map(conflicts(before.ledger).map(c => [c.lotId, c.excess]));
+  if (conflicts(after.ledger).some(c => c.excess > (was.get(c.lotId) ?? 0))) return true;
+  const short = new Map(shortages(before.ledger).map(s => [s.orderId, s.short]));
+  return shortages(after.ledger).some(s => s.short > (short.get(s.orderId) ?? 0));
+}
+// Approve on a state that may be newer than the page's (a rebase). seen: commitKey of the state the page was
+// rendered from. The review hash covers the proposal, version and snapshot but not the promises, so when the
+// promises moved since the page (the plan was confirmed or a cut decided in another tab) the approval is made
+// only if it opens no cut and leaves nobody newly short; else the coordinator looks again.
+export function approveRebased(w: Workbench, id: string, reviewer: string, reviewHash: string, seen: string | undefined, at: string): Workbench {
+  const next = refreshAndApprove(w, id, reviewer, reviewHash, at);
+  if (seen !== commitKey(w.ledger) && madeWorse(w, next)) throw new PromisesMoved("The promises changed");
+  return next;
 }

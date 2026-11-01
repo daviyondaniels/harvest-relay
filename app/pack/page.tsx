@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CUT_FIRST, conflicts, planOf, stageOf, stageable } from "../../src/commitments.ts";
+import { CUT_FIRST, commitKey, conflicts, planOf, stageOf, stageable } from "../../src/commitments.ts";
 import { shortages } from "../../src/orders.ts";
 import { lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
@@ -164,6 +164,8 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
           <form key={st} action={stageAllAction}>
             <input type="hidden" name="version" value={version} />
             <input type="hidden" name="stage" value={st} />
+            <input type="hidden" name="orders" value={stageable(w, st).join(",")} />
+            <input type="hidden" name="cs" value={commitKey(l)} />
             <NamedSubmit label={st === "packed" ? "Mark all packed" : "Mark all handed off"} known={known} on={`stageall-${st}`} bad={bad} />
           </form>
         ))}
@@ -192,6 +194,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
               <form action={stageAction} className="no-print">
                 <input type="hidden" name="version" value={version} />
                 <input type="hidden" name="order" value={s.orderId} />
+                <input type="hidden" name="cs" value={commitKey(l)} />
                 <input type="hidden" name="stage" value={s.stage === "promised" ? "packed" : "handed-off"} />
                 <NamedSubmit label={<>{s.stage === "promised" ? "Mark packed" : "Mark handed off"}<span className="sr-only"> for {buyer(s.buyerId)}</span></>} known={known} on={"stage-" + s.orderId} bad={bad} />
               </form>

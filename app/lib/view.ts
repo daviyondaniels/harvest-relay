@@ -48,6 +48,10 @@ export function newSinceConfirm(w: Workbench): InboxItem[] {
 // amount. A real update with open questions (a lot and an amount, but unclear on case size) is
 // never dismissed from here; it links to Review. An unread message is never dismissed unread.
 export const dismissable = (i: InboxItem): boolean => !!i.proposal && (!i.proposal.interpretation.lotId || !i.proposal.interpretation.quantity);
+// What "No change, dismiss" accepts, for the Overview row and the Review page alike: a message not read yet
+// (Review offers it there), one read as unresolved, and one naming no lot or no amount. A real update with a lot
+// and an amount that is still open on case size is not dismissed this way.
+export const noChangeDismissable = (i: InboxItem): boolean => !i.proposal || i.proposal.interpretation.operation === "unresolved" || dismissable(i);
 // The order the Overview lists what needs the coordinator: a cut to settle, a short order, an
 // update not checked yet (unread, or read by hand) so a late message shows above the routine
 // approvals, an update ready to approve, an update with questions, then a message that can be dismissed.

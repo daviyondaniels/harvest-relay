@@ -6,12 +6,12 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, shortages, type Option } from "../src/orders.ts";
-import { conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
+import { PromisesMoved, approveRebased, commitKey, conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
-import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshIfStale, reply, replyAndApprove, replyIsRecorded, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_NEEDED, NAME_PROBLEM, checkName, needsName, runAs } from "./lib/names.ts";
@@ -20,7 +20,7 @@ import { buyer, grower, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
 import { answerLine, buyerChanges, sentLine } from "./lib/result.ts";
-import { SHIP_SHORT as SHIP, approvalResult, shortMap } from "./lib/view.ts";
+import { SHIP_SHORT as SHIP, approvalResult, noChangeDismissable, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
 import { value } from "./lib/values.ts";
 
@@ -141,10 +141,13 @@ export async function askAction(f: FormData) {
 export async function replyAction(f: FormData) {
   let before = new Map<string, number>(), approvedNow = false, changedNow = false;
   // shown: the review hash of the preview the form was rendered with; only those exact values are approved in one step.
-  const both = str(f, "andApprove") === "1", recorded = str(f, "recorded") === "1", shown = str(f, "shown") || undefined;
+  const both = str(f, "andApprove") === "1", shown = str(f, "shown") || undefined;
+  let recorded = false;
   return run(f, (w, i, who) => {
     const it = w.items.find(x => x.id === i);
     if (!it) throw new Error("Unknown inbox item");
+    // Worked out here, the way the page does (replyIsRecorded); a posted flag is not believed.
+    recorded = replyIsRecorded(w, i);
     // The reply is already recorded (an earlier Apply answers left a detail open): the answers go against it, and it is not recorded again.
     if (recorded) {
       const last = it.replies.at(-1);
@@ -162,7 +165,7 @@ export async function replyAction(f: FormData) {
     const r = replyAndApprove(w, i, source, answers(f, "reply", text), [], who, now(), shown);
     approvedNow = r.approved; changedNow = r.changed;
     return r.next;
-  }, { on: "reply", keep: "reply", done: recorded ? "Answers applied." : "Reply added.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : changedNow ? { text: CHANGED, on: RECHECK } : { text: "Answers applied. One more detail needs an answer." } });
+  }, { on: "reply", keep: "reply", done: "Reply added.", after: (w, item) => !both ? (recorded ? { text: "Answers applied." } : {}) : approvedNow ? { ...approved(w, item, before), on: "approve" } : changedNow ? { text: CHANGED, on: RECHECK } : { text: "Answers applied. One more detail needs an answer." } });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
 export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", keep: "correct", done: "Correction applied." }); }
@@ -207,7 +210,14 @@ export async function pendingAction(f: FormData) { return run(f, (w, i, who) => 
 export async function returnAction(f: FormData) { return run(f, (w, i, who) => returnForClarification(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Returned to the grower." }); }
 export async function dismissAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Dismissed." }); }
 // A message with no supply change in it (thanks, a question, a time of arrival): one tap, no reason to type.
-export async function dismissNoChangeAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, "No supply change", who, now()), { on: "dismiss", done: "Dismissed. No supply change." }); }
+// Refused on the server unless the message is one the Overview or Review offers it for (noChangeDismissable).
+export async function dismissNoChangeAction(f: FormData) {
+  return run(f, (w, i, who) => {
+    const it = w.items.find(x => x.id === i);
+    if (it && !noChangeDismissable(it)) throw new Error("That message names a lot and an amount, so it isn't a message with no change. Open it in Review.");
+    return dismiss(w, i, "No supply change", who, now());
+  }, { on: "dismiss", done: "Dismissed. No supply change." });
+}
 export async function refreshAction(f: FormData) { return run(f, (w, i, who) => refresh(w, i, who, now()), { on: "refresh", done: "Checked again against current supply." }); }
 export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply." }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one
@@ -215,7 +225,18 @@ export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who)
 export async function approveAction(f: FormData) {
   let before = new Map<string, number>();
   // The shortages are read from the version the change is made on, which may be a newer one than the page showed.
-  return run(f, (w, i, who) => { before = shortMap(w); return refreshAndApprove(w, i, who, str(f, "hash"), now()); }, { on: "approve", done: "Supply change approved.", rebase: true, after: (w, item) => approved(w, item, before) });
+  // cs: the promises the page was rendered with. When they have since moved and approving would open a cut or leave
+  // a buyer newly short, nothing is approved and the coordinator looks again (approveRebased). An approval that
+  // changes nothing promised still goes through on a newer version.
+  return run(f, (w, i, who) => {
+    before = shortMap(w);
+    try { return approveRebased(w, i, who, str(f, "hash"), str(f, "cs") || undefined, now()); } catch (e) { throw e instanceof PromisesMoved ? new StaleView(staleMessage(w)) : e; }
+  }, { on: "approve", done: "Supply change approved.", rebase: true, after: (w, item) => approved(w, item, before) });
+}
+// Stage marks go on the sheet the coordinator saw: when the plan was confirmed again or a cut decided since (cs), they look again.
+// Marking another order in another tab does not count, so unrelated marks still apply.
+function promisesAsShown(f: FormData, w: Workbench): void {
+  if (str(f, "cs") !== commitKey(w.ledger)) throw new StaleView(staleMessage(w));
 }
 // A forecast is noted, not applied: confirmed supply does not move.
 function approved(w: Workbench, item: string, before: Map<string, number>): Partial<Notice> {
@@ -515,6 +536,7 @@ export async function stageAction(f: FormData) {
     let said = "Saved. The sheet shows the new stage.";
     // The domain refuses a stage that does not follow, so a sheet from before another change still applies.
     await asNamed(f, who => act(Number(str(f, "version")), w => {
+      promisesAsShown(f, w);
       try { const next = markStage(w, order, stage, who, now()); said = `${buyer(w.ledger.snapshot.orders.find(o => o.id === order)?.buyerId ?? order)}'s order is marked ${stage === "packed" ? "packed" : "handed off"}.`; return next; } catch (e) { throw byBuyer(w, e); }
     }, { rebase: true }));
     notice = { text: said, ok: true, on: "stage", res: str(f, "order") };
@@ -531,7 +553,9 @@ export async function stageAllAction(f: FormData) {
     if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
     let said = "";
     await asNamed(f, who => act(Number(str(f, "version")), w => {
-      const { next, marked } = markAllStage(w, stage, who, now());
+      promisesAsShown(f, w);
+      // Only the orders the page counted: one it never showed is not marked.
+      const { next, marked } = markAllStage(w, stage, who, now(), str(f, "orders").split(",").filter(Boolean));
       said = `${marked.length} ${marked.length === 1 ? "order" : "orders"} marked ${stage === "packed" ? "packed" : "handed off"}.`;
       return next;
     }, { rebase: true }));

@@ -120,7 +120,13 @@ export function replyAndApprove(w: Workbench, id: string, source: Source, answer
 }
 // Answers to the open details from a reply that is already recorded (an earlier "Apply answers" left a question
 // open). The reply is not recorded a second time: the history gets one "answered" line, never another "replied".
-function answerRecordedOnly(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
+// Whether the grower's reply is already recorded and a detail is still open: it came after the last question
+// asked, so the answers go against it and it is not pasted again. The server works this out itself; a form never says so.
+export function replyIsRecorded(w: Workbench, id: string): boolean {
+  const it = item(w, id), last = (k: string) => it.decisions.findLastIndex(d => d.kind === k);
+  return it.replies.length > 0 && last("replied") > last("asked") && preview(w, id).questions.length > 0;
+}
+export function answerRecorded(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
   const source = item(w, id).replies.at(-1);
   if (!source) throw new Error("No reply is recorded yet");
   w = refreshIfStale(w, id, actor, at);
@@ -133,16 +139,15 @@ function answerRecordedOnly(w: Workbench, id: string, answers: Answer[], unclear
   if (corrections.length) next.items.find(i => i.id === id)!.decisions.at(-1)!.corrections = corrections;
   return next;
 }
-export const answerRecorded = answerRecordedOnly;
 export function answerRecordedAndApprove(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string, shown?: string): Approved {
-  return approveIfShown(answerRecordedOnly(w, id, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
+  return approveIfShown(answerRecorded(w, id, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
 }
 // What the answers would do, worked out on a copy: the preview of the state they produce. Undefined when they are refused.
 export function previewAnswers(w: Workbench, id: string, source: Source, answers: Answer[], at: string): Preview | undefined {
   try { return preview(reply(w, id, source, answers, [], "Preview", at), id); } catch { return undefined; }
 }
 export function previewRecordedAnswers(w: Workbench, id: string, answers: Answer[], at: string): Preview | undefined {
-  try { return preview(answerRecordedOnly(w, id, answers, [], "Preview", at), id); } catch { return undefined; }
+  try { return preview(answerRecorded(w, id, answers, [], "Preview", at), id); } catch { return undefined; }
 }
 
 // A grower reply read by the model: interpretReply has already applied its answers with
