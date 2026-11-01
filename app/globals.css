@@ -600,6 +600,8 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 .pick-fold { border-top: 0; padding-top: 0; }
 .pick-fold > summary { min-height: 44px; }
 .pick-fold > summary h3 { margin: 0; }
+/* From 601 px the pick lists show before scripts run (the fold only matters on a phone). */
+@media screen and (min-width: 601px) { .pick-fold:not([open])::details-content { content-visibility: visible; display: block; } }
 @media print {
   /* Always printed, whether or not the fold is open on screen. */
   .pick-fold:not([open])::details-content { content-visibility: visible; display: block; }
