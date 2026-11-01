@@ -684,3 +684,93 @@ Rulings:
 ### Task 22: Measure again (controller)
 
 Same as Task 12.
+
+---
+
+## Round 6 result and final cleanup
+
+`reports/round6/` holds the four round 6 reports:
+
+| Report | Score |
+|---|---|
+| A, first day | 9 |
+| B, phone late drop | 9 |
+| C, mistakes and keyboard | 9.5 |
+| Interface | 9.2 |
+
+The interface criteria now score as follows:
+
+| Criterion | Score |
+|---|---|
+| Hierarchy | 4.6 |
+| Layout | 4.5 |
+| Navigation | 4.6 |
+| Comprehension | 4.5 |
+| Visual design | 4.5 |
+| Feedback | 4.6 |
+
+The target is met: every criterion is at 4.5 or above, and the overall score is about 9. Clicks are 23 + 4, all at the ruled targets. The loop ends here. Leftover small items are batched into one cleanup task (minors, no new behaviour).
+
+### Task 23: Cleanup of round 6 minors
+
+**Files:** `app/review/page.tsx`, `app/value-fields.tsx`, `app/orders/page.tsx`, `app/page.tsx`, `app/pack/page.tsx`, `app/actions.ts`, `app/lib/*`, `src/resolve.ts`, `src/interpret.ts` (only the item below), `app/globals.css` (only as needed), and tests.
+
+**Review: one honest message per state.**
+- The aside on a form with a preview drops "Not checked yet / The change appears once the message has a reading" and "The outcome is shown above the Save and approve button". It says where the preview is, or links to it (`#preview`).
+- "You changed the details…" shows once.
+- "Changes you make here will be checked before approving." shows only on a form with editable values.
+- "Check the details…, then save and approve" shows once. It never shows when the button available is "Save these details".
+- After a refused amount, once the amount is valid again, the page offers Save and approve again. Re-render with the preview, or say "Save these details, then approve" consistently.
+
+**Fresh reply hint.** Under "Apply answers", add: "Then approve the change it makes, on the next step."
+
+**History wording.**
+- A logged call reads "{name} recorded the call details", not "entered the reading by hand".
+- The system re-check line has no coordinator name: "Checked again against current supply".
+
+**Quotes.**
+- "They said yes" with no channel is never shown in quotation marks anywhere. That covers the Orders Substitutes row and the thread.
+- Use "agreed (recorded by {name}, no note)".
+
+**Errors.**
+- An empty follow-up "Case contents" box focuses the input and sets `aria-invalid` and `aria-describedby` (not `div#reply-value`).
+- -5 gets "Enter an amount above zero.", not "a whole number".
+- On Orders, a reply that says "Text message" with empty text blames the text box: "Enter what they wrote."
+- Empty forms report every missing field at once where a form has several: Log a call (name, grower, note) and Pack (name, tick). List them in one message, and focus the first one.
+
+**Result and status lines.**
+- Send, Tell and "They said yes" results name the buyer or grower and the amount, for example "Sent to Riverbend School Kitchen: short 20 lb." and "Recorded: Birch Hollow Gardens can bring 30 lb."
+- The approval result panel doesn't repeat the banner, and its Resolve is a separate button after the sentence.
+
+**Orders.**
+- After Settle the cut on Orders, the status says what was settled.
+- Don't show "Find more tomato on Orders." with a link while already on Orders. Link to the order's Next step instead.
+- The thread title "Ask for more to {grower}" becomes "Asked {grower} for more".
+
+**Overview and Pack.**
+- "Confirm without {Grower}'s update" names the update: "Confirm without {Grower}'s {product} update ({before} → {after})".
+- After every order is handed off, the leave-short row and "Confirm without…" don't show. Round 6 auditor B still saw them: find the cause and test it.
+- Pack's confirmed line doesn't say "Print the sheets." while "Check it" is the primary.
+
+**Day details.**
+- The garbled Day details label "Grower asks that added supply" (`app/page.tsx` ~103) becomes "Asks to growers that added supply".
+- The substitute line names the product actually sent, for example "30 lb of zucchini sent in place of tomato", not "30 lb by approved substitute" under Tomato.
+
+**Reading a logged call.** "they can bring 10 more lb of tomato" is read like "We can add 10 lb of tomato." (an add with lot and amount). Extend the existing keyword reading in `src/interpret.ts` (or wherever "add" is detected) for "bring … more". Test it.
+
+**Accessible names.** Shorten the long "Send (Offer …)" accessible names to the visible label plus the buyer.
+
+**Reported, not changed:**
+- the quote-versus-value mismatch, since the edited value is already stopped once;
+- the 13 px phone tab labels;
+- the phone Overview height;
+- split-the-cut being unaudited (the demo has one buyer per lot).
+
+- [ ] Tests:
+  - the call-reading keyword;
+  - the leave-short row after hand-off;
+  - the -5 message;
+  - multi-field empty messages;
+  - status lines (helper);
+  - copy tests.
+- [ ] Implement, run all checks, then commit.
