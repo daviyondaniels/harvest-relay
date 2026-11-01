@@ -112,7 +112,10 @@ export function approvalResult(w: Workbench, item: string, before: Map<string, n
   const lot = w.ledger.snapshot.lots.find(l => l.id === e.lotId);
   const worse = shortages(w.ledger).filter(g => g.short > (before.get(g.orderId) ?? 0));
   const name = lot ? `${lot.product} from ${grower(lot.growerId)}` : "Supply", head = `${name[0].toUpperCase()}${name.slice(1)}: ${changeLine(e.lotBefore, e.lotAfter)}.`;
-  const tail = worse.map(g => ` ${buyer(g.buyerId)} is now ${weight(g.short, g.unit)} short.`).join("");
+  // Each buyer the change made short or shorter, and each buyer who was short and is now covered.
+  const still = new Set(shortages(w.ledger).map(g => g.orderId)), orders = w.ledger.snapshot.orders;
+  const covered = [...before].filter(([id, n]) => n > 0 && !still.has(id)).flatMap(([id]) => { const o = orders.find(x => x.id === id); return o ? [buyer(o.buyerId)] : []; });
+  const tail = worse.map(g => ` ${buyer(g.buyerId)} is now ${weight(g.short, g.unit)} short.`).join("") + covered.map(n => ` ${n} is now covered.`).join("");
   return { text: head + tail, ...(worse[0] ? { res: `order:${worse[0].orderId}` } : {}) };
 }
 

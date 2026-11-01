@@ -48,7 +48,7 @@ test("Ease task 7: banned words never come back as on-screen text anywhere in ap
 
 test("Task 17: the approver name is asked for beside its field and remembered in a strict, HttpOnly cookie", () => {
   const actions = source("app/actions.ts"), name = source("app/lib/name.ts");
-  assert.match(actions, /"Enter your name to continue\."/, "the name is asked beside the form's own name field");
+  assert.match(source("app/lib/names.ts"), /"Enter your name to continue\."/, "the name is asked beside the form's own name field");
   assert.match(name, /NAME_COOKIE = "hr_name"/);
   assert.match(source("src/hub.ts"), /NAME_MAX = 80/, "the same limit as the name field");
   assert.match(source("app/lib/names.ts"), /import \{ NAME_MAX \} from "..\/..\/src\/hub.ts"/, "one limit for the field and every recorded name");
@@ -64,14 +64,16 @@ test("Task 17: the approver name is asked for beside its field and remembered in
 test("Ease task 2: the name is asked on the first action, in the same form, and every recording action takes it", () => {
   const actions = source("app/actions.ts"), orders = source("app/orders/page.tsx"), pack = source("app/pack/page.tsx"), review = source("app/review/page.tsx");
   assert.doesNotMatch(actions, /actor\(\)|RESERVED_NAME|NameNeeded|NAME_AT_TOP/, "no action records the reserved label or points at the header");
-  assert.match(actions, /async function named\(f: FormData\): Promise<string> \{[\s\S]*?checkName\(f\.get\("who"\)\)[\s\S]*?rememberName\(c\.name\)[\s\S]*?rememberedName\(\)[\s\S]*?new FieldError\(NAME_NEEDED, "who"\)/);
+  assert.match(actions, /async function asNamed<T>\(f: FormData, fn: \(who: string\) => Promise<T>\): Promise<T> \{[\s\S]*?runAs\(f\.get\("who"\), await rememberedName\(\), rememberName, fn\)/);
+  assert.match(source("app/lib/names.ts"), /export async function runAs[\s\S]*?checkName\(typed\)[\s\S]*?new FieldError\(NAME_NEEDED, "who"\)[\s\S]*?const done = await fn\(who\);[\s\S]*?await remember\(c\.name\)/, "the name is remembered only after the action worked");
   // Every exported action that changes records through act( also asks named(.
   const exported = actions.split(/\nexport async function /).slice(1).map(b => ({ name: b.slice(0, b.indexOf("(")), body: b.split(/\n(?:export |\/\/ )/)[0] }));
   const acting = exported.filter(x => /\bact\(/.test(x.body));
   assert.ok(acting.length >= 6, "the actions that call act( directly");
-  for (const x of acting) assert.match(x.body, /await named\(f\)/, `${x.name} records a person's name`);
+  for (const x of acting) assert.match(x.body, /asNamed\(f/, `${x.name} records a person's name`);
   // The ones that go through run( or onOrder( do so by their step, which names unless it is the scripted arrival.
-  assert.match(actions, /step\.anon \? "" : await named\(f\)/);
+  assert.equal(actions.match(/step\.anon \? go\(""\) : asNamed\(f, go\)/g)?.length, 2, "run( and onOrder( both name, unless it is the scripted arrival");
+  assert.doesNotMatch(actions, /\bnamed\(f\)/, "no action reads the name outside asNamed");
   assert.equal(actions.match(/anon: true/g)?.length, 1, "only the demo's scripted arrival of a reply is not the coordinator's");
   for (const page of [review, orders, pack, source("app/call/page.tsx"), source("app/conflict.tsx")]) assert.doesNotMatch(page, /NameNeeded|name-needed/, "no redirect to the header");
   assert.equal(existsSync(new URL("../app/name-needed.tsx", import.meta.url)), false, "NameNeeded is gone");
@@ -296,7 +298,7 @@ test("Task 19 (R9): errors in plain words, beside their field, with names instea
   assert.match(actions, /function withNames\(/);
   assert.doesNotMatch(orders, /\(\$\{d\.note\}\)/, "the thread no longer prints a note such as item-6");
   assert.match(orders, /function ThreadLine/);
-  assert.match(actions, /class FieldError extends Error/);
+  assert.match(source("app/lib/errors.ts"), /class FieldError extends Error/);
   // The review page uses the one shared helper (app/lib/field-error.tsx) instead of its own copy.
   assert.match(review, /from "\.\.\/lib\/field-error\.tsx"/);
   assert.match(orders, /from "\.\.\/lib\/field-error\.tsx"/);
@@ -467,7 +469,7 @@ test("Ease task 3: plain words on the review page, and the demo control sits in 
   const review = source("app/review/page.tsx"), fields = source("app/value-fields.tsx"), css = source("app/globals.css");
   for (const banned of [/>Reading</, /Kind of update/, /Change preview/, /proposed allocation/, /Not worked out yet/, /A separate proposal/, /Unallocated/, /Mark the lot as checked/])
     assert.doesNotMatch(review + fields, banned);
-  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Waiting on your answer", "Not going to anyone yet", "Words in the reply that answer these (optional)", "Note this forecast"])
+  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Needs your answer", "Not going to anyone yet", "Words in the reply that answer these (optional)", "Note this forecast"])
     assert.ok(review.includes(label), label);
   assert.equal(FIELD.operation, "What changed");
   assert.deepEqual(Object.values(OPERATION_CHOICE), ["A new total", "Added to what they have", "A correction", "A forecast, not confirmed"]);
@@ -517,7 +519,7 @@ test("Ease task 4: Orders wording, the one-step send, the single status chip and
   assert.match(actions, /keep: "buyer"/);
   assert.match(actions, /answerOf\(f, true\)/);
   // Demo-only control sits in the Demo group.
-  assert.match(orders, /className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span><form action=\{scriptedRequestReplyAction\}/);
+  assert.match(orders, /<details className="demo-tools"[^\n]*>\s*<summary>Demo tools<\/summary>[\s\S]*?className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>\s*<form action=\{scriptedRequestReplyAction\}/);
   assert.match(cover, /coverLine\(/);
   assert.match(conflict, /\{!sole && <label className="check"><input type="radio" name="choice" value="split"/, "no Split with one promise");
 });

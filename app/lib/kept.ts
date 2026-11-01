@@ -11,6 +11,9 @@ export const KEEP = {
   hold: { note: 500 },
   send: { body: 480 },
   buyer: { channel: 10, text: 480, quote: 480 },
+  // The Orders supply reply: how it came, the text and quote, whether they can supply, how much and what grade.
+  supply: { channel: 10, text: 480, quote: 480, yes: 4, amount: 12, grade: 80 },
+  call: { note: 480 },
   hand: { operation: 40, lot: 80, amount: 12, unit: 8, grade: 80, day: 10, target: 80, quote: 500 }
 } as const satisfies Record<string, Record<string, number>>;
 export type KeptForm = keyof typeof KEEP;

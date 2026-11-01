@@ -164,6 +164,16 @@ export function readByHand(w: Workbench, id: string, r: HandReading, actor: stri
   return correct(next, id, answers, actor, at);
 }
 
+// The coordinator's reading and the approval in one step ("Save and approve"). Every value is in the form the
+// coordinator submitted, so nothing hidden is approved: the approval is checked against the review hash of
+// the state the reading produces, exactly the change that state previews. When the reading leaves a question
+// open, or no change can be worked out, only the reading is kept (approved: false). It does not rebase.
+export function readByHandAndApprove(w: Workbench, id: string, r: HandReading, actor: string, at: string): { next: Workbench; approved: boolean } {
+  const saved = readByHand(w, id, r, actor, at), p = preview(saved, id);
+  if (p.questions.length || p.error || p.needsRefresh || !p.change || !p.reviewHash) return { next: saved, approved: false };
+  return { next: approve(saved, id, actor, p.reviewHash, at), approved: true };
+}
+
 // Values found in a message, to prefill the hand-entry form. A reading already on the item
 // wins; otherwise the words are searched, and the lot's own grade and day fill the rest.
 export type HandSuggestion = { operation?: Exclude<Operation, "unresolved">; lotId?: string; quantity?: Quantity; grade?: string; deliveryOn?: string };

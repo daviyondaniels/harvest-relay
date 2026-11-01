@@ -8,7 +8,7 @@ import { options, permissionSource, recommend, type Option } from "../../src/ord
 import { planOf, stageOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { canSend, factsFor, openFor, orderStatus, toConfirm, type Resolution } from "../../src/resolve.ts";
+import { canSend, draftWaiting, factsFor, openFor, orderStatus, toConfirm, toldBuyer, type Resolution } from "../../src/resolve.ts";
 import { REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
 import type { Order } from "../../src/planner.ts";
@@ -68,7 +68,7 @@ function fields(rid: string, error?: CardError) {
 }
 // One line of an order's thread, said as what a person did, with names and never IDs. How a
 // draft was written (the template, or the model and whether it was recorded) stays here.
-function ThreadLine({ r, d }: { r: Resolution; d: Resolution["decisions"][number] }) {
+function ThreadLine({ r, d, reviewed }: { r: Resolution; d: Resolution["decisions"][number]; reviewed: boolean }) {
   const to = r.facts.to.name, what = KIND[r.kind].toLowerCase(), detail = (s: string) => <span className="muted small"> ({s})</span>;
   const source = (by?: string) => by ? detail(by === "Template" ? "from the template" : `suggested by ${by}`) : null;
   switch (d.kind) {
@@ -81,7 +81,7 @@ function ThreadLine({ r, d }: { r: Resolution; d: Resolution["decisions"][number
     case "reply-recorded": return <>{d.actor} recorded {to}'s answer: {d.note === "accepted" ? "yes" : "no"}</>;
     case "supply-recorded": return <>{d.actor} recorded {to}'s answer: {d.note?.startsWith("yes, ") ? `yes, ${d.note.slice(5)} ${r.option.unit}` : d.note ?? ""}</>;
     case "grower-replied": return <>{r.option.kind === "ask-grower" && d.actor === r.option.contactId ? `${to} replied` : `${to} called back, noted by ${d.actor}`}
-      {d.note && <> <a href={`/review?item=${encodeURIComponent(d.note)}`}>See their reply</a></>}</>;
+      {d.note && reviewed && <> <a href={`/review?item=${encodeURIComponent(d.note)}`}>See their reply</a></>}</>;
     default: return <>{d.actor}: {d.kind}</>;
   }
 }
@@ -93,7 +93,7 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, raw = readNotice(params, { page: "/orders", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
   const { state: w, version } = await current(), me = await rememberedName();
-  const typed = (form: "send" | "buyer", name: string) => readKept(params, form, name);
+  const typed = (form: "send" | "buyer" | "supply" | "call", name: string) => readKept(params, form, name);
   const orders = w.ledger.snapshot.orders, statuses = new Map(orders.map(o => [o.id, orderStatus(w, o.id)]));
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
   return (
@@ -115,7 +115,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   );
 }
 
-async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined }) {
+async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string; typed: (form: "send" | "buyer" | "supply" | "call", name: string) => string | undefined }) {
   const o = w.ledger.snapshot.orders.find(x => x.id === orderId)!;
   const plan = planOf(w.ledger), lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l]));
   const mine = plan.allocations.filter(a => a.orderId === orderId), unit = normalize(o.quantity).unit;
@@ -138,17 +138,21 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
   const onFile = o.approvedSubstitutions.map(x => x.product).filter(p => permissionSource(w.ledger, orderId, p).kind === "on-file");
   // The next suggestion appears only when there is nothing to wait for.
   const waiting = resolutions.filter(isWaiting);
-  const pick = recommend(w, orderId, CONTACTS), picked = !waiting.length && pick && pick.kind !== "review-reply" ? offered.find(x => sameOption(x.opt, pick)) : undefined;
+  // Once the buyer has been told about the whole shortfall there is no second notice to offer, and while a message waits
+  // to be sent its Send (in Messages) is the only one: the Next step points at it instead of offering another.
+  const told = toldBuyer(w, orderId), draft = draftWaiting(w, orderId), visible = offered.filter(x => !(told && x.opt.kind === "notify-short"));
+  const pick = recommend(w, orderId, CONTACTS), picked = !waiting.length && !draft && pick && pick.kind !== "review-reply" ? visible.find(x => sameOption(x.opt, pick)) : undefined;
   const names: Record<string, string> = { ...Object.fromEntries(CONTACTS.map(c => [c.id, c.name])), [o.buyerId]: buyer(o.buyerId) };
   const known = !!me, optBadOf = (index: number) => optBad?.on === `opt-${index}-draft` ? optBad : undefined;
   const card = (x: { opt: Option; index: number }) => <OptionCard key={x.index} {...x} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, x.opt)} known={known} bad={optBadOf(x.index)} />;
   // Up to two other ways to cover the short, one tap each: offer a substitute, tell the buyer. The rest stay under Other options.
-  const others = offered.filter(x => x !== picked);
+  const others = visible.filter(x => x !== picked);
   const alts = picked ? [others.filter(x => x.opt.kind === "offer-substitute").sort((a, b) => amountOf(b.opt) - amountOf(a.opt) || a.index - b.index)[0], others.find(x => x.opt.kind === "notify-short")].filter((x): x is { opt: Option; index: number } => !!x) : [];
   const rest = others.filter(x => !alts.includes(x));
   const errorOf = (r: Resolution): CardError | undefined => onCard && notice!.res === r.id ? { on: notice!.on!, text: notice!.text, field: notice!.field } : undefined;
-  const callItem = notice?.ok && notice.on === "call" ? resolutions.find(r => r.id === notice.res)?.linkedItemId : undefined;
   const reading = pick?.kind === "review-reply" ? pick : undefined;
+  // Demo: a sent ask to a grower who holds the product, with no reply yet, can have the scripted reply delivered.
+  const demo = resolutions.filter(r => r.status === "sent" && r.option.kind === "ask-grower" && r.option.hasLot && !r.linkedItemId && !!REQUEST_REPLIES[r.option.contactId]);
   // A substitute covering under a quarter of the short is only ever listed here (docs/EVIDENCE.md R6).
   const groups: [string, { opt: Option; index: number }[], string?][] = [
     [`Growers with ${o.product}`, rest.filter(x => x.opt.kind === "ask-grower" && x.opt.hasLot)],
@@ -163,7 +167,6 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
     <section className="panel" aria-labelledby="order">
       {notice && <Result key={sig} text={notice.ok ? notice.text : undefined} focus={focus} />}
       {notice && !notice.ok && !onCard && !optBad && <p className="error" role="alert">{notice.text}</p>}
-      {callItem && <p className="small"><a href={`/review?item=${encodeURIComponent(callItem)}`}>Open their reply in Review updates</a></p>}
       <div className="section-head row">
         <h1 id="order" tabIndex={-1}>{buyer(o.buyerId)}</h1>
         <span className={`chip ${st.tone}`}>{st.label}</span>
@@ -185,8 +188,13 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
 
       {gap > 0 && <PendingCover w={w} orderId={orderId} />}
 
-      {(reading || waiting.length > 0 || picked) && <div className="option-group" aria-labelledby="next-step">
+      {(reading || waiting.length > 0 || picked || told || draft) && <div className="option-group" aria-labelledby="next-step">
         <h2 id="next-step">Next step</h2>
+        {told && <div className="option-card primary-card"><b>Told {buyer(o.buyerId)} they'll be short {weight(told.facts.amount, told.option.unit)}</b>
+          <p className="draft">Nothing more to send. Cover the shortfall to change this.</p></div>}
+        {draft && <div className="option-card primary-card"><b>Draft ready below</b>
+          <p className="draft">{KIND[draft.kind]} to {draft.facts.to.name} is waiting to be checked and sent.</p>
+          <div><a className="button primary" href={`#${draft.id}`}>Go to the draft<span className="sr-only"> to {draft.facts.to.name}</span></a></div></div>}
         {reading && <div className="option-card primary-card">
           <b>Review {grower(reading.contactId)}'s reply: it is waiting in Review updates</b>
           <p className="draft">Read what they said before asking anyone else.</p>
@@ -212,10 +220,17 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
         ))}
       </details>) : <p className="muted">This order is not short. Nothing to resolve.</p>}
 
+      {demo.length > 0 && <details className="demo-tools" open={demo.some(r => errorOf(r)?.on === "script")}>
+        <summary>Demo tools</summary>
+        {demo.map(r => <div key={r.id} className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
+          <form action={scriptedRequestReplyAction}><Hidden order={orderId} version={version} res={r.id} /><button type="submit" aria-describedby={errorOf(r)?.on === "script" ? `${r.id}-script-error` : undefined}>Receive the grower's reply (demo)<span className="sr-only"> from {r.facts.to.name}</span></button></form>
+          {errorOf(r)?.on === "script" && !errorOf(r)?.field && <p id={`${r.id}-script-error`} className="field-error" role="alert">{errorOf(r)!.text}</p>}</div>)}
+      </details>}
+
       {resolutions.length > 0 && <div className="history">
         <h2>Thread and history</h2>
         <ol>{resolutions.flatMap(r => r.decisions.map((d, n) => (
-          <li key={`${r.id}-${n}`}><span className="muted">{time(d.at)}</span> <ThreadLine r={r} d={d} /></li>
+          <li key={`${r.id}-${n}`}><span className="muted">{time(d.at)}</span> <ThreadLine r={r} d={d} reviewed={["approved", "dismissed"].includes(w.items.find(i => i.id === r.linkedItemId)?.state ?? "")} /></li>
         ))).concat(resolutions.filter(r => r.reply).map(r => (
           <li key={`${r.id}-reply`}><span className="muted">{r.reply!.channel === "call" ? "Call note" : "Reply"}</span> “{r.reply!.text}”</li>
         )))}</ol>
@@ -254,9 +269,9 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
       <b>{line}: {why}</b>
       {open ? <><p className="draft">{draft}</p><OpenNote open={open} sr=" for this step" /></>
         : <>
-          <label>Message<span className="sr-only">: {line}</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
+          <label>Message<span className="sr-only"> ({line})</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
           <Problem bad={bad} on={on} name="body" />
-          <div className="row"><NamedSubmit label={<>Send<span className="sr-only">: {line}</span></>} className="primary" known={known} on={on} bad={bad} />
+          <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> ({line})</span></>} className="primary" known={known} on={on} bad={bad} />
             <span className="fine-print">Recorded only; nothing is delivered. You can edit the words first.</span></div>
         </>}
     </form>
@@ -274,7 +289,7 @@ function OpenNote({ open, sr }: { open: Resolution; sr: string }) {
 function AltButton({ x, order, buyerName, version, open, known, bad, draft }: { x: { opt: Option; index: number }; order: string; buyerName: string; version: number; open?: Resolution; known: boolean; bad?: Bad; draft: string }) {
   const { opt } = x, amt = weight(amountOf(opt), opt.unit), on = `opt-${x.index}-draft`;
   const label = opt.kind === "offer-substitute" ? `Offer ${opt.product}` : `Tell ${buyerName}`;
-  const more = opt.kind === "offer-substitute" ? `: ${opt.grade}, covers ${amt}, needs ${buyerName}'s yes` : `: the order is ${amt} short`;
+  const more = opt.kind === "offer-substitute" ? ` (${opt.grade}, covers ${amt}, needs ${buyerName}'s yes)` : ` (the order is ${amt} short)`;
   return (
     <form action={sendNowAction} className="option-card">
       <Hidden order={order} version={version} res={`opt-${x.index}`} />
@@ -289,7 +304,7 @@ function AltButton({ x, order, buyerName, version, open, known, bad, draft }: { 
 }
 
 // A message sent and waiting: what was asked and of whom, with the controls to record the answer. The next suggestion is not shown until it comes.
-function WaitingCard({ r, w, version, me, typed, error, buyerName }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined; error?: CardError; buyerName: string }) {
+function WaitingCard({ r, w, version, me, typed, error, buyerName }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer" | "supply" | "call", name: string) => string | undefined; error?: CardError; buyerName: string }) {
   const amt = weight(amountOf(r.option), r.option.unit);
   const line = r.option.kind === "ask-grower" ? `Asked ${r.facts.to.name} for ${amt}. Waiting on their reply.` : r.option.kind === "offer-substitute" ? `Offered ${buyerName} ${r.option.product} (${r.option.grade}) for ${amt}. Waiting on their answer.` : "";
   return (
@@ -326,7 +341,7 @@ function OptionCard({ opt, index, order, buyerName, version, open, known, bad }:
   );
 }
 
-function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined; canSuggest: boolean; today: string; error?: CardError }) {
+function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer" | "supply" | "call", name: string) => string | undefined; canSuggest: boolean; today: string; error?: CardError }) {
   const h = { order: r.orderId, version, res: r.id }, st = r.status === "sent" ? sentLabel(w, r) : STATE[r.status];
   // The words shown here are posted with Confirm, so only these are confirmed.
   const asks = r.status === "drafted" ? toConfirm(w, r, today) : [], confirmed = (c: Confirm) => !!r.confirmation?.items.includes(c.token);
@@ -401,7 +416,7 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
 }
 
 // The controls to record what came back for a sent message, on the card that shows them.
-function ReplyControls({ r, w, version, me, typed, error }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined; error?: CardError }) {
+function ReplyControls({ r, w, version, me, typed, error }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer" | "supply" | "call", name: string) => string | undefined; error?: CardError }) {
   const h = { order: r.orderId, version, res: r.id }, to = r.facts.to.name, known = !!me, o = w.ledger.snapshot.orders.find(x => x.id === r.orderId)!;
   const at = (on: string) => error?.on === on && !error.field, errId = (on: string) => at(on) ? `${r.id}-${on}-error` : undefined;
   const fieldError = (on: string) => at(on) && <p id={errId(on)} className="field-error" role="alert">{error!.text}</p>;
@@ -409,18 +424,14 @@ function ReplyControls({ r, w, version, me, typed, error }: { r: Resolution; w: 
   const reviewed = ["approved", "dismissed"].includes(w.items.find(i => i.id === r.linkedItemId)?.state ?? "");
   return <>
       {r.option.kind === "offer-substitute" && <BuyerReply h={h} to={to} error={error} known={known} kept={error?.on === "reply" ? { channel: typed("buyer", "channel"), text: typed("buyer", "text"), quote: typed("buyer", "quote") } : {}} />}
-      {r.option.kind === "ask-grower" && !r.option.hasLot && <ReplyForm h={h} to={to} error={error} known={known} grades={o.acceptedGrades} unit={r.option.unit} />}
+      {r.option.kind === "ask-grower" && !r.option.hasLot && <ReplyForm h={h} to={to} error={error} known={known} grades={o.acceptedGrades} unit={r.option.unit} kept={name => typed("supply", name)} />}
       {r.option.kind === "ask-grower" && r.option.hasLot && (r.linkedItemId
-        ? reviewed
-          ? <p className="small">Their reply was reviewed. <a href={`/review?item=${r.linkedItemId}`}>See their reply</a></p>
-          : <p className="small">Their reply is in review. <a href={`/review?item=${r.linkedItemId}`}>Review the reply</a></p>
+        ? <p className="small">{reviewed ? "Their reply was reviewed." : "Their reply is in review."}</p>
         : <>
-            {REQUEST_REPLIES[r.option.contactId] && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedRequestReplyAction}><Hidden {...h} /><button type="submit" aria-describedby={errId("script")}>Receive the grower's reply (demo)<span className="sr-only"> from {to}</span></button></form></div>}
-            {fieldError("script")}
-            <details open={error?.on === "call"}>
+            <details open>
               <summary>Log their call<span className="sr-only"> ({to})</span></summary>
               <form action={requestedCallAction} className="form"><Hidden {...h} />
-                <label>What {to} said<textarea name="note" required maxLength={480} rows={3} {...inv("call", "note")} /></label>
+                <label>What {to} said<textarea name="note" required maxLength={480} rows={3} defaultValue={error?.on === "call" ? typed("call", "note") : undefined} {...inv("call", "note")} /></label>
                 {problem("call", "note")}
                 {fieldError("call")}
                 <div><NamedSubmit label="Log call as their reply" {...named(known, "call")} /></div>
@@ -459,23 +470,24 @@ function BuyerReply({ h, to, error, known, kept }: { h: { order: string; version
   );
 }
 
-function ReplyForm({ h, to, error, known, grades, unit }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; grades: string[]; unit: string }) {
-  const { inv, problem, named } = fields(h.res, error), mine = error?.on === "reply";
+// noValidate: the browser's own bubble would hide the app's message; the server checks every field and names the one at fault.
+function ReplyForm({ h, to, error, known, grades, unit, kept }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; grades: string[]; unit: string; kept: (name: string) => string | undefined }) {
+  const { inv, problem, named } = fields(h.res, error), mine = error?.on === "reply", k = (name: string) => mine ? kept(name) : undefined;
   return (
     <details open>
       <summary>Record their reply<span className="sr-only"> ({to})</span></summary>
-      <form action={supplyReplyAction} className="form"><Hidden {...h} />
-        <label>How it came<select name="channel" defaultValue="text" {...inv("reply", "channel")}><option value="text">Text message</option><option value="call">Phone call</option></select></label>
+      <form action={supplyReplyAction} className="form" noValidate><Hidden {...h} />
+        <label>How it came<select name="channel" defaultValue={k("channel") === "call" ? "call" : "text"} {...inv("reply", "channel")}><option value="text">Text message</option><option value="call">Phone call</option></select></label>
         {problem("reply", "channel")}
-        <label>Reply text, or your call note<textarea name="text" required maxLength={480} rows={2} {...inv("reply", "text")} /></label>
+        <label>Reply text, or your call note<textarea name="text" required maxLength={480} rows={2} defaultValue={k("text")} {...inv("reply", "text")} /></label>
         {problem("reply", "text")}
-        <label>For a text: the words that answer it, copied exactly<input name="quote" maxLength={480} {...inv("reply", "quote")} /></label>
+        <label>For a text: the words that answer it, copied exactly<input name="quote" maxLength={480} defaultValue={k("quote")} {...inv("reply", "quote")} /></label>
         {problem("reply", "quote")}
-        <label>Can they supply?<select name="yes" required defaultValue="" {...inv("reply", "yes")}><option value="" disabled>Choose</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+        <label>Can they supply?<select name="yes" required defaultValue={k("yes") === "yes" || k("yes") === "no" ? k("yes") : ""} {...inv("reply", "yes")}><option value="" disabled>Choose</option><option value="yes">Yes</option><option value="no">No</option></select></label>
         {problem("reply", "yes")}
         <div className="row">
-          <label>Amount ({unit})<input name="amount" type="number" min="1" step="1" {...inv("reply", "amount")} /></label>
-          <label>Grade<select name="grade" {...inv("reply", "grade")}>{grades.map(g => <option key={g}>{g}</option>)}</select></label>
+          <label>Amount ({unit})<input name="amount" type="number" min="1" step="1" inputMode="numeric" defaultValue={k("amount")} {...inv("reply", "amount")} /></label>
+          <label>Grade<select name="grade" defaultValue={grades.includes(k("grade") ?? "") ? k("grade") : undefined} {...inv("reply", "grade")}>{grades.map(g => <option key={g}>{g}</option>)}</select></label>
         </div>
         {problem("reply", "amount")}{problem("reply", "grade")}
         {mine && !error!.field && <p className="field-error" role="alert">{error!.text}</p>}

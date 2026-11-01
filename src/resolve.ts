@@ -304,6 +304,16 @@ export function isOpen(w: Workbench, r: Resolution): boolean {
   }
   return true;
 }
+// The notice that already tells the buyer about as much as is short now: sent, for this unit, covering the whole gap.
+// While it stands there is nothing more to tell them, so the Next step shows what was said and offers no second notice.
+export function toldBuyer(w: Workbench, orderId: string): Resolution | undefined {
+  const gap = shortages(w.ledger).find(s => s.orderId === orderId);
+  return gap ? w.resolutions.find(r => r.orderId === orderId && r.option.kind === "notify-short" && r.status === "sent" && r.facts.unit === gap.unit && r.facts.amount >= gap.short) : undefined;
+}
+// The message waiting to be sent for this order, if any. While one waits, its Send is the only Send on the page.
+export function draftWaiting(w: Workbench, orderId: string): Resolution | undefined {
+  return w.resolutions.find(r => r.orderId === orderId && r.status === "drafted");
+}
 export function orderStatus(w: Workbench, orderId: string): OrderStatus {
   order(w, orderId);
   const gap = shortages(w.ledger).find(s => s.orderId === orderId), mine = w.resolutions.filter(r => r.orderId === orderId);
@@ -314,7 +324,7 @@ export function orderStatus(w: Workbench, orderId: string): OrderStatus {
     return helped ? "substitute-agreed" : "covered";
   }
   // Telling the buyer counts only for as much as they were told; a larger shortfall is short again.
-  if (mine.some(r => r.option.kind === "notify-short" && r.status === "sent" && r.facts.unit === gap.unit && r.facts.amount >= gap.short)) return "buyer-told";
+  if (toldBuyer(w, orderId)) return "buyer-told";
   // Waiting on a reply means something was asked: a draft alone has asked no one, so the order stays short.
   return mine.some(r => r.status === "sent" && isOpen(w, r)) ? "resolving" : "short";
 }

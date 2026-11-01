@@ -22,7 +22,7 @@ export const SEED: SeedMessage[] = [
 ];
 // Not part of the morning inbox: the demo button delivers it after the plan is confirmed
 // (receivedAt is set to the moment it is pressed).
-export const LATE: SeedMessage = { receivedAt: "2026-10-28T15:30:00Z", source: { id: "msg-late-tomato", revision: 1, growerId: "grower-b", text: "Tomatoes came in light. We'll only have 70 lb of standard for Friday, not 110." } };
+export const LATE: SeedMessage = { receivedAt: "2026-10-28T15:30:00Z", source: { id: "msg-late-tomato", revision: 1, growerId: "grower-b", text: "Tomatoes came in light. We'll only have 70 lb of standard for Friday, not 80." } };
 // Why the late message cannot arrive now, or undefined when it can: only after a confirm, and only once.
 export const lateRefusal = (w: Workbench): string | undefined =>
   !w.ledger.commitments ? "Confirm today's plan first" : w.items.some(i => i.source.id === LATE.source.id) ? "That message has already arrived" : undefined;

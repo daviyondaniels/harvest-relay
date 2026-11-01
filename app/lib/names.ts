@@ -1,4 +1,5 @@
 import { NAME_MAX } from "../../src/hub.ts";
+import { FieldError } from "./errors.ts";
 
 // The rules for a coordinator's name, typed or read back from the remembered cookie. Pure,
 // so the same rules hold on every read. "Coordinator" is the label for actions taken with
@@ -42,3 +43,20 @@ export const NAME_PROBLEM: Record<"long" | "hidden" | "symbols" | "reserved", st
   symbols: "Your name needs at least one letter or number.",
   reserved: `"${RESERVED_NAME}" is the label for unnamed actions. Enter your own name.`
 };
+
+export const NAME_NEEDED = "Enter your name to continue.";
+// Runs an action as the coordinator named on the form (checked by the same rules as any name), else
+// as the name remembered for this browser; with neither the form is refused beside its own name field.
+// A typed name is remembered only once the action has worked: a refused action never changes who the
+// header says is recording. remember is called at most once, and not at all when fn throws.
+export async function runAs<T>(typed: unknown, remembered: string | undefined, remember: (name: string) => Promise<void>, fn: (who: string) => Promise<T>): Promise<T> {
+  const c = checkName(typed);
+  let who: string;
+  if ("name" in c) who = c.name;
+  else if (c.problem !== "empty") throw new FieldError(NAME_PROBLEM[c.problem], "who");
+  else if (remembered) who = remembered;
+  else throw new FieldError(NAME_NEEDED, "who");
+  const done = await fn(who);
+  if ("name" in c && c.name !== remembered) await remember(c.name);
+  return done;
+}

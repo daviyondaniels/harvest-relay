@@ -8,13 +8,14 @@ import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, type Option } from "../src/orders.ts";
 import { conflicts, confirmPlan, decideCut, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
-import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
+import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
-import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
-import { NAME_PROBLEM, checkName } from "./lib/names.ts";
+import { NAME_NEEDED, NAME_PROBLEM, checkName, runAs } from "./lib/names.ts";
+import { FieldError, fieldOf, type Where } from "./lib/errors.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, type KeptForm } from "./lib/kept.ts";
@@ -28,36 +29,16 @@ import { pickQuote } from "./lib/quote.ts";
 const now = () => new Date().toISOString();
 const str = (f: FormData, k: string) => { const v = f.get(k); return typeof v === "string" ? v.trim() : ""; };
 // Every action that records a person's name takes it from the form's own "who" field when
-// one was typed (checked by the same rules as any name, then remembered), else the name
-// remembered in the cookie. With neither, the form is refused beside its own name field.
-const NAME_NEEDED = "Enter your name to continue.";
-async function named(f: FormData): Promise<string> {
+// one was typed (checked by the same rules as any name), else the name remembered in the
+// cookie. With neither, the form is refused beside its own name field. A typed name is
+// remembered only after the action worked (runAs, lib/names.ts).
+async function asNamed<T>(f: FormData, fn: (who: string) => Promise<T>): Promise<T> {
   await forgetOldName();
-  const c = checkName(f.get("who"));
-  if ("name" in c) { await rememberName(c.name); return c.name; }
-  if (c.problem !== "empty") throw new FieldError(NAME_PROBLEM[c.problem], "who");
-  const kept = await rememberedName();
-  if (!kept) throw new FieldError(NAME_NEEDED, "who");
-  return kept;
+  return runAs(f.get("who"), await rememberedName(), rememberName, fn);
 }
-// A problem with one field of the form, shown beside that field (by its form name).
-class FieldError extends Error { constructor(message: string, readonly field: string) { super(message); } }
-// Which field a domain error is about, for the forms that have one.
-function fieldOf(e: unknown, on?: string): string | undefined {
-  if (e instanceof FieldError) return e.field;
-  const m = e instanceof Error ? e.message : "";
-  if (/^Literal source evidence required/.test(m)) return "quote";
-  if ((on === "reply" || on === "correct") && /answer|operation|unit|Case contents|more than this hub handles|more than zero|whole numbers/i.test(m)) return "value";
-  if (on === "hand") {
-    if (/whole numbers|more than this hub handles|above zero/i.test(m)) return "amount";
-    if (/date/i.test(m)) return "day";
-    if (/unit/i.test(m)) return "unit";
-  }
-  return undefined;
-}
-const failed = async (e: unknown, on?: string, res?: string): Promise<Notice> => {
+const failed = async (e: unknown, on?: string, res?: string, where?: Where): Promise<Notice> => {
   const at = { ...(on ? { on } : {}), ...(res ? { res } : {}) };
-  const field = fieldOf(e, on);
+  const field = fieldOf(e, on, where);
   const w = await current().then(s => s.state, () => undefined);
   return { text: plain(e, w, on), ...at, ...(field ? { field } : {}) };
 };
@@ -146,16 +127,18 @@ function back(item: string, notice: Notice, on?: string, kept: Record<string, st
 // Every step records the coordinator's name, so the form is refused without one beside its own
 // name field (named); only the demo's scripted arrival of a grower's reply (anon) is not theirs.
 // after: reads the changed workbench, and may replace the result (an approval that opens a conflict says so).
-type Step = { on: string; done: string; keep?: KeptForm; rebase?: boolean; anon?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
+// supply: on Orders, the reply form that records a supply answer (true) or a buyer's answer (false), so a refusal lands on its own field.
+type Step = { on: string; done: string; keep?: KeptForm; rebase?: boolean; anon?: boolean; supply?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
+const filledDetails = (f: FormData) => FIELDS.filter(x => str(f, `value-${x}`));
 async function run(f: FormData, change: (w: Workbench, item: string, who: string) => Workbench | Promise<Workbench>, step: Step): Promise<never> {
   const item = str(f, "item");
   let notice: Notice, kept: Record<string, string> = {};
   try {
-    const who = step.anon ? "" : await named(f);
     let next: Workbench | undefined;
-    await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase });
+    const go = async (who: string) => { await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase }); };
+    await (step.anon ? go("") : asNamed(f, go));
     notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
-  } catch (e) { notice = await failed(e, step.on); if (step.keep) kept = keepTyped(f, step.keep); }
+  } catch (e) { notice = await failed(e, step.on, undefined, { filled: filledDetails(f) }); if (step.keep) kept = keepTyped(f, step.keep); }
   back(item, notice, step.on, kept, returnPage(str(f, "from")));
 }
 
@@ -202,8 +185,20 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   if (!quote && !callNote) throw new FieldError("Copy the words in the message that support this.", "quote");
   return { operation, lotId, quantity: { amount: Number(amount), unit }, grade, deliveryOn, ...(str(f, "target") ? { correctsEventId: str(f, "target") } : {}), ...(quote ? { quote } : {}) };
 }
+// "Save and approve" (andApprove) saves the reading and approves it in the same step, against the review hash of the
+// state the reading produces. Every value is in the form the coordinator submitted. If the reading leaves a question
+// open, only the reading is kept and the notice says so. It does not rebase.
 export async function readByHandAction(f: FormData) {
-  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", keep: "hand", done: "Details saved. Check them, then approve." });
+  let before = new Map<string, number>(), approvedNow = false;
+  const both = str(f, "andApprove") === "1";
+  return run(f, (w, i, who) => {
+    const reading = handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-"));
+    if (!both) return readByHand(w, i, reading, who, now());
+    before = shortMap(w);
+    const r = readByHandAndApprove(w, i, reading, who, now());
+    approvedNow = r.approved;
+    return r.next;
+  }, { on: "hand", keep: "hand", done: "Details saved. Check them, then approve.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : { text: "Details saved. One more thing needs an answer before it can be approved." } });
 }
 export async function confirmLotAction(f: FormData) { return run(f, (w, i, who) => confirmLot(w, i, who, now()), { on: "lot", done: "Lot confirmed." }); }
 const note = (f: FormData) => need(f, "note", "Write a note or reason.");
@@ -305,14 +300,20 @@ function toOrders(order: string, resId: string, notice: Notice, kept: Record<str
   // A field problem (a missing name included) has no fragment, because the page moves focus to the field.
   redirect(`/orders?${q}${resId && !notice.field ? `#${resId}` : ""}`);
 }
-async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workbench | Promise<Workbench>, step: Step, after?: (w: Workbench) => string): Promise<never> {
+// review: the Review item to land on after it worked, from the changed workbench (a call logged as an ask's reply
+// lands on that reply, where it is read and approved).
+async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workbench | Promise<Workbench>, step: Step, after?: (w: Workbench) => string, review?: (w: Workbench) => string | undefined): Promise<never> {
   const order = str(f, "order");
-  let notice: Notice, resId = str(f, "res"), kept: Record<string, string> = {};
+  let notice: Notice, resId = str(f, "res"), kept: Record<string, string> = {}, landed: string | undefined;
   try {
-    const who = step.anon ? "" : await named(f);
-    await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); return next; }, { rebase: step.rebase });
+    const go = async (who: string) => { await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); landed = review?.(next); return next; }, { rebase: step.rebase }); };
+    await (step.anon ? go("") : asNamed(f, go));
     notice = { text: step.done, ok: true, on: step.on, ...(resId ? { res: resId } : {}) };
-  } catch (e) { notice = await failed(e, step.on, resId || undefined); if (step.keep) kept = keepTyped(f, step.keep); }
+  } catch (e) { notice = await failed(e, step.on, resId || undefined, { supply: step.supply }); if (step.keep) kept = keepTyped(f, step.keep); }
+  if (landed && notice.ok) {
+    revalidatePath("/", "layout");
+    redirect(`/review?${new URLSearchParams({ item: landed, ...signNotice({ text: step.done, ok: true, on: step.on }, { page: "/review", id: landed }) })}#item`);
+  }
   toOrders(order, resId, notice, kept);
 }
 
@@ -322,6 +323,8 @@ function startFrom(w: Workbench, f: FormData, who: string): Workbench {
   const o = Number.isSafeInteger(index) ? offered[index] : undefined;
   if (!o || o.kind !== str(f, "kind") || amountOf(o) !== Number(str(f, "amount")) || target(o) !== str(f, "target"))
     throw new Error("The options for this order changed since the page loaded. Review them and choose again.");
+  // The buyer already told about the whole shortfall is not told twice from the same card (src/resolve.ts toldBuyer).
+  if (o.kind === "notify-short" && toldBuyer(w, order)) throw new Error("The buyer was already told about this shortfall. There is nothing more to send.");
   const facts = factsFor(w, order, o, NAMES);
   return startResolution(w, order, o, CONTACTS, facts, templateDraft(facts, products(w), hubDay(now())), who, now());
 }
@@ -361,16 +364,18 @@ export async function museDraftAction(f: FormData) {
   const order = str(f, "order"), resId = str(f, "res");
   let notice: Notice;
   try {
-    const version = Number(str(f, "version")), who = await named(f), { state: w, version: stored } = await current();
-    if (stored !== version) throw new StaleView(staleMessage(w));
-    const r = res(w, f);
-    if (r.status !== "drafted") throw new Error(`This message was already ${r.status}; it can no longer change`);
-    const known = products(w), on = hubDay(now()), recorded = recordedDraft(extras(), r.facts);
-    let d: Draft;
-    if (recorded !== undefined) d = { ...await draftMessage(r.facts, known, { enabled: true, model: DEMO_MODEL, ...DEMO_SETTINGS, budget: createBudget(1), transport: replay(JSON.stringify({ text: recorded })) }, "Muse Spark (recorded)", on), recorded: true };
-    else if (await liveAllowance() > 0) d = await draftMessage(r.facts, known, await live(), "Muse Spark", on);
-    else throw new Error("No other wording is available for this message. The current draft stands.");
-    await act(version, next => redraft(next, r.id, d, who, now()));
+    await asNamed(f, async who => {
+      const version = Number(str(f, "version")), { state: w, version: stored } = await current();
+      if (stored !== version) throw new StaleView(staleMessage(w));
+      const r = res(w, f);
+      if (r.status !== "drafted") throw new Error(`This message was already ${r.status}; it can no longer change`);
+      const known = products(w), on = hubDay(now()), recorded = recordedDraft(extras(), r.facts);
+      let d: Draft;
+      if (recorded !== undefined) d = { ...await draftMessage(r.facts, known, { enabled: true, model: DEMO_MODEL, ...DEMO_SETTINGS, budget: createBudget(1), transport: replay(JSON.stringify({ text: recorded })) }, "Muse Spark (recorded)", on), recorded: true };
+      else if (await liveAllowance() > 0) d = await draftMessage(r.facts, known, await live(), "Muse Spark", on);
+      else throw new Error("No other wording is available for this message. The current draft stands.");
+      await act(version, next => redraft(next, r.id, d, who, now()));
+    });
     notice = { text: "Other wording suggested. Check it, then send.", ok: true, on: "redraft", res: resId };
   } catch (e) { notice = await failed(e, "redraft", resId || undefined); }
   toOrders(order, resId, notice);
@@ -395,7 +400,7 @@ export async function buyerReplyAction(f: FormData) {
       f.set("quote", quote);
     }
     return recordBuyerReply(w, res(w, f).id, { ...answerOf(f, true), accept }, who, now());
-  }, { on: "reply", done: "Reply recorded.", keep: "buyer" });
+  }, { on: "reply", done: "Reply recorded.", keep: "buyer", supply: false });
 }
 export async function supplyReplyAction(f: FormData) {
   return onOrder(f, (w, who) => {
@@ -406,11 +411,12 @@ export async function supplyReplyAction(f: FormData) {
     if (!Number.isSafeInteger(amount)) throw new FieldError("Enter the amount they can supply as a whole number.", "amount");
     if (!w.ledger.snapshot.orders.find(o => o.id === r.orderId)?.acceptedGrades.includes(grade)) throw new FieldError("Choose a grade the order accepts.", "grade");
     return recordSupplyReply(w, r.id, { ...answerOf(f), yes, amount, grade }, who, now());
-  }, { on: "reply", done: "Reply recorded." });
+  }, { on: "reply", done: "Reply recorded.", keep: "supply", supply: true });
 }
 // A phone reply to an ask: the note is linked to the ask as its reply and goes to review.
 export async function requestedCallAction(f: FormData) {
-  return onOrder(f, (w, who) => receiveRequestedCall(w, res(w, f).id, words(f, "note", "what they said"), who, now()), { on: "call", done: "Call logged as their reply. It is in Review updates." });
+  const id = str(f, "res");
+  return onOrder(f, (w, who) => receiveRequestedCall(w, res(w, f).id, words(f, "note", "what they said"), who, now()), { on: "call", done: "Call logged as their reply. Check the details, then save and approve.", keep: "call" }, undefined, w => w.resolutions.find(r => r.id === id)?.linkedItemId);
 }
 export async function scriptedRequestReplyAction(f: FormData) {
   return onOrder(f, w => scriptedRequestReply(w, res(w, f).id, extras(), now()), { on: "script", done: "Their reply arrived. It is in Review updates.", anon: true });
@@ -421,10 +427,11 @@ export async function logCallAction(f: FormData) {
   let error: Notice | undefined, item = "";
   const growerId = str(f, "grower"), kept = str(f, "note").slice(0, MAX_TEXT);
   try {
-    const who = await named(f);
-    if (!CONTACTS.some(c => c.id === growerId)) throw new FieldError("Choose who called.", "grower");
-    const note = words(f, "note", "the call note");
-    await act(Number(str(f, "version")), w => { const next = logCall(w, growerId, note, who, now()); item = next.items.at(-1)!.id; return next; });
+    await asNamed(f, async who => {
+      if (!CONTACTS.some(c => c.id === growerId)) throw new FieldError("Choose who called.", "grower");
+      const note = words(f, "note", "the call note");
+      await act(Number(str(f, "version")), w => { const next = logCall(w, growerId, note, who, now()); item = next.items.at(-1)!.id; return next; });
+    });
   } catch (e) { error = await failed(e, "call"); }
   revalidatePath("/", "layout");
   if (error) redirect(`/call?${new URLSearchParams({ grower: growerId, note: kept, ...signNotice(error, { page: "/call", id: growerId }) })}`);
@@ -448,8 +455,7 @@ export async function confirmAction(f: FormData) {
   try {
     const choice = str(f, "shipShort");
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
-    const who = await named(f);
-    await act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } });
+    await asNamed(f, who => act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } }));
     notice = { text: home ? "Confirmed. Pack and hand off below." : "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "lock", field: e.field } : { text: e instanceof Error ? e.message : "The plan could not be confirmed" }; }
   // From the Overview's all-clear card it comes back there, where the card then points to Pack.
@@ -462,14 +468,13 @@ export async function confirmAction(f: FormData) {
 export async function lateMessageAction(f: FormData) {
   let notice: Notice;
   try {
-    await named(f);
-    await act(Number(str(f, "version")), w => {
+    await asNamed(f, () => act(Number(str(f, "version")), w => {
       const refusal = lateRefusal(w);
       if (refusal) throw new Error(refusal);
       const next = receive(w, LATE.source, now());
       notice = { text: "Birch Hollow's late message is in Review.", ok: true, on: "late", res: next.items.at(-1)!.id };
       return next;
-    });
+    }));
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "late", field: e.field } : { text: e instanceof Error ? e.message : "The message could not be delivered" }; }
   toPack(notice!);
 }
@@ -481,12 +486,11 @@ export async function stageAction(f: FormData) {
   try {
     const stage = str(f, "stage");
     if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
-    const who = await named(f);
     let said = "Saved. The sheet shows the new stage.";
     // The domain refuses a stage that does not follow, so a sheet from before another change still applies.
-    await act(Number(str(f, "version")), w => {
+    await asNamed(f, who => act(Number(str(f, "version")), w => {
       try { const next = markStage(w, order, stage, who, now()); said = `${buyer(w.ledger.snapshot.orders.find(o => o.id === order)?.buyerId ?? order)}'s order is marked ${stage === "packed" ? "packed" : "handed off"}.`; return next; } catch (e) { throw byBuyer(w, e); }
-    }, { rebase: true });
+    }, { rebase: true }));
     notice = { text: said, ok: true, on: "stage", res: str(f, "order") };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stage", field: e.field, res: order } : { text: e instanceof Error ? e.message : "The stage could not be saved" }; }
   toPack(notice);
@@ -499,13 +503,12 @@ export async function stageAllAction(f: FormData) {
   const stage = str(f, "stage"), home = returnPage(str(f, "from"));
   try {
     if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
-    const who = await named(f);
     let said = "";
-    await act(Number(str(f, "version")), w => {
+    await asNamed(f, who => act(Number(str(f, "version")), w => {
       const { next, marked } = markAllStage(w, stage, who, now());
       said = `${marked.length} ${marked.length === 1 ? "order" : "orders"} marked ${stage === "packed" ? "packed" : "handed off"}.`;
       return next;
-    }, { rebase: true });
+    }, { rebase: true }));
     notice = { text: said, ok: true, on: "stageall", res: stage };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stageall", field: e.field, res: stage } : { text: e instanceof Error ? e.message : "The orders could not be marked" }; }
   // From the Overview's confirmed card it comes back there, with its result beside the card.
@@ -521,7 +524,7 @@ export async function decideCutAction(f: FormData) {
   const choice = str(f, "choice"), excess = Number(str(f, "excess"));
   let notice: Notice, kept: Record<string, string> = {};
   try {
-    const who = await named(f);
+    await asNamed(f, async who => {
     if (!choice) throw new FieldError("Choose who takes the cut.", "cut");
     await act(Number(str(f, "version")), w => {
       const c = conflicts(w.ledger).find(x => x.lotId === lot), ids = c?.promises.map(p => p.orderId) ?? [];
@@ -534,6 +537,7 @@ export async function decideCutAction(f: FormData) {
       notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
       return next;
     }, { rebase: true });
+    });
   } catch (e) {
     notice = await failed(e, "cut", lot);
     if (e instanceof Error && /^Supply changed since this was shown/.test(e.message)) notice.text = "Supply changed since this was shown. Look at the current numbers and choose again.";

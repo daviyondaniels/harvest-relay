@@ -50,7 +50,7 @@ export const buyer = (id: string) => BUYERS[id] ?? id;
 
 export type Status = { label: string; tone: "block" | "ready" | "wait" | "done" | "quiet" };
 export const ORDER_STATUS: Record<OrderStatus, Status> = {
-  covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Waiting on reply", tone: "wait" },
+  covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Asked, waiting for the grower", tone: "wait" },
   "buyer-told": { label: "Buyer told", tone: "quiet" }, "substitute-agreed": { label: "Substitute agreed", tone: "done" }
 };
 // The one chip an order shows: how short it is (and what is being done), or, once covered, how far it has got.
@@ -61,8 +61,9 @@ export function orderChip(st: OrderStatus, stage: keyof typeof STAGE, short: num
 }
 // One line per grower under a shortfall: their unreviewed updates that could raise supply.
 export const coverLine = (name: string, n: number) => `${name} has ${n} ${n === 1 ? "update" : "updates"} to review that may cover this.`;
-export function status(i: InboxItem, p: Preview | undefined): Status {
-  if (i.state === "approved") return { label: "Approved", tone: "done" };
+// noted: the approved update was a forecast, which is noted and leaves confirmed supply unchanged.
+export function status(i: InboxItem, p: Preview | undefined, noted = false): Status {
+  if (i.state === "approved") return { label: noted ? "Noted" : "Approved", tone: "done" };
   if (i.state === "dismissed") return { label: "Dismissed", tone: "quiet" };
   if (i.state === "returned") return { label: "Returned to grower", tone: "wait" };
   if (i.state === "pending") return { label: "Pending", tone: "wait" };
@@ -96,5 +97,5 @@ export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Sta
 export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number): string[] {
   const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
   const extra = planned - s.promised;
-  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? ["Planned: we expect to send this, but it isn't promised to the buyer until you confirm today's plan"] : [])];
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? ["Not promised to the buyer yet"] : [])];
 }

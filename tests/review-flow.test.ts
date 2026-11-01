@@ -59,7 +59,7 @@ test("Ease task 11: the reply form has one value per open detail and the button 
 test("Ease task 11: the hand form refuses 0 and shows the limit beside Amount", () => {
   const actions = source("app/actions.ts");
   assert.match(actions, /if \(Number\(amount\) === 0\) throw new FieldError\("Enter an amount above zero\.", "amount"\)/);
-  assert.match(actions, /whole numbers\|more than this hub handles\|above zero/);
+  assert.match(source("app/lib/errors.ts"), /whole numbers\|more than this hub handles\|above zero/);
 });
 
 test("Ease task 11: wording", async () => {
@@ -68,15 +68,15 @@ test("Ease task 11: wording", async () => {
   assert.ok(review.includes("Not checked yet") && !review.includes("Not read yet") && !review.includes("Waiting on answers"));
   assert.equal(status({ state: "open" } as never, undefined).label, "Not checked yet");
   assert.ok(orders.includes('"Shortage notice"') && !orders.includes("Notice to buyer"));
-  assert.deepEqual(promiseText({ promised: 0, ordered: 10, unit: "lb" }, 5), ["Planned: we expect to send this, but it isn't promised to the buyer until you confirm today's plan"]);
+  assert.deepEqual(promiseText({ promised: 0, ordered: 10, unit: "lb" }, 5), ["Not promised to the buyer yet"]);
 });
 
 test("Ease task 11: Orders shows a sent message's state instead of the same suggestion, and the next suggestion only when nothing waits", () => {
   const orders = source("app/orders/page.tsx");
   assert.match(orders, /Asked \$\{r\.facts\.to\.name\} for \$\{amt\}\. Waiting on their reply\./);
-  assert.match(orders, /picked = !waiting\.length && pick/);
+  assert.match(orders, /picked = !waiting\.length && !draft && pick/);
   assert.match(orders, /<AltButton /);
   assert.match(orders, /`Offer \$\{opt\.product\}` : `Tell \$\{buyerName\}`/);
-  assert.match(orders, /Open their reply in Review updates/);
+  assert.doesNotMatch(orders, /Open their reply in Review updates/, "one link to the reply on Orders, not three");
   assert.match(orders, /, on file/);
 });

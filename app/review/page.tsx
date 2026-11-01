@@ -44,8 +44,8 @@ function Highlighted({ text, spans }: { text: string; spans: Span[] }) {
 function Hidden({ item, version }: { item: string; version: number }) {
   return <><input type="hidden" name="item" value={item} /><input type="hidden" name="version" value={version} /></>;
 }
-function QueueLink({ i, p, current }: { i: InboxItem; p: Preview | undefined; current: boolean }) {
-  const st = status(i, p);
+function QueueLink({ i, p, current, noted }: { i: InboxItem; p: Preview | undefined; current: boolean; noted: boolean }) {
+  const st = status(i, p, noted);
   return (
     <a href={`/review?item=${i.id}`} aria-current={current ? "true" : undefined}>
       <span className="row"><b>{grower(i.source.growerId)}</b></span>
@@ -65,6 +65,7 @@ function FieldSelect({ only, bad, on, kept }: { only?: Field[]; bad: Bad; on: st
   </>;
 }
 // What a correction changed, said as a value rather than as data.
+const isNoted = (w: Awaited<ReturnType<typeof current>>["state"], i: InboxItem) => i.state === "approved" && w.ledger.events.find(e => e.id === i.eventId)?.effect === "forecast";
 const shown = (v: unknown) => v && typeof v === "object" && "amount" in v ? quantity(v as Quantity) : typeof v === "string" ? (v in OPERATION ? OPERATION[v as keyof typeof OPERATION] : v) : "nothing";
 
 export default async function Review({ searchParams }: { searchParams: Promise<Params> }) {
@@ -91,11 +92,11 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
             <NamedSubmit label="Refresh all stale items" known={known} on="refreshAll" bad={allBad} quiet />
             <span className="fine-print"> Supply changed since {stale === 1 ? "one message was" : `${stale} messages were`} read.</span>
           </form>}
-          {todo.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} />)}
+          {todo.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} noted={false} />)}
           {todo.length === 0 && <p className="muted small">Nothing left to review.</p>}
           {done.length > 0 && <details className="done-today" open={!!it && isDone(it)}>
             <summary>Done today ({done.length})</summary>
-            <div className="queue-list">{done.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} />)}</div>
+            <div className="queue-list">{done.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} noted={isNoted(w, i)} />)}</div>
           </details>}
         </QueueFold>
       </nav>
@@ -177,7 +178,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
           <tr><td>Delivery day</td><td>{i.deliveryOn ? day(i.deliveryOn) : "not stated"}</td></tr>
         </tbody></table>
-      </> : <p className="blocker">This message has not been read yet. {closed ? "" : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
+      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
 
       {byField.size > 0 && !closed && (
         <div className="blocker" role="status" id="open-questions" tabIndex={-1}>
@@ -324,6 +325,8 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
   const amount = kv("hand", "amount") ?? (guess.quantity ? String(guess.quantity.amount) : undefined);
   const quote = kv("hand", "quote") ?? (!call && amount ? numberSpan(it.source.text, amount) : undefined);
   const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
+  const grade = kv("hand", "grade") ?? guess.grade, deliveryOn = kv("hand", "day") ?? guess.deliveryOn;
+  const complete = !!((kv("hand", "operation") ?? guess.operation) && (kv("hand", "lot") ?? guess.lotId) && amount && grade && deliveryOn && (call || quote));
   return (
     <details open>
       <summary>Enter the details yourself</summary>
@@ -348,9 +351,9 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
         </div>
         <Problem bad={bad} on="hand" name="amount" />
         <Problem bad={bad} on="hand" name="unit" />
-        <label>Grade<input name="grade" required maxLength={80} defaultValue={kv("hand", "grade") ?? guess.grade} {...invalid(bad, "hand", "grade")} /></label>
+        <label>Grade<input name="grade" required maxLength={80} defaultValue={grade} {...invalid(bad, "hand", "grade")} /></label>
         <Problem bad={bad} on="hand" name="grade" />
-        <label>Delivery day<input name="day" type="date" required defaultValue={kv("hand", "day") ?? guess.deliveryOn} {...invalid(bad, "hand", "day")} /></label>
+        <label>Delivery day<input name="day" type="date" required defaultValue={deliveryOn} {...invalid(bad, "hand", "day")} /></label>
         <Problem bad={bad} on="hand" name="day" />
         {targets.length > 0 && <label>Earlier update being corrected, if this is a correction
           <select name="target" defaultValue={kv("hand", "target") ?? ""}><option value="">Not a correction</option>
@@ -358,7 +361,12 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
-        <div><NamedSubmit label=<>Save these details <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} purpose="this reading" /></div>
+        {/* Every value above is in this form, so when all of them are filled the primary button saves them and approves the change they produce. */}
+        <div className="row">
+          <NamedSubmit label=<>{complete ? "Save and approve" : "Save these details"} <span className="sr-only">for {grower(it.source.growerId)}</span></> {...(complete ? { name: "andApprove", value: "1" } : {})} className="primary" known={known} on="hand" bad={bad} purpose={complete ? "this approval" : "this reading"} />
+          {complete && <button type="submit">Save these details <span className="sr-only">for {grower(it.source.growerId)}</span></button>}
+        </div>
+        {complete && <p className="fine-print">Save and approve saves these details, then approves the change they show. Save these details only saves them.</p>}
       </form>
     </details>
   );
@@ -412,7 +420,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   if (!it.proposal) return (
     <div className="tag blocked">
       <p className="from">Not checked yet</p>
-      <p className="to">Waiting on your answer</p>
+      <p className="to">Enter the details below</p>
       <p className="what">The change appears once the message has a reading.</p>
     </div>
   );
@@ -425,8 +433,8 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
   if (!p.change) return (
     <div className="tag blocked">
-      <p className="from">{p.error ? "Cannot preview" : "Needs an answer"}</p>
-      <p className="to">Waiting on your answer</p>
+      <p className="from">{p.error ? "Cannot preview" : "Needs your answer"}</p>
+      <p className="to">{p.questions.length ? "The change will show here once these answers are applied." : "Check the details above"}</p>
       <p className="what">{p.error ?? "The change can't be worked out until the open details are answered."}</p>
     </div>
   );
