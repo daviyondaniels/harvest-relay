@@ -535,6 +535,7 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   // Approve and Dismiss post from the Overview and come back to it; Confirm too.
   assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{p\.reviewHash\}/);
   assert.match(page, /action=\{dismissNoChangeAction\}/);
+  assert.match(page, /noChange = dismissable\(i\)/, "Dismiss only on a message read as no change");
   assert.match(page, /action=\{confirmAction\}/);
   assert.match(source("app/actions.ts"), /returnPage\(str\(f, "from"\)\)/);
   // A phone sees one card per buyer, and focus lands on the page heading after Reset demo.

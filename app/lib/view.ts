@@ -36,6 +36,9 @@ export function newSinceConfirm(w: Workbench): InboxItem[] {
   const t = Date.parse(at);
   return w.items.filter(i => i.state === "open" && Date.parse(i.receivedAt) > t);
 }
+// A message that may be dismissed in one tap from the Overview: read, and read as no supply change.
+// An unread message (a late harvest drop, say) is never dismissed unread; it links to Review.
+export const dismissable = (i: InboxItem): boolean => !!i.proposal && i.proposal.interpretation.operation === "unresolved";
 // An update that can be approved from where it is shown: it has a change, nothing is asked,
 // and the review is current (a stale one is refreshed on the Review page first).
 export const readyToApprove = (i: InboxItem, p: Preview | undefined): p is Preview & { change: NonNullable<Preview["change"]>; reviewHash: string } =>

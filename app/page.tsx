@@ -12,7 +12,7 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { becomesShort, newSinceConfirm, overview, questionCounts, readyToApprove, type ProductRow } from "./lib/view.ts";
+import { becomesShort, dismissable, newSinceConfirm, overview, questionCounts, readyToApprove, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { PendingCover } from "./pending-cover.tsx";
@@ -183,7 +183,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 );
               }
               const i = x.i, p = previews.get(i.id), fresher = isNew.has(i.id);
-              const ready = readyToApprove(i, p), noChange = !i.proposal || i.proposal.interpretation.operation === "unresolved";
+              const ready = readyToApprove(i, p), noChange = dismissable(i);
               const newChip = fresher && <span className="chip wait">New since you confirmed</span>;
               if (!ready && !noChange) return (
                 <a key={i.id} href={`/review?item=${i.id}`}>

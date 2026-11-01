@@ -65,7 +65,7 @@ main:focus { outline: none; }
 :root[data-theme="dark"] .brand img { background: #e9f0ea; padding: 3px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand img { background: #e9f0ea; padding: 3px; } }
 .brand-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.top > .nav, .top .call-link, .on-wide { display: none; }
+.top > .nav, .on-wide { display: none; }
 .page-name { grid-area: name; font-weight: 700; font-size: 1rem; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-area { grid-area: who; min-width: 0; }
 /* Only the name is cut short; "not you?" always shows and is at least 24 px tall. */
@@ -82,7 +82,6 @@ button.link { display: inline; border: 0; background: none; padding: 0; font-siz
 .menu-nav { display: grid; gap: 2px; }
 .menu-nav a { text-decoration: none; padding: 10px 12px; border-radius: var(--r-s); font-weight: 500; }
 .menu-nav a[aria-current="page"] { background: var(--leaf-wash); font-weight: 700; }
-.menu-call { justify-self: start; }
 .menu-who { display: grid; justify-items: start; gap: 2px; font-size: 0.85rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 .menu-who b { color: var(--ink); }
 .menu-who .link { min-height: 24px; }
@@ -103,8 +102,8 @@ dialog.confirm::backdrop { background: rgba(10, 20, 14, 0.55); }
   .top { display: flex; flex-wrap: nowrap; align-items: center; gap: 16px; padding: 12px 28px; }
   .brand-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
   .top > .nav { display: flex; margin-right: auto; }
-  .top .call-link, .on-wide { display: inline-flex; }
-  .on-phone, .page-name, .menu-nav, .menu-panel .menu-call { display: none; }
+  .on-wide { display: inline-flex; }
+  .on-phone, .page-name, .menu-nav { display: none; }
   .menu-wrap, .who { position: relative; }
   .who-name { max-width: 12em; }
   .who-form, .menu-panel { right: 0; width: 300px; top: calc(100% + 8px); }

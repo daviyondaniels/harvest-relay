@@ -106,7 +106,7 @@ test("kept values: typed text round trips through the redirect, cut to each fiel
 });
 
 // Task 5: the Overview's new-since-confirm count, the ready test and the return page.
-import { becomesShort, newSinceConfirm, readyToApprove } from "../app/lib/view.ts";
+import { becomesShort, dismissable, newSinceConfirm, readyToApprove } from "../app/lib/view.ts";
 import { returnPage } from "../app/lib/notice.ts";
 import type { InboxItem, Preview, Workbench } from "../src/workbench.ts";
 
@@ -136,4 +136,10 @@ test("Task 5: only a current, fully answered review can be approved from the Ove
 test("Task 5: an action can return only to the Overview", () => {
   assert.equal(returnPage("/"), "/");
   for (const other of ["", "/review", "//evil.example", "https://evil.example", "constructor", "__proto__"]) assert.equal(returnPage(other), undefined, other);
+});
+
+test("Task 5: only a message read as no supply change is dismissable from the Overview; an unread one never is", () => {
+  assert.equal(dismissable({ proposal: undefined } as unknown as InboxItem), false, "unread: link to Review instead");
+  assert.equal(dismissable({ proposal: { interpretation: { operation: "unresolved" } } } as unknown as InboxItem), true);
+  assert.equal(dismissable({ proposal: { interpretation: { operation: "replace-total" } } } as unknown as InboxItem), false);
 });
