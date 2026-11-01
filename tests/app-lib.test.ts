@@ -140,8 +140,54 @@ test("Task 5: an action can return only to the Overview", () => {
   for (const other of ["", "/review", "//evil.example", "https://evil.example", "constructor", "__proto__"]) assert.equal(returnPage(other), undefined, other);
 });
 
-test("Task 5: only a message read as no supply change is dismissable from the Overview; an unread one never is", () => {
+const read = (lotId: string | undefined, quantity: object | undefined, operation = "unresolved") => ({ proposal: { interpretation: { operation, lotId, quantity } } }) as unknown as InboxItem;
+test("Task 10: dismissable is a read message that names no lot or no amount; an unread one never is", () => {
   assert.equal(dismissable({ proposal: undefined } as unknown as InboxItem), false, "unread: link to Review instead");
-  assert.equal(dismissable({ proposal: { interpretation: { operation: "unresolved" } } } as unknown as InboxItem), true);
-  assert.equal(dismissable({ proposal: { interpretation: { operation: "replace-total" } } } as unknown as InboxItem), false);
+  assert.equal(dismissable(read(undefined, undefined)), true, "no lot, no amount");
+  assert.equal(dismissable(read("lot-a", undefined)), true, "a lot but no amount");
+  assert.equal(dismissable(read(undefined, { amount: 5, unit: "lb" })), true, "an amount but no lot");
+  assert.equal(dismissable(read("lot-a", { amount: 60, unit: "lb" }, "replace-total")), false);
+  assert.equal(dismissable(read("lot-d", { amount: 4, unit: "case" })), false, "a real update with open questions is not dismissable even when unresolved");
+});
+
+import { readFileSync } from "node:fs";
+import { seedWorkbench } from "../src/seed.ts";
+import { ATTENTION_ROWS, approvalResult, byAttention, shortMap, stageCounts, updateKind } from "../app/lib/view.ts";
+import { preview, approve } from "../src/workbench.ts";
+import { confirmPlan, markStage, stageable } from "../src/commitments.ts";
+const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8"));
+const NOW = "2026-10-28T14:00:00.000Z";
+
+test("Task 10: against the seed, zucchini and cucumber are not dismissable; the instruction-like message is, because it names no amount", async () => {
+  const w = await seedWorkbench(readings(), NOW), by = (id: string) => w.items.find(i => i.source.id === id)!;
+  assert.equal(dismissable(by("msg-zucchini")), false, "Birch zucchini: a real update with open questions");
+  assert.equal(dismissable(by("msg-cucumber")), false);
+  assert.equal(dismissable(by("msg-tomato")), false);
+  assert.equal(dismissable(by("msg-injection")), true, "read as unresolved with no amount");
+  const kind = (id: string) => updateKind(by(id), preview(w, by(id).id));
+  assert.deepEqual(["msg-tomato", "msg-forecast", "msg-zucchini", "msg-cucumber", "msg-injection"].map(kind), ["ready", "ready", "asks", "asks", "dismiss"]);
+});
+
+test("Task 10: rows are ordered cut, short, ready, asks, dismiss, each kind keeping its order; up to eight", () => {
+  const rows = ["dismiss", "asks", "ready", "short", "cut", "ready", "short"].map((kind, n) => ({ kind: kind as "cut", n }));
+  assert.deepEqual(byAttention(rows).map(r => `${r.kind}${r.n}`), ["cut4", "short3", "short6", "ready2", "ready5", "asks1", "dismiss0"]);
+  assert.equal(ATTENTION_ROWS, 8);
+});
+
+test("Task 10: packed and handed-off counts, and what an approval changed", async () => {
+  let w = await seedWorkbench(readings(), NOW);
+  const tomato = w.items.find(i => i.source.id === "msg-tomato")!, before = shortMap(w);
+  w = approve(w, tomato.id, "A Name", preview(w, tomato.id).reviewHash!, NOW);
+  const r = approvalResult(w, tomato.id, before);
+  assert.match(r.text, /^Tomato from .+: 120 lb → 60 lb \(down 60 lb\)\./);
+  assert.match(r.text, / is now \d+ lb short\./);
+  assert.match(r.res ?? "", /^order:/);
+  assert.deepEqual(stageCounts(w), { packed: 0, handed: 0, total: w.ledger.snapshot.orders.length });
+  const planned = confirmPlan(w, "A Name", NOW, { shipShort: true });
+  assert.equal(stageCounts(planned).packed, 0);
+  const id = planned.ledger.snapshot.orders.find(o => stageable(planned, "packed").includes(o.id))!.id;
+  const one = markStage(planned, id, "packed", "A Name", NOW);
+  assert.deepEqual(stageCounts(one), { packed: 1, handed: 0, total: planned.ledger.snapshot.orders.length });
+  const two = markStage(one, id, "handed-off", "A Name", NOW);
+  assert.deepEqual(stageCounts(two), { packed: 1, handed: 1, total: planned.ledger.snapshot.orders.length }, "a handed-off order counts as packed");
 });

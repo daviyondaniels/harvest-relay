@@ -18,6 +18,7 @@ import { NAME_PROBLEM, checkName } from "./lib/names.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, type KeptForm } from "./lib/kept.ts";
+import { approvalResult, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
 
 // Form handlers for the workspace. Each one acts on the stored version the page showed;
@@ -193,16 +194,18 @@ export async function refreshAction(f: FormData) { return run(f, (w, i, who) => 
 export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply." }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one
 // change, against that review's hash.
-export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", rebase: true, after: approved }); }
-// A forecast is noted, not applied: confirmed supply does not move.
-function approved(w: Workbench, item: string): Partial<Notice> {
-  const e = w.ledger.events.find(x => x.id === w.items.find(i => i.id === item)?.eventId);
-  return e?.effect === "forecast" ? { text: "Forecast noted. Confirmed supply is unchanged." } : openedConflict(w, item);
+export async function approveAction(f: FormData) {
+  let before = new Map<string, number>();
+  // The shortages are read from the version the change is made on, which may be a newer one than the page showed.
+  return run(f, (w, i, who) => { before = shortMap(w); return refreshAndApprove(w, i, who, str(f, "hash"), now()); }, { on: "approve", done: "Supply change approved.", rebase: true, after: (w, item) => approved(w, item, before) });
 }
-// An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
-function openedConflict(w: Workbench, item: string): Partial<Notice> {
-  const lotId = w.ledger.events.find(e => e.id === w.items.find(i => i.id === item)?.eventId)?.lotId, c = conflicts(w.ledger).find(x => x.lotId === lotId);
-  return c ? { text: `Supply change approved. ${weight(c.excess, c.unit)} of what you promised can't be filled — decide who takes the cut.`, res: c.lotId } : {};
+// A forecast is noted, not applied: confirmed supply does not move.
+function approved(w: Workbench, item: string, before: Map<string, number>): Partial<Notice> {
+  const e = w.ledger.events.find(x => x.id === w.items.find(i => i.id === item)?.eventId);
+  if (e?.effect === "forecast") return { text: "Forecast noted. Confirmed supply is unchanged." };
+  const r = approvalResult(w, item, before), c = conflicts(w.ledger).find(x => x.lotId === e?.lotId);
+  // An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
+  return c ? { text: `${r.text} ${weight(c.excess, c.unit)} of what you promised can't be filled — decide who takes the cut.`, res: c.lotId } : r;
 }
 
 // Live Meta reading. Off unless the server sets a call allowance and has the key; the
@@ -425,7 +428,7 @@ export async function confirmAction(f: FormData) {
     if (choice !== "" && choice !== "yes") throw new Error("Ship short is either chosen or not");
     const who = await named(f);
     await act(Number(str(f, "version")), w => { try { return confirmPlan(w, who, now(), { shipShort: choice === "yes" }); } catch (e) { throw byBuyer(w, e); } });
-    notice = { text: home ? "Plan confirmed." : "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
+    notice = { text: home ? "Confirmed. Pack and hand off below." : "Plan confirmed. Print the sheets below.", ok: true, on: "lock" };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "lock", field: e.field } : { text: e instanceof Error ? e.message : "The plan could not be confirmed" }; }
   // From the Overview's all-clear card it comes back there, where the card then points to Pack.
   if (home) { revalidatePath("/", "layout"); redirect(`${home}?${new URLSearchParams({ item: "plan", ...signNotice(notice, { page: home, id: "plan" }) })}`); }
@@ -471,7 +474,7 @@ export async function stageAction(f: FormData) {
 // rules as one order's button), so a sheet from before another change still applies to the rest.
 export async function stageAllAction(f: FormData) {
   let notice: Notice;
-  const stage = str(f, "stage");
+  const stage = str(f, "stage"), home = returnPage(str(f, "from"));
   try {
     if (stage !== "packed" && stage !== "handed-off") throw new Error("Choose packed or handed off");
     const who = await named(f);
@@ -483,6 +486,8 @@ export async function stageAllAction(f: FormData) {
     }, { rebase: true });
     notice = { text: said, ok: true, on: "stageall", res: stage };
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "stageall", field: e.field, res: stage } : { text: e instanceof Error ? e.message : "The orders could not be marked" }; }
+  // From the Overview's confirmed card it comes back there, with its result beside the card.
+  if (home) { revalidatePath("/", "layout"); redirect(`${home}?${new URLSearchParams({ item: "stageall", ...signNotice(notice, { page: home, id: "stageall" }) })}`); }
   toPack(notice);
 }
 

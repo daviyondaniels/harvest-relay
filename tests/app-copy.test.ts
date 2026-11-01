@@ -9,7 +9,8 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 test("I2: the measures card says what was counted, not that each count resolved an order", () => {
   const page = source("app/page.tsx");
   assert.doesNotMatch(page, /covered by a grower|"buyers? told"/, "a corrected notice to one buyer would read as two buyers told");
-  for (const label of ["grower asks that added supply", "substitutes agreed", "shortfall notices sent", "shipped short"]) assert.match(page, new RegExp(label));
+  for (const label of ["Shortages caught", "Grower asks that added supply", "Substitutes agreed", "Buyers told they'd be short", "Orders shipped short"]) assert.ok(page.includes(label), label);
+  assert.doesNotMatch(page, /Counts of actions, not of orders/);
 });
 
 test("I1: the Orders page takes the open rule from the domain", () => {
@@ -547,11 +548,11 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   assert.doesNotMatch(page.slice(fold, fold + 40), /open/);
   for (const t of ["<DayCard", "<Gauge", "<Donut", 'id="lots"']) assert.ok(page.indexOf(t, fold) > fold && page.indexOf(t, fold) < end, t);
   assert.ok(page.indexOf('href="/export"') > end, "the export link stays visible");
-  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed.", "Pack and hand off", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s"]) assert.ok(page.includes(t), t);
+  for (const t of ["Everything is covered. Confirm today's plan", "Plan confirmed by", "Mark all packed", "Mark all handed off", "Print sheets", "Confirm again", "New since you confirmed", "since you confirmed", "Review {grower(cover.growerId)}'s"]) assert.ok(page.includes(t), t);
   // Approve and Dismiss post from the Overview and come back to it; Confirm too.
-  assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{p\.reviewHash\}/);
+  assert.match(page, /action=\{approveAction\}[\s\S]*?name="hash" value=\{ready\.reviewHash\}/);
   assert.match(page, /action=\{dismissNoChangeAction\}/);
-  assert.match(page, /noChange = dismissable\(i\)/, "Dismiss only on a message read as no change");
+  assert.match(page, /updateKind\(i, p\)/, "Dismiss only on a message that names no lot or no amount");
   assert.match(page, /action=\{confirmAction\}/);
   assert.match(source("app/actions.ts"), /returnPage\(str\(f, "from"\)\)/);
   // A phone sees one card per buyer, and focus lands on the page heading after Reset demo.
@@ -576,4 +577,22 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
   assert.match(print, /\.sheet:first-child \{ break-before: auto/);
   assert.match(css, /@media \(max-width: 600px\) \{\s*button, \.button, \.menu-button, \.who-line \.link, \.menu-who \.link \{ min-height: 44px; \}/);
   assert.doesNotMatch(css, /\.sheet td \{ overflow-wrap: anywhere; vertical-align/, "desktop order-sheet columns do not split words");
+});
+
+test("Task 10: Overview and Pack wording and structure", () => {
+  const page = source("app/page.tsx"), pack = source("app/pack/page.tsx"), actions = source("app/actions.ts");
+  assert.doesNotMatch(page, /Allocation is a proposal/);
+  assert.match(page, /\{open\.length > 0 && <a className="button" href="\/review">Review updates<\/a>\}/, "an ordinary button, hidden with nothing to review");
+  assert.doesNotMatch(page, /bar-action/);
+  assert.match(page, /<a className="button" href=\{resolve\}>Resolve/, "Resolve is a secondary button beside a Review button");
+  assert.match(page, /Plan confirmed by \{c\.confirmed\.by\} at \{time\(c\.confirmed\.at\)\}/);
+  assert.equal(page.split("Plan confirmed by").length, 2, "said once");
+  assert.match(page, /\{counts2\.packed\} of \{counts2\.total\} packed, \{counts2\.handed\} of \{counts2\.total\} handed off/);
+  assert.match(page, /href="\/pack\?print=1"/);
+  assert.match(page, /unsettledLine\(warnings\.length\)/, "same line as Pack");
+  assert.match(pack, /unsettledLine\(/);
+  assert.match(pack, /Show checklist/);
+  assert.match(pack, /\/review\?item=\$\{encodeURIComponent\(fresh\[0\]\.id\)\}/, "the arrived-messages link goes to the first one");
+  assert.match(pack, /<AutoPrint \/>/);
+  assert.match(actions, /text: home \? "Confirmed\. Pack and hand off below\."/, "the result does not repeat the card's words");
 });

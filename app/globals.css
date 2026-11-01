@@ -408,6 +408,8 @@ p a, li a:not(.button), .attention .more, a.plain, .result a { color: var(--link
 .clear { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; padding: 12px; border-radius: var(--r-s); background: var(--leaf-wash); }
 .clear p { margin: 0; flex: 1 1 14em; }
 .clear label.named { flex: 1 1 12em; }
+.clear .row { flex: 1 1 100%; align-items: end; }
+.needs > a.button { margin-top: 12px; }
 .day-details { border-top: 0; display: grid; gap: 16px; }
 .day-details > summary { min-height: 44px; padding: 8px 16px; font-size: 1.1rem; background: var(--surface); border: 1px solid var(--field-line); border-radius: var(--r-s); box-shadow: var(--shadow); }
 .day-details > summary:hover { border-color: var(--ink-soft); }

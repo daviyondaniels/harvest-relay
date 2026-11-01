@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import { measures, type Measures } from "../src/measures.ts";
-import { conflicts } from "../src/commitments.ts";
+import { conflicts, stageable } from "../src/commitments.ts";
+import { lockGate } from "../src/pack.ts";
 import { shortages } from "../src/orders.ts";
 import { normalize } from "../src/quantity.ts";
 import { orderStatus, unresolved } from "../src/resolve.ts";
-import { approveAction, confirmAction, dismissNoChangeAction } from "./actions.ts";
+import { approveAction, confirmAction, dismissNoChangeAction, stageAllAction } from "./actions.ts";
 import { Basket, Calendar, Crate, Gap, Message } from "./icons.tsx";
-import { HUB_NAME, ORDER_STATUS, buyer, changeLine, day, forecastTag, grower, quantity, status, weight } from "./lib/format.ts";
+import { HUB_NAME, ORDER_STATUS, buyer, changeLine, day, forecastTag, grower, quantity, status, time, weight } from "./lib/format.ts";
 import { Problem, fieldId, type Bad } from "./lib/field-error.tsx";
 import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { becomesShort, dismissable, newSinceConfirm, overview, questionCounts, readyToApprove, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, becomesShort, byAttention, newSinceConfirm, overview, questionCounts, readyToApprove, stageCounts, staleSinceConfirm, unsettledLine, updateKind, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { PendingCover } from "./pending-cover.tsx";
@@ -88,7 +89,6 @@ function SupplyCard({ rows, unit }: { rows: ProductRow[]; unit: Unit }) {
           </p>
         </div>
       ))}
-      <p className="fine-print">Allocation is a proposal from the hub's rules: direct orders first, then substitutes each buyer has already approved. Nothing is reserved, delivered to buyers or confirmed for delivery.</p>
     </section>
   );
 }
@@ -100,13 +100,12 @@ function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
     <section className="card day" aria-labelledby="day">
       <div className="card-head"><h2 id="day">This delivery day</h2><span className="muted small">Measured in this demo session</span></div>
       <div className="stats">
-        <span className="stat"><b>{m.shortsDetected}</b><span>{m.shortsDetected === 1 ? "short caught" : "shorts caught"}</span></span>
-        <span className="stat"><b>{r.grower}</b><span>{r.grower === 1 ? "grower ask that added supply" : "grower asks that added supply"}</span></span>
-        <span className="stat"><b>{r.substitute}</b><span>{r.substitute === 1 ? "substitute agreed" : "substitutes agreed"}</span></span>
-        <span className="stat"><b>{r.notice}</b><span>{r.notice === 1 ? "shortfall notice sent" : "shortfall notices sent"}</span></span>
-        <span className="stat"><b>{r.shipShort}</b><span>shipped short</span></span>
+        <span className="stat"><b>{m.shortsDetected}</b><span>Shortages caught</span></span>
+        <span className="stat"><b>{r.grower}</b><span>Grower asks that added supply</span></span>
+        <span className="stat"><b>{r.substitute}</b><span>Substitutes agreed</span></span>
+        <span className="stat"><b>{r.notice}</b><span>Buyers told they'd be short</span></span>
+        <span className="stat"><b>{r.shipShort}</b><span>Orders shipped short</span></span>
       </div>
-      <p className="fine-print">Counts of actions, not of orders. One order can appear under several, a corrected notice to the same buyer counts again, and a grower ask counts once its reply added supply, even if the order is still short.</p>
       <div>
         <h3>Time to first message to the buyer</h3>
         {m.minutesToBuyerNotice.length
@@ -128,14 +127,25 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const delivery = s.orders[0]?.deliveryOn, unit: Unit = s.orders[0] ? normalize(s.orders[0].quantity).unit : "g";
   const fill = (orderId: string, kind: string) => plan.allocations.filter(a => a.orderId === orderId && a.kind === kind).reduce((n, a) => n + a.amount, 0);
   const gaps = shortages(w.ledger), toResolve = unresolved(w).flatMap(id => gaps.filter(g => g.orderId === id));
-  const settle = conflicts(w.ledger).length;
+  const cuts = conflicts(w.ledger), settle = cuts.length, { blocking, warnings } = lockGate(w);
   const names = new Map(s.orders.map(o => [o.id, buyer(o.buyerId)]));
-  // Work first: orders still short, then messages to review; the card shows the first four.
-  const work = [...toResolve.map(g => ({ kind: "order" as const, g, st: ORDER_STATUS[orderStatus(w, g.orderId)] })), ...open.map(i => ({ kind: "update" as const, i, st: status(i, previews.get(i.id)) }))], shown = work.slice(0, 4);
+  // Work first, in this order: a cut to settle, orders still short, updates ready to approve, updates with
+  // questions, then messages that can be dismissed. The card shows up to eight.
+  const work = byAttention([
+    ...cuts.map(c => ({ kind: "cut" as const, c })),
+    ...toResolve.map(g => ({ kind: "short" as const, g, st: ORDER_STATUS[orderStatus(w, g.orderId)] })),
+    ...open.map(i => { const p = previews.get(i.id); return { kind: updateKind(i, p), i, p, st: status(i, p) }; })
+  ]), shown = work.slice(0, ATTENTION_ROWS);
   const ordered = rows.reduce((n, r) => n + r.ordered, 0), covered = rows.reduce((n, r) => n + r.direct + r.substitutedIn, 0), short = rows.reduce((n, r) => n + r.short, 0);
   // Messages that arrived after the plan was confirmed, and the plan's own state for the all-clear card.
   const fresh = newSinceConfirm(w), isNew = new Set(fresh.map(i => i.id)), confirmed = !!w.ledger.commitments?.confirmed;
-  const clear = work.length === 0 && settle === 0;
+  // Nothing short and no cut open: the plan can be confirmed even while updates wait.
+  const canConfirm = blocking.length === 0 && settle === 0, stale = staleSinceConfirm(w), c = w.ledger.commitments, counts2 = stageCounts(w);
+  const nextStage = stageable(w, "packed").length > 0 ? "packed" as const : stageable(w, "handed-off").length > 0 ? "handed-off" as const : undefined;
+  // The name is asked once on the page: on the first form that records it; the others use it (quiet).
+  const lockOn = "lock-plan"; // the confirm and Confirm again forms share a name: only one is on the page
+  let asked = false;
+  const quiet = () => { const q = asked; asked = true; return q; };
   // The result of an action done from a row: a problem with a field is shown beside that row's field,
   // anything else at the top of the card. Focus goes to the field, else the card's heading (the page's for a reset).
   const bad: Bad = notice && !notice.ok && notice.field && row ? { on: `${notice.on}-${row}`, field: notice.field, text: notice.text } : undefined;
@@ -163,12 +173,20 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {!reset && result}
         <div className="card-head"><h2 id="needs" tabIndex={-1}>Needs your attention</h2></div>
         {top && <p className="error" role="alert">{top.text}</p>}
-        {notice?.ok && notice.on === "approve" && notice.res && row && <p className="small"><a href={`/review?item=${encodeURIComponent(row)}`}>Decide who takes the cut</a></p>}
-        {settle > 0 && <p className="muted"><a href="/orders">Promises to settle</a>: {settle === 1 ? "1 lot dropped below what was promised" : `${settle} lots dropped below what was promised`}.</p>}
-        {shown.length > 0 ? (
+        {notice?.ok && notice.on === "approve" && notice.res && row && (notice.res.startsWith("order:")
+          ? <p className="small"><a className="button" href={`/orders?order=${encodeURIComponent(notice.res.slice(6))}`}>Resolve<span className="sr-only"> the new shortage</span></a></p>
+          : <p className="small"><a href={`/review?item=${encodeURIComponent(row)}`}>Decide who takes the cut</a></p>)}
+        {shown.length > 0 && (
           <div className="attention">
             {shown.map(x => {
-              if (x.kind === "order") {
+              if (x.kind === "cut") return (
+                <div key={x.c.lotId} className="short-order">
+                  <span className="icon"><Crate /></span>
+                  <span className="text"><b>{x.c.product}: {weight(x.c.excess, x.c.unit)} of what you promised can't be filled</b><span>Promises to settle: a lot dropped below what was promised.</span></span>
+                  <a className="button primary" href="/orders">Decide who takes the cut<span className="sr-only"> on {x.c.product}</span></a>
+                </div>
+              );
+              if (x.kind === "short") {
                 const cover = pendingCover(w, x.g.orderId)[0], resolve = `/orders?order=${encodeURIComponent(x.g.orderId)}`;
                 return (
                   <div key={x.g.orderId} className="short-order">
@@ -177,25 +195,25 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     {x.st.label !== ORDER_STATUS.short.label && <span className={`chip ${x.st.tone}`}>{x.st.label}</span>}
                     {cover ? <>
                       <a className="button primary" href={`/review?item=${encodeURIComponent(cover.items[0].id)}`}>Review {grower(cover.growerId)}'s {cover.items.length === 1 ? "update" : "updates"}<span className="sr-only"> for {buyer(x.g.buyerId)}</span></a>
-                      <a className="plain" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>
+                      <a className="button" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>
                     </> : <a className="button primary" href={resolve}>Resolve<span className="sr-only"> {buyer(x.g.buyerId)}</span></a>}
                   </div>
                 );
               }
-              const i = x.i, p = previews.get(i.id), fresher = isNew.has(i.id);
-              const ready = readyToApprove(i, p), noChange = dismissable(i);
+              const i = x.i, p = x.p, fresher = isNew.has(i.id);
               const newChip = fresher && <span className="chip wait">New since you confirmed</span>;
-              if (!ready && !noChange) return (
+              if (x.kind === "asks") return (
                 <a key={i.id} href={`/review?item=${i.id}`}>
                   <span className="icon"><Message /></span>
                   <span className="text"><b>{grower(i.source.growerId)}</b><span>{i.source.text}</span></span>
                   <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
                 </a>
               );
-              const forecast = ready && p.change.effect === "forecast";
-              const lot = ready ? s.lots.find(l => l.id === p.change.lotId) : undefined;
-              const line = ready ? (forecast ? (forecastTag(p.change) ?? "Forecast, not confirmed") : changeLine(p.change.before, p.change.after)) : undefined;
-              const shorts = ready ? becomesShort(p) : [];
+              const ready = x.kind === "ready" && readyToApprove(i, p) ? p : undefined;
+              const forecast = ready?.change.effect === "forecast";
+              const lot = ready ? s.lots.find(l => l.id === ready.change.lotId) : undefined;
+              const line = ready ? (forecast ? (forecastTag(ready.change) ?? "Forecast, not confirmed") : changeLine(ready.change.before, ready.change.after)) : undefined;
+              const shorts = ready ? becomesShort(ready) : [];
               const on = (form: string) => `${form}-${i.id}`;
               return (
                 <div key={i.id} className="item">
@@ -208,30 +226,46 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   </span>
                   <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
                   {ready ? (
-                    <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={p.reviewHash} />
-                      <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className="primary" known={known} on={on("approve")} bad={bad} />
+                    <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} />
+                      <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className="primary" known={known} on={on("approve")} bad={bad} quiet={quiet()} />
                     </form>
                   ) : (
                     <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
-                      <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} known={known} on={on("dismiss")} bad={bad} />
+                      <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} known={known} on={on("dismiss")} bad={bad} quiet={quiet()} />
                     </form>
                   )}
                 </div>
               );
             })}
-            {work.length > shown.length && <a href={work.slice(shown.length).some(x => x.kind === "update") ? "/review" : "/orders"} className="more">and {work.length - shown.length} more <span className="sr-only">things that need you</span></a>}
+            {work.length > shown.length && <a href={work.slice(shown.length).some(x => x.kind === "ready" || x.kind === "asks" || x.kind === "dismiss") ? "/review" : "/orders"} className="more">and {work.length - shown.length} more <span className="sr-only">things that need you</span></a>}
           </div>
-        ) : clear ? (
-          confirmed ? (
-            <div className="clear"><p><b>Plan confirmed.</b> Pack and hand off</p><a className="button primary" href="/pack">Pack and hand off</a></div>
-          ) : (
-            <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
-              <p>Everything is covered. Confirm today's plan</p>
-              <NamedSubmit label="Confirm today's plan" className="primary" known={known} on="lock-plan" bad={bad} />
-            </form>
-          )
-        ) : <p className="muted">Nothing waiting. New grower messages appear here.</p>}
-        <a className="bar-action" href="/review">Review updates</a>
+        )}
+        {c ? (
+          <div className="clear confirmed" role="group" aria-label="Plan confirmed">
+            <p><b>Plan confirmed by {c.confirmed.by} at {time(c.confirmed.at)}</b></p>
+            <p>{counts2.packed} of {counts2.total} packed, {counts2.handed} of {counts2.total} handed off</p>
+            <div className="row">
+              {nextStage && (
+                <form action={stageAllAction}>
+                  <input type="hidden" name="version" value={version} /><input type="hidden" name="stage" value={nextStage} /><input type="hidden" name="from" value="/" />
+                  <NamedSubmit label={nextStage === "packed" ? "Mark all packed" : "Mark all handed off"} className="primary" known={known} on="stageall-stageall" bad={bad} quiet={quiet()} />
+                </form>
+              )}
+              <a className="button" href="/pack?print=1">Print sheets</a>
+              {stale && (canConfirm
+                ? <form action={confirmAction}>{hidden("plan")}<NamedSubmit label="Confirm again" className={nextStage ? undefined : "primary"} known={known} on={lockOn} bad={bad} quiet={quiet()} /></form>
+                : <a className="button" href="/pack">Confirm again on Pack</a>)}
+            </div>
+            {stale && <p className="small">The plan has changed since you confirmed. Confirm again to promise the new amounts.</p>}
+          </div>
+        ) : canConfirm ? (
+          <form action={confirmAction} className="clear" id="confirm">{hidden("plan")}
+            <p>{shown.length === 0 ? "Everything is covered. Confirm today's plan" : "Nothing is short. You can confirm today's plan."}</p>
+            {warnings.length > 0 && <p className="small">{unsettledLine(warnings.length)}</p>}
+            <NamedSubmit label="Confirm today's plan" className="primary" known={known} on={lockOn} bad={bad} quiet={quiet()} />
+          </form>
+        ) : null}
+        {open.length > 0 && <a className="button" href="/review">Review updates</a>}
       </section>
 
       <section className="card orders" aria-labelledby="orders">

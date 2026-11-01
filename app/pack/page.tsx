@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CUT_FIRST, changedSinceConfirm, planOf, stageOf, stageable } from "../../src/commitments.ts";
+import { CUT_FIRST, planOf, stageOf, stageable } from "../../src/commitments.ts";
 import { shortages } from "../../src/orders.ts";
 import { changedBuyers, lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
@@ -16,7 +16,8 @@ import { Conflicts } from "../conflict.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { newSinceConfirm } from "../lib/view.ts";
+import { newSinceConfirm, staleSinceConfirm, unsettledLine } from "../lib/view.ts";
+import { AutoPrint } from "./print.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Pack" };
@@ -28,10 +29,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   const params = await searchParams, notice = readNotice(params, { page: "/pack" }), shown = notice?.on === "cut" ? undefined : notice;
   const { state: w, version } = await current();
   const { blocking, warnings } = lockGate(w), gaps = new Map(shortages(w.ledger).map(s => [s.orderId, s]));
-  const c = w.ledger.commitments, plan = planOf(w.ledger), changed = changedSinceConfirm(w.ledger, plan);
-  // Planned supply that nobody has been promised yet.
-  const unpromised = w.ledger.snapshot.orders.some(o => plan.allocations.filter(a => a.orderId === o.id).reduce((n, a) => n + a.amount, 0) > stageOf(w.ledger, o.id).promised);
-  const stale = !!c && (changed.length > 0 || unpromised);
+  const c = w.ledger.commitments, stale = staleSinceConfirm(w);
   // Orders shipped short whose buyer has been told since; the confirm itself is history.
   const shipped = new Set(c?.shippedShort.map(x => x.orderId) ?? []);
   const toldSince = new Set([...shipped].filter(id => orderStatus(w, id) === "buyer-told"));
@@ -42,7 +40,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || ((shown.on === "stage" || shown.on === "stageall") && !!shown.res))
     ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on === "stageall" ? `stageall-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
   const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
-  const arrived = newSinceConfirm(w).length, behind = changedBuyers(w.ledger).map(buyer);
+  const fresh = newSinceConfirm(w), arrived = fresh.length, behind = changedBuyers(w.ledger).map(buyer);
   // The confirm form sits in the header once a plan is confirmed (its button is primary once the plan has changed), else under the gate.
   const confirmForm = (
     <form action={confirmAction} className="form">
@@ -56,6 +54,30 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         {blocking.length > 0 && <span className="muted small">With orders still to resolve, confirming needs Ship short.</span>}
       </div>
     </form>
+  );
+  const checklist = (
+  <ul className="gate">
+    {blocking.map(id => { const o = orders.find(x => x.id === id)!, g = gaps.get(id), st = ORDER_STATUS[orderStatus(w, id)]; return (
+      <li key={id} className="fail">
+        <span className="mark" aria-hidden="true">✕</span>
+        <span><b>{buyer(o.buyerId)}</b>{g ? `, ${weight(g.short, g.unit)} ${g.product} short` : ""}{!(g && orderStatus(w, id) === "short") && <> <span className={`chip ${st.tone}`}>{st.label}</span></>}{shipped.has(id) && <> <span className="chip wait">Shipped short at confirm</span></>}{g && <PendingCover w={w} orderId={id} />}</span>
+        <a className="button" href={`/orders?order=${encodeURIComponent(id)}`}>Resolve<span className="sr-only"> {buyer(o.buyerId)}</span></a>
+      </li>
+    ); })}
+    {settled.map(o => { const st = ORDER_STATUS[orderStatus(w, o.id)]; return (
+      <li key={o.id} className="pass">
+        <span className="mark" aria-hidden="true">✓</span>
+        <span><b>{buyer(o.buyerId)}</b> <span className={`chip ${st.tone}`}>{st.label}</span></span>
+      </li>
+    ); })}
+    <li className={warnings.length ? "warn" : "pass"}>
+      <span className="mark" aria-hidden="true">{warnings.length ? "!" : "✓"}</span>
+      <span>{warnings.length
+        ? <>{unsettledLine(warnings.length)}</>
+        : "Every grower update is settled."}</span>
+      {warnings.length > 0 && <a className="button" href={`/review?item=${encodeURIComponent(warnings[0])}`}>Review</a>}
+    </li>
+  </ul>
   );
   return (
     <div className="pack">
@@ -74,35 +96,25 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           <div className="locked" role="group" aria-label="Plan confirmed">
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b> {stale ? <span>The plan has changed since. Each changed line says what it was; confirm again to promise the new amounts.</span> : <span>Print the sheets.</span>}</p>
             {stale && behind.length > 0 && <p className="small">Sheets printed from the plan confirmed at {time(c.confirmed.at)} are out of date for: {behind.join(", ")}.</p>}
-            {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href="/review">Open Review</a></p>}
+            {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href={`/review?item=${encodeURIComponent(fresh[0].id)}`}>Open the first one in Review</a></p>}
             <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
             {confirmForm}
           </div>
         )}
 
-        <h2>Before you confirm</h2>
-        <ul className="gate">
-          {blocking.map(id => { const o = orders.find(x => x.id === id)!, g = gaps.get(id), st = ORDER_STATUS[orderStatus(w, id)]; return (
-            <li key={id} className="fail">
-              <span className="mark" aria-hidden="true">✕</span>
-              <span><b>{buyer(o.buyerId)}</b>{g ? `, ${weight(g.short, g.unit)} ${g.product} short` : ""}{!(g && orderStatus(w, id) === "short") && <> <span className={`chip ${st.tone}`}>{st.label}</span></>}{shipped.has(id) && <> <span className="chip wait">Shipped short at confirm</span></>}{g && <PendingCover w={w} orderId={id} />}</span>
-              <a className="button" href={`/orders?order=${encodeURIComponent(id)}`}>Resolve<span className="sr-only"> {buyer(o.buyerId)}</span></a>
-            </li>
-          ); })}
-          {settled.map(o => { const st = ORDER_STATUS[orderStatus(w, o.id)]; return (
-            <li key={o.id} className="pass">
-              <span className="mark" aria-hidden="true">✓</span>
-              <span><b>{buyer(o.buyerId)}</b> <span className={`chip ${st.tone}`}>{st.label}</span></span>
-            </li>
-          ); })}
-          <li className={warnings.length ? "warn" : "pass"}>
-            <span className="mark" aria-hidden="true">{warnings.length ? "!" : "✓"}</span>
-            <span>{warnings.length
-              ? <>{warnings.length === 1 ? "1 grower update" : `${warnings.length} grower updates`} not settled. The plan uses approved updates only, so this does not block confirming.</>
-              : "Every grower update is settled."}</span>
-            {warnings.length > 0 && <a className="button" href={`/review?item=${encodeURIComponent(warnings[0])}`}>Review</a>}
-          </li>
-        </ul>
+        {c ? (
+          <>
+            <p className="small">{blocking.length ? `${blocking.length} ${blocking.length === 1 ? "order was" : "orders were"} still short at confirm.` : "Every order was covered or settled."}{warnings.length > 0 && ` ${unsettledLine(warnings.length)}`}</p>
+            <details className="checklist no-print"><summary>Show checklist</summary>
+            {checklist}
+            </details>
+          </>
+        ) : (
+          <>
+            <h2>Before you confirm</h2>
+            {checklist}
+          </>
+        )}
 
         {!c && confirmForm}
         {c && canReceiveLate(w) && (
@@ -115,6 +127,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         )}
       </section>
 
+      {c && params.print === "1" && <AutoPrint />}
       {c && <Sheets w={w} version={version} toldSince={toldSince} known={known} bad={bad} />}
     </div>
   );
