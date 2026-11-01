@@ -572,7 +572,7 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
   assert.match(pack, /\{SHIP_SHORT\} without telling the buyer/);
   assert.equal(SHIP_SHORT, "Ship these orders short");
   assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
-  for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
+  for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w, cutOpen)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
   assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
   assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
   const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
