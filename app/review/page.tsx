@@ -3,10 +3,12 @@ import type { ReactNode } from "react";
 import { conflicts, planOf } from "../../src/commitments.ts";
 import type { Quantity } from "../../src/quantity.ts";
 import { FIELDS, type Field, type Span } from "../../src/updates.ts";
-import { BY_HAND, madeShort, needingRefresh, suggestReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
+import { BY_HAND, madeShort, needingRefresh, previewAnswers, previewHand, previewRecordedAnswers, suggestAnswers, suggestReading, type HandReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
 import { SEED } from "../../src/seed.ts";
 import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
-import { FIELD, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, weight } from "../lib/format.ts";
+import { FIELD, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, updateName, weight } from "../lib/format.ts";
+import { value as parseValue } from "../lib/values.ts";
+import { PreviewGate } from "../preview-gate.tsx";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
@@ -15,7 +17,7 @@ import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
 import { AnswerFields, ValueFields } from "../value-fields.tsx";
 import { readKept, type KeptForm } from "../lib/kept.ts";
-import { numberSpan } from "../lib/quote.ts";
+import { numberSpan, pickQuote } from "../lib/quote.ts";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { queueOrder } from "../lib/queue.ts";
@@ -120,8 +122,29 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const mine = w.ledger.snapshot.lots.filter(l => l.growerId === it.source.growerId);
   const lotChoices = mine.map(l => ({ value: l.id, label: `${l.product}, ${l.grade}, ${day(l.deliveryOn)}` }));
   const kinds = Object.entries(OPERATION_CHOICE).map(([value, label]) => ({ value, label }));
+  const CHECKED = "Changes you make here will be checked before approving.";
+  const at = new Date().toISOString();
   const detailChoices = (only?: Field[]) => (only ?? FIELDS.filter(f => f !== "unit")).map(f => ({ value: f, label: FIELD[f] }));
   const openDetails = byField.size ? [...byField.keys()] : undefined;
+  // The reply is already recorded when it came after the last question asked (an earlier Apply answers left a detail open).
+  const lastOf = (kind: string) => it.decisions.findLastIndex(d => d.kind === kind);
+  const recordedReply = !!openDetails && it.replies.length > 0 && lastOf("replied") > lastOf("asked");
+  // Values for the open details taken from words already on the page; typed values from a refused form win.
+  const suggested = openDetails ? suggestAnswers(w, it.id, openDetails) : {};
+  const answerKept: Record<string, string | undefined> = Object.fromEntries((openDetails ?? []).map(f => [f, kv("reply", `value-${f}`) ?? suggested[f]]));
+  // What those answers would do, worked out on a copy: only when every open detail has a value to show.
+  let answerPreview: Preview | undefined;
+  if (openDetails && openDetails.every(f => answerKept[f]?.trim())) {
+    try {
+      const src = recordedReply ? it.replies.at(-1)! : { id: `${it.source.id}-preview`, revision: 1, growerId: it.source.growerId, text: openDetails.map(f => answerKept[f]!.trim()).join(", ") };
+      const given = openDetails.map(f => { const raw = answerKept[f]!.trim(); return { field: f, quote: pickQuote(src.text, raw), value: parseValue(f, raw) }; });
+      const ap = recordedReply ? previewRecordedAnswers(w, it.id, given, at) : previewAnswers(w, it.id, src, given, at);
+      if (ap && ap.change && !ap.questions.length && !ap.error && ap.reviewHash) answerPreview = ap;
+    } catch { /* the values are not usable as shown: no preview */ }
+  }
+  const start = !it.proposal ? handStart(it, w, kv) : undefined;
+  const handPreview = start?.reading ? previewHand(w, it.id, start.reading, at) : undefined;
+  const handShown = handPreview && handPreview.change && !handPreview.questions.length && !handPreview.error && handPreview.reviewHash ? handPreview : undefined;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
   const decided = !!notice?.ok && (notice.on === "approve" || ((notice.on === "hold" || notice.on === "dismiss") && it.state === "dismissed"));
   // The one form in view that asks for a name when none is saved: Save these details for a message
@@ -130,6 +153,8 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const main = !it.proposal ? "hand" : p.needsRefresh ? "refresh" : byField.size > 0 ? "reply" : "approve";
   // Why Approve is off, said beside it.
   const off = p.questions.length > 0 || !p.change;
+  // One name field in view: when a secondary form was refused for the name, its own field shows and the main one hides.
+  const elsewhere = !!notice && !notice.ok && notice.field === "who" && !!notice.on && notice.on !== main;
   const why = byField.size > 0 ? (byField.size === 1 ? "Answer the open detail above to approve." : `Answer the ${byField.size} open details above to approve.`) : "Approve is available once the change can be worked out.";
   // The ask this message answers, by the order's product and buyer.
   const ask = it.requestId ? w.resolutions.find(r => r.id === it.requestId) : undefined, askOrder = ask && w.ledger.snapshot.orders.find(o => o.id === ask.orderId);
@@ -192,22 +217,24 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="dismiss" bad={bad} quiet /></form>}
           {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} quiet /></form>}
         </div>
-        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} kv={kv} />}
+        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} start={start!} quiet={elsewhere} />}
         {i && <details open={byField.size > 0 || failedOn("reply")}>
-          <summary>Add the grower's reply</summary>
-          <form action={replyAction} className="form"><Hidden {...v} />
-            <label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
-            <Problem bad={bad} on="reply" name="reply" />
+          <summary>{recordedReply ? "Answer the remaining details" : "Add the grower's reply"}</summary>
+          <form action={replyAction} className="form" id="reply-form"><Hidden {...v} />
+            {recordedReply
+              ? <><input type="hidden" name="recorded" value="1" /><p className="small">Their reply is recorded above. Give {byField.size === 1 ? "the remaining value" : "the remaining values"}; it does not need to be pasted again.</p></>
+              : <><label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
+                <Problem bad={bad} on="reply" name="reply" /></>}
             {openDetails
-              ? <AnswerFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply"}
-                  kept={Object.fromEntries(openDetails.map(f => [f, kv("reply", `value-${f}`)]))}
+              ? <AnswerFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply" || elsewhere}
+                  kept={answerKept}
                   quote={<><label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
                   extra={live > 0 ? <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button> : undefined} />
               : <>
                 <ValueFields on="reply" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
                 <label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
                 <Problem bad={bad} on="reply" name="quote" />
-                <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply"} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
+                <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply" || elsewhere} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
               </>}
           </form>
         </details>}
@@ -267,18 +294,27 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
       <ChangeTag it={it} p={p} event={event} />
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
-      {!closed && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
+      {!closed && !it.proposal && (handShown
+        ? <PreviewGate form="hand-form" note={CHECKED}><Impact title="If saved as shown:" head={lotLine(w, handShown)} p={handShown} names={names} why={cutReason(w, handShown, id => names.get(id) ?? id)} /></PreviewGate>
+        : <p className="small" role="status">{CHECKED}</p>)}
+      {!closed && it.proposal && p.questions.length > 0 && (answerPreview
+        ? <PreviewGate form="reply-form" note={CHECKED}><Impact title="If these answers are applied:" head={lotLine(w, answerPreview)} p={answerPreview} names={names} why={cutReason(w, answerPreview, id => names.get(id) ?? id)} /></PreviewGate>
+        : <p className="small" role="status">{CHECKED}</p>)}
+      {!closed && it.proposal && p.questions.length === 0 && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
           <p>Supply changed since this was read, and checking it again {p.error ? "found a problem" : "raised a new question"}. Refresh it to review it against current supply.</p>
-          <div><NamedSubmit label="Refresh review" known={known} on="refresh" bad={bad} purpose="this refresh" /></div>
+          <div><NamedSubmit label="Refresh review" known={known} on="refresh" bad={bad} quiet={elsewhere} purpose="this refresh" /></div>
         </form>
+      ) : !closed && it.proposal && byField.size > 0 ? (
+        // The reply form above offers Apply and approve once every detail has a value, so a second, blocked Approve is not shown.
+        <div className="panel"><a className="button" href="#open-questions">Answer the questions to approve</a></div>
       ) : !closed && it.proposal && (
         <form action={approveAction} className="panel"><Hidden {...v} />
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
           <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
           <div className="row">
-            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve"} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
+            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve" || elsewhere} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
             {off && <span id="approve-why" tabIndex={-1} className="small muted">{why}</span>}
           </div>
           <p className="fine-print">{p.change?.effect === "forecast" ? "Noting a forecast leaves confirmed supply as it is. " : "Approving changes this lot's confirmed supply only. "}It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
@@ -317,29 +353,42 @@ function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnT
 // The coordinator's own reading of an unread message, prefilled from the words in it. The
 // grower is the message's; the lot is one of theirs. A call note is its own evidence.
 const UNIT_NAMES: [string, string][] = [["lb", "lb"], ["kg", "kg"], ["g", "g"], ["each", "each"], ["case", "cases"]];
-function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; v: { item: string; version: number }; bad: Bad; known: boolean; kv: (on: KeptForm, name: string) => string | undefined }) {
-  const guess = suggestReading(w, it.id), call = it.source.id.startsWith("call-"), s = w.ledger.snapshot;
-  const lots = s.lots.filter(l => l.growerId === it.source.growerId);
-  // Starting text: what was typed if the form was refused, else the guess. The words default to the
-  // shortest stretch of the message holding the guessed amount, so a late message needs no typing.
+type World = Awaited<ReturnType<typeof current>>["state"];
+type Kept = (on: KeptForm, name: string) => string | undefined;
+// What the hand form starts with: what was typed if the form was refused, else the guess. The words default to the
+// shortest stretch of the message holding the guessed amount, so a late message needs no typing. reading is the
+// whole form as a hand reading when every value is there, which is what "Save and approve" would save.
+function handStart(it: InboxItem, w: World, kv: Kept) {
+  const guess = suggestReading(w, it.id), call = it.source.id.startsWith("call-");
   const amount = kv("hand", "amount") ?? (guess.quantity ? String(guess.quantity.amount) : undefined);
   const quote = kv("hand", "quote") ?? (!call && amount ? numberSpan(it.source.text, amount) : undefined);
-  const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
   const grade = kv("hand", "grade") ?? guess.grade, deliveryOn = kv("hand", "day") ?? guess.deliveryOn;
-  const complete = !!((kv("hand", "operation") ?? guess.operation) && (kv("hand", "lot") ?? guess.lotId) && amount && grade && deliveryOn && (call || quote));
+  const operation = kv("hand", "operation") ?? guess.operation, lotId = kv("hand", "lot") ?? guess.lotId, unit = kv("hand", "unit") ?? guess.quantity?.unit ?? "lb", target = kv("hand", "target");
+  const complete = !!(operation && lotId && amount && grade && deliveryOn && (call || quote));
+  const usable = complete && /^\d{1,9}$/.test(amount!) && Number(amount) > 0 && UNIT_NAMES.some(([u]) => u === unit);
+  const reading: HandReading | undefined = usable
+    ? { operation: operation as HandReading["operation"], lotId: lotId!, quantity: { amount: Number(amount), unit: unit as Quantity["unit"] }, grade: grade!, deliveryOn: deliveryOn!, ...(target ? { correctsEventId: target } : {}), ...(quote ? { quote } : {}) }
+    : undefined;
+  return { call, amount, quote, grade, deliveryOn, operation, lotId, unit, target, complete, reading };
+}
+// noValidate: the browser's own bubble would hide the app's message; the server checks every field and names the one at fault.
+function HandForm({ it, w, v, bad, known, start, quiet }: { it: InboxItem; w: World; v: { item: string; version: number }; bad: Bad; known: boolean; start: ReturnType<typeof handStart>; quiet: boolean }) {
+  const { call, amount, quote, grade, deliveryOn, operation, lotId, unit, complete } = start, s = w.ledger.snapshot;
+  const lots = s.lots.filter(l => l.growerId === it.source.growerId);
+  const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
   return (
     <details open>
       <summary>Enter the details yourself</summary>
-      <form action={readByHandAction} className="form"><Hidden {...v} />
+      <form action={readByHandAction} className="form" id="hand-form" noValidate><Hidden {...v} />
         <p className="muted small">{call ? "Your call note is the evidence. Add words from it only to point at one part." : "Copy the grower's own words from the message; they are kept as the evidence."} Then check it and approve as usual.</p>
         <label>What changed
-          <select name="operation" defaultValue={kv("hand", "operation") ?? guess.operation ?? ""} required {...invalid(bad, "hand", "operation")}>
+          <select name="operation" defaultValue={operation ?? ""} required {...invalid(bad, "hand", "operation")}>
             <option value="" disabled>Choose</option>
             {Object.entries(OPERATION_CHOICE).map(([o, label]) => <option key={o} value={o}>{label}</option>)}
           </select></label>
         <Problem bad={bad} on="hand" name="operation" />
         <label>Lot
-          <select name="lot" defaultValue={kv("hand", "lot") ?? guess.lotId ?? ""} required {...invalid(bad, "hand", "lot")}>
+          <select name="lot" defaultValue={lotId ?? ""} required {...invalid(bad, "hand", "lot")}>
             <option value="" disabled>Choose</option>
             {lots.map(l => <option key={l.id} value={l.id}>{l.product}, {l.grade}, {day(l.deliveryOn)}</option>)}
           </select></label>
@@ -347,7 +396,7 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
         <div className="row">
           <label>Amount<input name="amount" inputMode="numeric" required defaultValue={amount} {...invalid(bad, "hand", "amount")} /></label>
           <label>Unit
-            <select name="unit" defaultValue={kv("hand", "unit") ?? guess.quantity?.unit ?? "lb"} {...invalid(bad, "hand", "unit")}>{UNIT_NAMES.map(([u, n]) => <option key={u} value={u}>{n}</option>)}</select></label>
+            <select name="unit" defaultValue={unit} {...invalid(bad, "hand", "unit")}>{UNIT_NAMES.map(([u, n]) => <option key={u} value={u}>{n}</option>)}</select></label>
         </div>
         <Problem bad={bad} on="hand" name="amount" />
         <Problem bad={bad} on="hand" name="unit" />
@@ -356,14 +405,14 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
         <label>Delivery day<input name="day" type="date" required defaultValue={deliveryOn} {...invalid(bad, "hand", "day")} /></label>
         <Problem bad={bad} on="hand" name="day" />
         {targets.length > 0 && <label>Earlier update being corrected, if this is a correction
-          <select name="target" defaultValue={kv("hand", "target") ?? ""}><option value="">Not a correction</option>
-            {targets.map(e => { const l = s.lots.find(x => x.id === e.lotId)!; return <option key={e.id} value={e.id}>{l.product}: {quantity(e.lotBefore)} to {quantity(e.lotAfter)}</option>; })}
+          <select name="target" defaultValue={start.target ?? ""}><option value="">Not a correction</option>
+            {targets.map(e => { const l = s.lots.find(x => x.id === e.lotId)!; return <option key={e.id} value={e.id}>{updateName(l.growerId, l.product, e.lotAfter)}</option>; })}
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
         {/* Every value above is in this form, so when all of them are filled the primary button saves them and approves the change they produce. */}
         <div className="row">
-          <NamedSubmit label=<>{complete ? "Save and approve" : "Save these details"} <span className="sr-only">for {grower(it.source.growerId)}</span></> {...(complete ? { name: "andApprove", value: "1" } : {})} className="primary" known={known} on="hand" bad={bad} purpose={complete ? "this approval" : "this reading"} />
+          <NamedSubmit label=<>{complete ? "Save and approve" : "Save these details"} <span className="sr-only">for {grower(it.source.growerId)}</span></> {...(complete ? { name: "andApprove", value: "1" } : {})} className="primary" known={known} on="hand" bad={bad} quiet={quiet} purpose={complete ? "this approval" : "this reading"} />
           {complete && <button type="submit">Save these details <span className="sr-only">for {grower(it.source.growerId)}</span></button>}
         </div>
         {complete && <p className="fine-print">Save and approve saves these details, then approves the change they show. Save these details only saves them.</p>}
@@ -396,6 +445,7 @@ function HistoryLine({ d, it }: { d: Decision; it: InboxItem }) {
     case "returned": return <>{d.actor} returned it to {g}{q(d.note)}</>;
     case "dismissed": return <>{d.actor} dismissed it{q(d.note)}</>;
     case "refreshed": return <>{d.actor} checked it again against current supply</>;
+    case "answered": return <>{d.actor} applied the answers from {g}'s reply</>;
     case "approved": return <>{d.actor} approved the supply change</>;
     default: return <>{d.actor}: {d.kind}</>;
   }
@@ -448,12 +498,18 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
 }
 
-function Impact({ p, names, why }: { p: Preview; names: Map<string, string>; why?: string }) {
+// The lot a preview changes and by how much, in words: "Tomato from Birch Hollow Gardens: 80 lb → 70 lb (down 10 lb)".
+function lotLine(w: Awaited<ReturnType<typeof current>>["state"], p: Preview): string | undefined {
+  const c = p.change, lot = c && w.ledger.snapshot.lots.find(l => l.id === c.lotId);
+  return c && lot && c.effect !== "forecast" ? `${lot.product[0].toUpperCase()}${lot.product.slice(1)} from ${grower(lot.growerId)}: ${changeLine(c.before, c.after)}` : undefined;
+}
+function Impact({ p, names, why, title = "Who gets what if you approve", head }: { p: Preview; names: Map<string, string>; why?: string; title?: string; head?: string }) {
   const changed = p.orders.filter(o => JSON.stringify(o.before) !== JSON.stringify(o.after));
   const extra = p.unallocated.filter(u => u.before !== u.after);
   return (
     <div className="panel impact">
-      <h3>Who gets what if you approve</h3>
+      <h3>{title}</h3>
+      {head && <p className="small"><b>{head}</b></p>}
       {p.orders.map(o => {
         const moved = changed.includes(o);
         return (

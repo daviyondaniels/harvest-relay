@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { parseOperation, type Answer } from "../src/answers.ts";
+import type { Answer } from "../src/answers.ts";
 import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTransport } from "../src/interpret.ts";
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
@@ -11,16 +11,17 @@ import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
-import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
+import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyAndApprove, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_NEEDED, NAME_PROBLEM, checkName, runAs } from "./lib/names.ts";
 import { FieldError, fieldOf, type Where } from "./lib/errors.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
-import { keepTyped, type KeptForm } from "./lib/kept.ts";
+import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
 import { approvalResult, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
+import { value } from "./lib/values.ts";
 
 // Form handlers for the workspace. Each one acts on the stored version the page showed;
 // any error comes back to the same page as a message, and the stored state is unchanged.
@@ -66,23 +67,6 @@ function field(f: FormData): Field {
   if (!FIELDS.includes(v)) throw new FieldError("Choose which detail this is about.", "field");
   return v;
 }
-// Reads a value typed by the coordinator, in the same shapes the model must use.
-function value(fieldName: Field, raw: string, at = "value"): unknown {
-  if (!raw) throw new FieldError("Enter the value.", at);
-  if (fieldName === "operation") {
-    const kind = parseOperation(raw);
-    if (!kind) throw new FieldError("Choose what changed: a new total, added to what they have, a correction or a forecast.", at);
-    return kind;
-  }
-  if (fieldName === "quantity" || fieldName === "unit" || fieldName === "pack") {
-    const m = raw.toLowerCase().match(/^(\d+)\s*(g|kg|lbs?|each|cases?)$/);
-    if (!m) throw new FieldError(`Write the ${fieldName === "pack" ? "contents of one case" : "quantity"} as a whole number and a unit, like "3 kg", "30 lb" or "4 cases".`, at);
-    const unit = m[2].startsWith("case") ? "case" : m[2] === "lbs" ? "lb" : m[2];
-    if (fieldName === "pack" && unit === "case") throw new FieldError("Write the contents of one case in g, kg, lb or each.", at);
-    return { amount: Number(m[1]), unit };
-  }
-  return raw;
-}
 // from "reply": the words that answer it may be left blank, and are then picked from the reply
 // itself (lib/quote.ts: a literal stretch of it, never words of our own). From the message they are required.
 function answers(f: FormData, from: "reply" | "message", text?: string): Answer[] {
@@ -118,7 +102,7 @@ function need(f: FormData, k: string, ask: string): string {
 // result beside the row it was done from and moves focus there.
 function back(item: string, notice: Notice, on?: string, kept: Record<string, string> = {}, from?: string): never {
   revalidatePath("/", "layout");
-  if (from) redirect(`${from}?${new URLSearchParams({ item, ...signNotice(notice, { page: from, id: item }) })}`);
+  if (from) redirect(`${from}?${new URLSearchParams({ item, ...kept, ...signNotice(notice, { page: from, id: item }) })}`);
   const anchor = notice.field ? "" : notice.ok && on === "approve" ? "#change" : "#item";
   redirect(`/review?${new URLSearchParams({ item, ...kept, ...signNotice(notice, { page: "/review", id: item }) })}${anchor}`);
 }
@@ -138,7 +122,7 @@ async function run(f: FormData, change: (w: Workbench, item: string, who: string
     const go = async (who: string) => { await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase }); };
     await (step.anon ? go("") : asNamed(f, go));
     notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
-  } catch (e) { notice = await failed(e, step.on, undefined, { filled: filledDetails(f) }); if (step.keep) kept = keepTyped(f, step.keep); }
+  } catch (e) { notice = await failed(e, step.on, undefined, { filled: filledDetails(f) }); kept = { ...(step.keep ? keepTyped(f, step.keep) : {}), ...keepWho(f) }; }
   back(item, notice, step.on, kept, returnPage(str(f, "from")));
 }
 
@@ -151,10 +135,20 @@ export async function askAction(f: FormData) {
 // the page showed, so a page that is out of date is refused like any other reply.
 export async function replyAction(f: FormData) {
   let before = new Map<string, number>(), approvedNow = false;
-  const both = str(f, "andApprove") === "1";
+  const both = str(f, "andApprove") === "1", recorded = str(f, "recorded") === "1";
   return run(f, (w, i, who) => {
     const it = w.items.find(x => x.id === i);
     if (!it) throw new Error("Unknown inbox item");
+    // The reply is already recorded (an earlier Apply answers left a detail open): the answers go against it, and it is not recorded again.
+    if (recorded) {
+      const last = it.replies.at(-1);
+      if (!last) throw new Error("No reply is recorded yet. Paste it first.");
+      before = shortMap(w);
+      if (!both) return answerRecorded(w, i, answers(f, "reply", last.text), [], who, now());
+      const r = answerRecordedAndApprove(w, i, answers(f, "reply", last.text), [], who, now());
+      approvedNow = r.approved;
+      return r.next;
+    }
     const text = need(f, "reply", "Paste the grower's reply exactly as received.");
     const source = { id: `${it.source.id}-reply-${it.replies.length + 1}`, revision: 1, growerId: it.source.growerId, text };
     if (!both) return reply(w, i, source, answers(f, "reply", text), [], who, now());
@@ -162,7 +156,7 @@ export async function replyAction(f: FormData) {
     const r = replyAndApprove(w, i, source, answers(f, "reply", text), [], who, now());
     approvedNow = r.approved;
     return r.next;
-  }, { on: "reply", keep: "reply", done: "Reply added.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : { text: "Answers applied. One more detail needs an answer." } });
+  }, { on: "reply", keep: "reply", done: recorded ? "Answers applied." : "Reply added.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : { text: "Answers applied. One more detail needs an answer." } });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
 export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", keep: "correct", done: "Correction applied." }); }
@@ -222,7 +216,9 @@ function approved(w: Workbench, item: string, before: Map<string, number>): Part
   if (e?.effect === "forecast") return { text: "Forecast noted. Confirmed supply is unchanged." };
   const r = approvalResult(w, item, before), c = conflicts(w.ledger).find(x => x.lotId === e?.lotId);
   // An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
-  return c ? { text: `${r.text} ${weight(c.excess, c.unit)} of what you promised can't be filled — decide who takes the cut.`, res: c.lotId } : r;
+  if (c) return { text: `${r.text} ${weight(c.excess, c.unit)} of what you promised can't be filled — decide who takes the cut.`, res: c.lotId };
+  // Every approval says who it covers or leaves short; one that moves no buyer says so, rather than saying nothing about buyers.
+  return /is now (covered|\d)|short\./.test(r.text) ? r : { ...r, text: `${r.text} No buyer's order changes.` };
 }
 
 // Live Meta reading. Off unless the server sets a call allowance and has the key; the
@@ -284,8 +280,13 @@ function res(w: Workbench, f: FormData): Resolution {
   return r;
 }
 // callBlank: a call may be recorded with no note (the domain says so in the history).
-function answerOf(f: FormData, callBlank = false): { channel: "text" | "call"; text: string; quote?: string } {
+// A buyer's answer with no channel picked is recorded as only that (callBlank): no call and no text is claimed.
+function answerOf(f: FormData, callBlank = false): { channel: "text" | "call" | "recorded"; text: string; quote?: string } {
   const channel = str(f, "channel");
+  if (channel === "" && callBlank) {
+    if (str(f, "text")) throw new FieldError("Choose whether the answer came by text or by phone, or clear what they said.", "channel");
+    return { channel: "recorded", text: "" };
+  }
   if (channel === "call") return { channel, text: callBlank && !str(f, "text") ? "" : words(f, "text", "the call note") };
   if (channel !== "text") throw new FieldError("Choose whether the answer came by text or by phone.", "channel");
   const text = words(f, "text", "the reply text"), quote = words(f, "quote", "the words that answer it");
@@ -309,7 +310,7 @@ async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workb
     const go = async (who: string) => { await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); landed = review?.(next); return next; }, { rebase: step.rebase }); };
     await (step.anon ? go("") : asNamed(f, go));
     notice = { text: step.done, ok: true, on: step.on, ...(resId ? { res: resId } : {}) };
-  } catch (e) { notice = await failed(e, step.on, resId || undefined, { supply: step.supply }); if (step.keep) kept = keepTyped(f, step.keep); }
+  } catch (e) { notice = await failed(e, step.on, resId || undefined, { supply: step.supply }); kept = { ...(step.keep ? keepTyped(f, step.keep) : {}), ...keepWho(f) }; }
   if (landed && notice.ok) {
     revalidatePath("/", "layout");
     redirect(`/review?${new URLSearchParams({ item: landed, ...signNotice({ text: step.done, ok: true, on: step.on }, { page: "/review", id: landed }) })}#item`);

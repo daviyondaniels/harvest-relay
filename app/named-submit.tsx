@@ -1,14 +1,18 @@
 "use client";
+import { useSearchParams } from "next/navigation";
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from "react";
 import { Problem, invalid, type Bad } from "./lib/field-error.tsx";
 import { NAME_MAX } from "./lib/names.ts";
+import { KEPT_WHO } from "./lib/kept.ts";
 
 // The coordinator's name is asked on the first action that records it, in the same form, so
 // there is no separate Save: typing it and pressing Enter or the button does both. With a name
 // saved (known) nothing extra is shown. A refused name is explained beside its own field, which
 // is named by the form (on) like any other field, so the page can move focus there.
 // The visible label is "Your name"; a screen reader also hears what it is for ("Your name, for
-// this approval"), taken from the form (on) unless the caller says (purpose).
+// this approval"), taken from the form (on) unless the caller says (purpose). That is the input's own
+// accessible name (aria-label), one string, so no stray space comes between the name and the comma.
+// A name typed into a refused form comes back as its starting text (the kept value, lib/kept.ts).
 // quiet: a secondary form on a page with a primary one shows no name field of its own. It uses
 // the remembered name; with none, it is refused and the field then appears beside it.
 type Named = { known: boolean; on?: string; bad?: Bad; purpose?: string; quiet?: boolean };
@@ -19,12 +23,13 @@ const PURPOSE: [RegExp, string][] = [
 ];
 const purposeOf = (on: string) => PURPOSE.find(([re]) => re.test(on))?.[1] ?? "this change";
 export function NameField({ known, on = "named", bad, purpose, quiet }: Named) {
+  const kept = useSearchParams().get(KEPT_WHO) ?? undefined;
   if (known) return null;
   const refused = bad?.on === on && bad.field === "who";
   if (quiet && !refused) return null;
   return <>
-    <label className="named"><span>Your name<span className="sr-only">, for {purpose ?? purposeOf(on)}</span></span>
-      <input name="who" required maxLength={NAME_MAX} autoComplete="name" {...invalid(bad, on, "who")} />
+    <label className="named"><span>Your name</span>
+      <input name="who" required defaultValue={kept} aria-label={`Your name, for ${purpose ?? purposeOf(on)}`} maxLength={NAME_MAX} autoComplete="name" {...invalid(bad, on, "who")} />
     </label>
     <Problem bad={bad} on={on} name="who" />
   </>;

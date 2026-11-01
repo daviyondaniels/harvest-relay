@@ -13,7 +13,7 @@ function check(evidence: Evidence, recordedBy: string): Evidence {
   const quote = typeof evidence?.quote === "string" ? evidence.quote.trim().slice(0, 500) : "";
   if (!quote) throw new Error("Evidence quote required");
   if (typeof evidence.messageId !== "string" || !evidence.messageId.trim() || evidence.messageId.length > 160) throw new Error("Evidence message ID required");
-  if (evidence.channel !== "text" && evidence.channel !== "call") throw new Error("Evidence channel must be text or call");
+  if (evidence.channel !== "text" && evidence.channel !== "call" && evidence.channel !== "recorded") throw new Error("Evidence channel must be text, call or recorded");
   if (typeof recordedBy !== "string" || !recordedBy.trim() || recordedBy.length > NAME_MAX) throw new Error("Named recorder required");
   return { messageId: evidence.messageId, channel: evidence.channel, quote };
 }

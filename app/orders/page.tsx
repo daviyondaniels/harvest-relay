@@ -121,7 +121,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
   const mine = plan.allocations.filter(a => a.orderId === orderId), unit = normalize(o.quantity).unit;
   const direct = mine.filter(a => a.kind === "requested").reduce((n, a) => n + a.amount, 0);
   const subs = mine.filter(a => a.kind === "approved-substitution"), gap = plan.unfilled.find(u => u.orderId === orderId)?.amount ?? 0;
-  const stage = stageOf(w.ledger, orderId), st = orderChip(orderStatus(w, orderId), stage.stage, gap, unit), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0));
+  const stage = stageOf(w.ledger, orderId), st = orderChip(orderStatus(w, orderId), stage.stage, gap, unit), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0), w.resolutions.some(r => r.orderId === orderId && r.status === "accepted" && r.option.kind === "offer-substitute") || !!toldBuyer(w, orderId));
   const offered = options(w.ledger, orderId, CONTACTS).map((opt, index) => ({ opt, index }));
   const resolutions = w.resolutions.filter(r => r.orderId === orderId);
   // A problem from a card's form is shown on that card while the card still shows the form;
@@ -172,6 +172,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
         <span className={`chip ${st.tone}`}>{st.label}</span>
         {unsent(w, orderId) && <span className="chip quiet">Draft not sent</span>}
       </div>
+      <p className="muted small">Recorded only; nothing is delivered.</p>
       {cuts}
       {promised.length > 0 && <p className="muted small">{promised.join(". ")}.</p>}
       <p className="lot">
@@ -182,7 +183,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
         {subs.length > 0 && <tr><td>Gets by substitute</td><td>{subs.map(a => <span key={a.lotId}>{weight(a.amount, unit)} {lots.get(a.lotId)!.product} from {grower(lots.get(a.lotId)!.growerId)}<br /></span>)}</td></tr>}
         <tr><td>Short</td><td className={gap ? "worse" : ""}>{weight(gap, unit)}</td></tr>
         <tr><td>Substitutes this buyer accepts</td><td>{o.approvedSubstitutions.length ? o.approvedSubstitutions.map(s => { const src = permissionSource(w.ledger, orderId, s.product); return (
-          <span key={s.product}>{s.product} ({s.acceptedGrades.join(", ")}){s.maxAmount !== undefined ? `, up to ${weight(s.maxAmount, unit)}` : ""}{src.kind === "on-file" ? ", on file" : <>: {src.record.kind === "substitute-accepted" ? <>agreed {src.record.evidence.channel === "call" ? "by phone" : "by text"}, recorded by {src.record.recordedBy}: <span className="quote">“{src.record.evidence.quote}”</span></> : "agreed"}</>}<br /></span>
+          <span key={s.product}>{s.product} ({s.acceptedGrades.join(", ")}){s.maxAmount !== undefined ? `, up to ${weight(s.maxAmount, unit)}` : ""}{src.kind === "on-file" ? ", on file" : <>: {src.record.kind === "substitute-accepted" ? <>agreed{src.record.evidence.channel === "call" ? " by phone" : src.record.evidence.channel === "text" ? " by text" : ""}, recorded by {src.record.recordedBy}: <span className="quote">“{src.record.evidence.quote}”</span></> : "agreed"}</>}<br /></span>
         ); }) : <span className="muted">None yet</span>}</td></tr>
       </tbody></table>
 
@@ -235,7 +236,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
           <li key={`${r.id}-reply`}><span className="muted">{r.reply!.channel === "call" ? "Call note" : "Reply"}</span> “{r.reply!.text}”</li>
         )))}</ol>
       </div>}
-      <p className="fine-print">Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to. Messages are recorded, not delivered, in this demo.</p>
+      <p className="fine-print">Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to.</p>
     </section>
 
     <aside className="preview" aria-labelledby="drafts">
@@ -262,17 +263,17 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
   const { opt } = x, amt = weight(amountOf(opt), opt.unit), on = `opt-${x.index}-draft`;
   const line = opt.kind === "ask-grower" ? `Ask ${grower(opt.contactId)} for ${amt}` : opt.kind === "offer-substitute" ? `Offer ${buyerName} ${opt.product} (${opt.grade}) for ${amt}` : `Tell ${buyerName} the order is ${amt} short`;
   return (
-    <form action={sendNowAction} className="option-card primary-card">
+    <form action={sendNowAction} className="option-card primary-card" noValidate>
       <Hidden order={order} version={version} res={`opt-${x.index}`} />
       <input type="hidden" name="index" value={x.index} /><input type="hidden" name="kind" value={opt.kind} />
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       <b>{line}: {why}</b>
-      {open ? <><p className="draft">{draft}</p><OpenNote open={open} sr=" for this step" /></>
+      {open ? <><p className="draft">{draft}</p><OpenNote open={open} sr=" This is the message for this step." /></>
         : <>
           <label>Message<span className="sr-only"> ({line})</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
           <Problem bad={bad} on={on} name="body" />
           <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> ({line})</span></>} className="primary" known={known} on={on} bad={bad} />
-            <span className="fine-print">Recorded only; nothing is delivered. You can edit the words first.</span></div>
+            <span className="fine-print">You can edit the words first.</span></div>
         </>}
     </form>
   );
@@ -281,7 +282,7 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
 // An option that already has a message: a draft is linked to; a sent one says it is sent, never "already open".
 function OpenNote({ open, sr }: { open: Resolution; sr: string }) {
   return open.status === "sent" ? <a className="small" href={`#${open.id}`}>Sent. Waiting on the answer.<span className="sr-only">{sr}</span></a>
-    : <a className="small" href={`#${open.id}`}>Message already open<span className="sr-only">{sr}</span></a>;
+    : <a className="small" href={`#${open.id}`}>Message already open.<span className="sr-only">{sr}</span></a>;
 }
 
 // One tap for another way to cover the short: the same draft, check and send as the Next step (sendNowAction),
@@ -296,9 +297,9 @@ function AltButton({ x, order, buyerName, version, open, known, bad, draft }: { 
       <input type="hidden" name="index" value={x.index} /><input type="hidden" name="kind" value={opt.kind} />
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       <input type="hidden" name="body" value={draft} />
-      {open ? <OpenNote open={open} sr={` for ${label}`} />
+      {open ? <OpenNote open={open} sr={` This is the message for ${label}.`} />
         : <div><NamedSubmit label={<>{label}<span className="sr-only">{more}</span></>} known={known} on={on} bad={bad} quiet /></div>}
-      <span className="fine-print">{opt.kind === "offer-substitute" ? `${amt} of ${opt.product} (${opt.grade}). ` : ""}Recorded only; nothing is delivered.</span>
+      {opt.kind === "offer-substitute" && <span className="fine-print">{amt} of {opt.product} ({opt.grade}).</span>}
     </form>
   );
 }
@@ -335,8 +336,8 @@ function OptionCard({ opt, index, order, buyerName, version, open, known, bad }:
         <span className="small">The order will be {amt} short.</span>
       </>}
       {/* Seven cards each have this button, so its name says who the message is to. */}
-      {open ? <OpenNote open={open} sr={` to ${opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}`} />
-        : <div><NamedSubmit label={<>Draft message<span className="sr-only"> {opt.kind === "ask-grower" ? `to ${grower(opt.contactId)}` : opt.kind === "offer-substitute" ? `to ${buyerName} offering ${opt.product} (${opt.grade})` : `to ${buyerName} about the shortfall`}</span></>} known={known} on={`opt-${index}-draft`} bad={bad} /></div>}
+      {open ? <OpenNote open={open} sr={` This is the message to ${opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}.`} />
+        : <div><NamedSubmit label={<>Draft message<span className="sr-only"> {opt.kind === "ask-grower" ? `to ${grower(opt.contactId)}` : opt.kind === "offer-substitute" ? `to ${buyerName} offering ${opt.product} (${opt.grade})` : `to ${buyerName} about the shortfall`}</span></>} known={known} on={`opt-${index}-draft`} bad={bad} quiet /></div>}
     </form>
   );
 }
@@ -392,7 +393,7 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
         <form action={sendAction} className="form"><Hidden {...h} />
           <div className="row">
             <NamedSubmit label={<>Send<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
-            <span className="fine-print">{sendable ? "Recorded only; nothing is delivered." : "Confirm the words above first."}</span>
+            <span className="fine-print">{sendable ? "" : "Confirm the words above first."}</span>
           </div>
         </form>
         {fieldError("send")}
@@ -430,7 +431,7 @@ function ReplyControls({ r, w, version, me, typed, error }: { r: Resolution; w: 
         : <>
             <details open>
               <summary>Log their call<span className="sr-only"> ({to})</span></summary>
-              <form action={requestedCallAction} className="form"><Hidden {...h} />
+              <form action={requestedCallAction} className="form" noValidate><Hidden {...h} />
                 <label>What {to} said<textarea name="note" required maxLength={480} rows={3} defaultValue={error?.on === "call" ? typed("call", "note") : undefined} {...inv("call", "note")} /></label>
                 {problem("call", "note")}
                 {fieldError("call")}
@@ -451,10 +452,10 @@ function BuyerReply({ h, to, error, known, kept }: { h: { order: string; version
     <details open>
       <summary>Record the buyer's answer<span className="sr-only"> ({to})</span></summary>
       <form action={buyerReplyAction} className="form"><Hidden {...h} />
-        <label>How it came<select name="channel" defaultValue={kept.channel === "text" ? "text" : "call"} {...inv("reply", "channel")}><option value="call">Phone call</option><option value="text">Text message</option></select></label>
+        <label>How it came<select name="channel" defaultValue={kept.channel === "text" || kept.channel === "call" ? kept.channel : ""} {...inv("reply", "channel")}><option value="">Not stated</option><option value="call">Phone call</option><option value="text">Text message</option></select></label>
         {problem("reply", "channel")}
-        <label>What they said (optional for a call)<textarea name="text" maxLength={480} rows={2} defaultValue={kept.text} {...inv("reply", "text")} /></label>
-        <span className="fine-print">For a text, paste it in full. For a call, a note is optional.</span>
+        <label>What they said (optional unless it was a text)<textarea name="text" maxLength={480} rows={2} defaultValue={kept.text} {...inv("reply", "text")} /></label>
+        <span className="fine-print">For a text, paste it in full. Otherwise a note is optional; with no note, only that you recorded the answer is kept.</span>
         {problem("reply", "text")}
         <label>Only if their text doesn't say plainly yes or no: the words that answer it<input name="quote" maxLength={480} defaultValue={kept.quote} {...inv("reply", "quote")} /></label>
         {problem("reply", "quote")}

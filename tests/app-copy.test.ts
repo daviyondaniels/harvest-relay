@@ -27,7 +27,8 @@ test("M6: the supply amount field takes whole numbers and the action says so", (
 test("M8: the Orders fine print says nothing is delivered", () => {
   const page = source("app/orders/page.tsx");
   assert.doesNotMatch(page, /Nothing is reserved, sent to buyers/);
-  assert.match(page, /Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to\. Messages are recorded, not delivered, in this demo\./);
+  assert.match(page, /Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to\./);
+  assert.equal(page.match(/Recorded only; nothing is delivered\./g)?.length, 1, "said once, in the page intro, not on every form");
   assert.doesNotMatch(page, /Allocation rule/);
 });
 
@@ -87,7 +88,7 @@ test("Ease task 2: NamedSubmit shows the name input only when no name is known, 
   const ns = source("app/named-submit.tsx");
   assert.match(ns, /^"use client";/);
   assert.match(ns, /if \(known\) return null;/, "a known name shows nothing extra");
-  assert.match(ns, /<input name="who" required maxLength=\{NAME_MAX\} autoComplete="name"/);
+  assert.match(ns, /<input name="who" required defaultValue=\{kept\} aria-label=\{`Your name, for \$\{purpose \?\? purposeOf\(on\)\}`\} maxLength=\{NAME_MAX\} autoComplete="name"/);
   assert.match(ns, /<Problem bad=\{bad\} on=\{on\} name="who" \/>/, "a refused name is explained beside the input");
   assert.match(ns, /<NameField known=\{known\}[^>]*\/>\s*<button type="submit"/, "the input comes directly before the button, in the same form");
   assert.doesNotMatch(ns, />\s*Save\s*</, "no separate Save button");
@@ -503,7 +504,7 @@ test("Ease task 4: Orders wording, the one-step send, the single status chip and
   assert.match(orders, /Sent by \{out\.sentBy\}, \{time\(out\.sentAt\)\}\. \(This demo records messages; it doesn't deliver them\.\)/);
   assert.doesNotMatch(orders, /Recorded as sent \(demo/);
   // The Next step sends in one step from an editable message; the other options still draft first.
-  assert.match(orders, /<form action=\{sendNowAction\} className="option-card primary-card">/);
+  assert.match(orders, /<form action=\{sendNowAction\} className="option-card primary-card" noValidate>/);
   assert.match(orders, /<textarea name="body" required maxLength=\{480\} rows=\{4\} defaultValue=\{draft\}/);
   assert.doesNotMatch(orders, /Use this message/);
   assert.match(orders, /<form action=\{startResolutionAction\} className="option-card">/);

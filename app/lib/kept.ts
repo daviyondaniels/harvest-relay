@@ -2,6 +2,7 @@
 // nothing has to be typed again. The values travel as plain query parameters, one per field,
 // each cut to its field's own limit. They are only ever shown as a field's starting text: they
 // are never signed and never trusted, and they are not part of the signed notice.
+import { NAME_MAX } from "../../src/hub.ts";
 type Params = Record<string, string | string[] | undefined>;
 export const KEEP = {
   ask: { field: 40, question: 500 },
@@ -19,6 +20,14 @@ export const KEEP = {
 export type KeptForm = keyof typeof KEEP;
 const key = (on: string, name: string) => `k_${on}_${name}`;
 const cut = (s: string, max: number) => Array.from(s).slice(0, max).join("");
+
+// The name typed beside a refused form is kept too, so a refusal about something else does not empty it.
+// It is the same kind of starting text as any other kept field (NameField reads it back).
+export const KEPT_WHO = "k_who";
+export function keepWho(f: FormData): Record<string, string> {
+  const v = f.get("who");
+  return typeof v === "string" && v.trim() ? { [KEPT_WHO]: cut(v.trim(), NAME_MAX) } : {};
+}
 
 // The query parameters that carry a refused form's typed fields.
 export function keepTyped(f: FormData, on: KeptForm): Record<string, string> {

@@ -30,6 +30,12 @@ export const OPERATION: Record<Operation, string> = {
   "replace-total": "New total", "add-quantity": "Addition", correction: "Correction", forecast: "Forecast", unresolved: "Not clear yet"
 };
 // The four kinds of change, said the way a coordinator would say them (the select's values are the tokens).
+// An earlier update named in plain words, for the hand form's "being corrected" list:
+// "Birch Hollow Gardens' zucchini update (4 cases of 10 lb)". The amount is what that update set the lot to.
+export function updateName(growerId: string, product: string, after: Quantity): string {
+  const g = grower(growerId);
+  return `${g}${g.endsWith("s") ? "'" : "'s"} ${product.toLowerCase()} update (${quantity(after)})`;
+}
 export const OPERATION_CHOICE = { "replace-total": "A new total", "add-quantity": "Added to what they have", correction: "A correction", forecast: "A forecast, not confirmed" } as const;
 // "120 lb → 60 lb (down 60 lb)": the lot before and after, and by how much.
 export function changeLine(before: Quantity, after: Quantity): string {
@@ -94,8 +100,9 @@ export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Sta
   planned: { label: "Planned", tone: "quiet" }, promised: { label: "Promised", tone: "ready" }, packed: { label: "Packed", tone: "done" }, "handed-off": { label: "Handed off", tone: "done" }
 };
 // "Promised 40 of 50 lb", and what the live plan gives the order beyond that, when it does.
-export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number): string[] {
+// settled: the buyer has already agreed to a substitute or been told they will be short, so "not promised yet" would mislead.
+export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number, settled = false): string[] {
   const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
   const extra = planned - s.promised;
-  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 ? ["Not promised to the buyer yet"] : [])];
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 && !settled ? ["Not promised to the buyer yet"] : [])];
 }

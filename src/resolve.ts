@@ -20,7 +20,7 @@ export type Resolution = {
   causeItemId?: string; // the workbench item whose approval last lowered a lot of this product before the resolution started
   // Who confirmed the check's confirmation items, when, and which (tokens); any edit or redraft clears it.
   confirmation?: { by: string; at: string; items: string[] };
-  messageId?: string; reply?: { id: string; channel: "text" | "call"; text: string; quote: string }; linkedItemId?: string;
+  messageId?: string; reply?: { id: string; channel: "text" | "call" | "recorded"; text: string; quote: string }; linkedItemId?: string;
   decisions: ResolutionDecision[];
 };
 // Who wrote the current text, as data; draftedBy is the display name only.
@@ -28,7 +28,7 @@ export type Author = "template" | "model-recorded" | "model-live" | "coordinator
 const authorOf = (d: Draft): Author => d?.author === "model" ? (d.recorded ? "model-recorded" : "model-live") : "template";
 export type OutboxMessage = { id: string; resolutionId: string; to: MessageFacts["to"]; text: string; draftedBy: string; sentBy: string; sentAt: string };
 export type OrderStatus = "covered" | "short" | "resolving" | "buyer-told" | "substitute-agreed";
-type Reply = { channel: "text" | "call"; text: string; quote?: string };
+type Reply = { channel: "text" | "call" | "recorded"; text: string; quote?: string };
 
 const LIMIT = { resolutions: 200, outbox: 500, note: 500, message: 480, decisions: 200, actor: NAME_MAX, label: 160 };
 const KIND = { "ask-grower": "request", "offer-substitute": "offer", "notify-short": "notice" } as const;
@@ -79,7 +79,9 @@ function evidence(w: Workbench, reply: Reply): NonNullable<Resolution["reply"]> 
     const note = text(reply.text, LIMIT.note, "Call note");
     return { id, messageId: id, channel: "call", text: note, quote: note };
   }
-  if (reply?.channel !== "text") throw new Error("Reply channel must be text or call");
+  // No channel picked: only the fact that the coordinator recorded the answer, claiming neither a call nor a text.
+  if (reply?.channel === "recorded") { const note = text(reply.text, LIMIT.note, "Answer note"); return { id, messageId: id, channel: "recorded", text: note, quote: note }; }
+  if (reply?.channel !== "text") throw new Error("Reply channel must be text, call or recorded");
   const said = text(reply.text, LIMIT.note, "Reply text");
   if (typeof reply.quote !== "string" || !reply.quote.trim() || !said.includes(reply.quote.trim())) throw new Error("A quote from the reply text is required");
   return { id, messageId: id, channel: "text", text: said, quote: reply.quote.trim() };
@@ -226,8 +228,11 @@ export function sendMessage(w: Workbench, resId: string, contacts: Contact[], ac
 // Consent comes only from the buyer's recorded answer (E8, E9).
 // A phone answer with nothing written is recorded as exactly that: the coordinator heard it and has no words to quote.
 export const noNote = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""} without a note`;
+// An answer with no channel picked says only who recorded it.
+export const recordedBy = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""}`;
 export function recordBuyerReply(w: Workbench, resId: string, given: Reply & { accept: boolean }, actor: string, at: string): Workbench {
-  const reply = given?.channel === "call" && (typeof given.text !== "string" || !given.text.trim()) ? { ...given, text: noNote(actor) } : given;
+  const blank = typeof given?.text !== "string" || !given.text.trim();
+  const reply = given?.channel === "call" && blank ? { ...given, text: noNote(actor) } : given?.channel === "recorded" && blank ? { ...given, text: recordedBy(actor) } : given;
   return update(w, resId, (r, n) => {
     if (r.option.kind !== "offer-substitute") throw new Error("Only a substitute offer takes a buyer reply");
     awaiting(r, "offer");

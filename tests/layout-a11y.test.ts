@@ -83,13 +83,14 @@ test("the skip link lands on the message or order panel, and the queue follows t
 
 test("name fields: a name for what it is for, shown once on Review, never twice with the same id", () => {
   const field = source("app/named-submit.tsx");
-  assert.match(field, /Your name<span className="sr-only">, for \{purpose \?\? purposeOf\(on\)\}<\/span>/);
+  assert.match(field, /aria-label=\{`Your name, for \$\{purpose \?\? purposeOf\(on\)\}`\}/, "one accessible name, no stray space before the comma");
+  assert.match(field, /defaultValue=\{kept\}/, "a refused name comes back as typed");
   assert.match(field, /"this approval"/);
   // Secondary forms on Review are quiet; only the primary one asks.
   const review = source("app/review/page.tsx");
   for (const on of ["refreshAll", "script", "dismiss", "read", "ask", "correct"]) assert.match(review, new RegExp(`on="${on}" bad=\\{\\w+\\} quiet`), on);
-  assert.match(review, /quiet=\{main !== "approve"\}/);
-  assert.match(review, /quiet=\{main !== "reply"\}/);
+  assert.match(review, /quiet=\{main !== "approve" \|\| elsewhere\}/);
+  assert.match(review, /quiet=\{main !== "reply" \|\| elsewhere\}/);
   assert.match(review, /<NameField known=\{known\} on="hold" bad=\{bad\} quiet \/>/);
 });
 

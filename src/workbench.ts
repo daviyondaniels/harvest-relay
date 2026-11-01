@@ -12,7 +12,7 @@ import { commitUpdate, locate, reviewUpdate, validateSource, type Change, type F
 // the item's history. Inventory changes only through commitUpdate, so the review rules
 // (blocking questions, exact review hash, stale-inventory checks) are the ledger's own.
 export type ItemState = "open" | "pending" | "returned" | "dismissed" | "approved";
-export type DecisionKind = "received" | "interpreted" | "asked" | "replied" | "corrected" | "lot-confirmed" | "left-pending" | "returned" | "dismissed" | "refreshed" | "approved";
+export type DecisionKind = "received" | "interpreted" | "asked" | "replied" | "corrected" | "lot-confirmed" | "left-pending" | "returned" | "dismissed" | "refreshed" | "approved" | "answered";
 // by: for a reply, who or what read it ("coordinator" when the coordinator entered the answer).
 export type Decision = { at: string; actor: string; kind: DecisionKind; note?: string; by?: string; reviewHash?: string; eventId?: string; corrections?: Correction[] };
 export type InboxItem = {
@@ -110,6 +110,35 @@ export function replyAndApprove(w: Workbench, id: string, source: Source, answer
   if (p.questions.length || p.error || !p.change || !p.reviewHash) return { next: replied, approved: false };
   return { next: approve(replied, id, actor, p.reviewHash, at), approved: true };
 }
+// Answers to the open details from a reply that is already recorded (an earlier "Apply answers" left a question
+// open). The reply is not recorded a second time: the history gets one "answered" line, never another "replied".
+function answerRecordedOnly(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): Workbench {
+  const source = item(w, id).replies.at(-1);
+  if (!source) throw new Error("No reply is recorded yet");
+  w = refreshIfStale(w, id, actor, at);
+  let corrections: Correction[] = [];
+  const next = update(w, id, (i, l) => {
+    const r = applyAnswers(l, editable(i), source, answers, unclear);
+    i.proposal = structuredClone(r.proposal); corrections = r.corrections;
+    if (i.state === "returned" || i.state === "pending") i.state = "open";
+  }, { kind: "answered", note: answers.map(a => a.field).join(", ").slice(0, LIMIT.note) }, actor, at);
+  if (corrections.length) next.items.find(i => i.id === id)!.decisions.at(-1)!.corrections = corrections;
+  return next;
+}
+export const answerRecorded = answerRecordedOnly;
+export function answerRecordedAndApprove(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): { next: Workbench; approved: boolean } {
+  const answered = answerRecordedOnly(w, id, answers, unclear, actor, at), p = preview(answered, id);
+  if (p.questions.length || p.error || !p.change || !p.reviewHash) return { next: answered, approved: false };
+  return { next: approve(answered, id, actor, p.reviewHash, at), approved: true };
+}
+// What the answers would do, worked out on a copy: the preview of the state they produce. Undefined when they are refused.
+export function previewAnswers(w: Workbench, id: string, source: Source, answers: Answer[], at: string): Preview | undefined {
+  try { return preview(reply(w, id, source, answers, [], "Preview", at), id); } catch { return undefined; }
+}
+export function previewRecordedAnswers(w: Workbench, id: string, answers: Answer[], at: string): Preview | undefined {
+  try { return preview(answerRecordedOnly(w, id, answers, [], "Preview", at), id); } catch { return undefined; }
+}
+
 // A grower reply read by the model: interpretReply has already applied its answers with
 // applyAnswers to this item's proposal. Checked again here before it is kept.
 export function replyRead(w: Workbench, id: string, source: Source, read: { proposal: UpdateProposal; corrections: Correction[] }, by: string, actor: string, at: string): Workbench {
@@ -174,6 +203,12 @@ export function readByHandAndApprove(w: Workbench, id: string, r: HandReading, a
   return { next: approve(saved, id, actor, p.reviewHash, at), approved: true };
 }
 
+// What the coordinator's reading would do if it were saved as shown, worked out on a copy: the preview of the state the
+// hand reading produces. Undefined when the reading is refused. The input is never changed.
+export function previewHand(w: Workbench, id: string, r: HandReading, at: string): Preview | undefined {
+  try { return preview(readByHand(w, id, r, "Preview", at), id); } catch { return undefined; }
+}
+
 // Values found in a message, to prefill the hand-entry form. A reading already on the item
 // wins; otherwise the words are searched, and the lot's own grade and day fill the rest.
 export type HandSuggestion = { operation?: Exclude<Operation, "unresolved">; lotId?: string; quantity?: Quantity; grade?: string; deliveryOn?: string };
@@ -186,6 +221,8 @@ export function suggestReading(w: Workbench, id: string): HandSuggestion {
   else if (/\b(might|maybe|may have|could|expect(ing)?|hoping|forecast)\b/.test(t)) out.operation = "forecast";
   else if (/\b(another|more|extra|add(ing|ed)?|additional)\b/.test(t)) out.operation = "add-quantity";
   else if (/\b(only|total|now (have|got)|down to|replac\w*|whole lot)\b/.test(t)) out.operation = "replace-total";
+  // A grower answering an ask for more supply is adding to what they have.
+  if (!out.operation && i.requestId) out.operation = "add-quantity";
   const mine = s.lots.filter(l => l.growerId === i.source.growerId), named = mine.filter(l => t.includes(l.product.toLowerCase()));
   const lot = s.lots.find(l => l.id === cur?.lotId) ?? (named.length === 1 ? named[0] : named.length === 0 && mine.length === 1 ? mine[0] : undefined);
   if (lot) { out.lotId = lot.id; out.grade = cur?.grade ?? lot.grade; out.deliveryOn = cur?.deliveryOn ?? lot.deliveryOn; }
@@ -197,6 +234,19 @@ export function suggestReading(w: Workbench, id: string): HandSuggestion {
       const u = m[2], unit = u.startsWith("case") ? "case" : u.startsWith("k") ? "kg" : u.startsWith("l") || u.startsWith("p") ? "lb" : u.startsWith("g") ? "g" : "each";
       out.quantity = { amount: /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1]], unit };
     }
+  }
+  return out;
+}
+
+// Values for the open details of a reply form, taken from words already on the page: the kind of update from the
+// message, and the contents of a case from a reply already recorded ("6 lb in each", "five kg per case").
+export function suggestAnswers(w: Workbench, id: string, open: Field[]): Partial<Record<Field, string>> {
+  const i = item(w, id), out: Partial<Record<Field, string>> = {};
+  if (open.includes("operation")) { const op = suggestReading(w, id).operation; if (op) out.operation = op; }
+  const last = i.replies.at(-1)?.text.toLowerCase();
+  if (open.includes("pack") && last) {
+    const m = last.match(new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s*(kg|kilos?|lbs?|pounds?|g|grams?|each)\\b`));
+    if (m) { const u = m[2], unit = u.startsWith("k") ? "kg" : u.startsWith("l") || u.startsWith("p") ? "lb" : u.startsWith("g") ? "g" : "each"; out.pack = `${/^\d+$/.test(m[1]) ? m[1] : NUMBER_WORDS[m[1]]} ${unit}`; }
   }
   return out;
 }
@@ -342,7 +392,7 @@ export function preview(w: Workbench, id: string): Preview {
 // tab" message, for example "Sam approved Alder Creek Farm's update at 8:03 AM".
 const WORDS: Record<DecisionKind, string> = {
   received: "received", interpreted: "read", asked: "asked about", replied: "recorded a reply to", corrected: "corrected", "lot-confirmed": "confirmed the lot for",
-  "left-pending": "left pending", returned: "returned", dismissed: "dismissed", refreshed: "refreshed", approved: "approved"
+  "left-pending": "left pending", returned: "returned", dismissed: "dismissed", refreshed: "refreshed", approved: "approved", answered: "answered for"
 };
 const RESOLVED: Record<string, string> = {
   drafted: "drafted a message about", redrafted: "redrafted a message about", edited: "edited a message about", confirmed: "confirmed a message about", discarded: "discarded a message about",

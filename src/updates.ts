@@ -29,7 +29,7 @@ export type UpdateEvent = {
 // amount the grower said might come.
 export type Change = { effect: Effect; lotId: string; before: Quantity; after: Quantity; expected?: Quantity };
 export type Forecast = { eventId: string; lotId: string; amount: number; unit: BaseUnit; deliveryOn: string };
-export type Evidence = { messageId: string; channel: "text" | "call"; quote: string };
+export type Evidence = { messageId: string; channel: "text" | "call" | "recorded"; quote: string };
 // What the coordinator recorded from a grower's or buyer's reply, beside the grower update events.
 export type LedgerRecord =
   | { id: string; kind: "substitute-accepted"; orderId: string; substitute: { product: string; acceptedGrades: string[]; maxAmount?: number }; change?: "raised" | "uncapped" | "grade-added"; previousMax?: number; evidence: Evidence; recordedBy: string; beforeHash: string; afterHash: string }
