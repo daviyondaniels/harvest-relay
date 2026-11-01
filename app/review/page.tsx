@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { conflicts } from "../../src/commitments.ts";
-import { normalize, type Quantity } from "../../src/quantity.ts";
+import { conflicts, planOf } from "../../src/commitments.ts";
+import type { Quantity } from "../../src/quantity.ts";
 import { FIELDS, type Field, type Span } from "../../src/updates.ts";
 import { BY_HAND, madeShort, needingRefresh, suggestReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
 import { SEED } from "../../src/seed.ts";
-import { approveAction, askAction, confirmLotAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
-import { FIELD, OPERATION, buyer, forecastTag, day, evidence, grower, quantity, status, time, weight } from "../lib/format.ts";
+import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
+import { FIELD, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, weight } from "../lib/format.ts";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
+import { ValueFields } from "../value-fields.tsx";
+import { readKept, type KeptForm } from "../lib/kept.ts";
+import { numberSpan } from "../lib/quote.ts";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { queueOrder } from "../lib/queue.ts";
@@ -52,16 +55,16 @@ function QueueLink({ i, p, current }: { i: InboxItem; p: Preview | undefined; cu
     </a>
   );
 }
-function FieldSelect({ only, bad, on }: { only?: Field[]; bad: Bad; on: string }) {
+function FieldSelect({ only, bad, on, kept }: { only?: Field[]; bad: Bad; on: string; kept?: string }) {
   return <>
     <label>Detail
-      <select name="field" defaultValue={only?.[0]} {...invalid(bad, on, "field")}>{(only ?? FIELDS.filter(f => f !== "unit")).map(f => <option key={f} value={f}>{FIELD[f]}</option>)}</select>
+      <select name="field" defaultValue={kept ?? only?.[0]} {...invalid(bad, on, "field")}>{(only ?? FIELDS.filter(f => f !== "unit")).map(f => <option key={f} value={f}>{FIELD[f]}</option>)}</select>
     </label>
     <Problem bad={bad} on={on} name="field" />
   </>;
 }
 // What a correction changed, said as a value rather than as data.
-const shown = (v: unknown) => v && typeof v === "object" && "amount" in v ? quantity(v as Quantity) : typeof v === "string" ? v : "nothing";
+const shown = (v: unknown) => v && typeof v === "object" && "amount" in v ? quantity(v as Quantity) : typeof v === "string" ? (v in OPERATION ? OPERATION[v as keyof typeof OPERATION] : v) : "nothing";
 
 export default async function Review({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams, wanted = typeof params.item === "string" ? params.item : undefined, raw = readNotice(params, { page: "/review", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
@@ -93,21 +96,30 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
           </details>}
         </QueueFold>
       </nav>
-      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={3} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
+      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
         : <p className="muted">No messages yet.</p>}
     </div>
   );
 }
 
-function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; cuts: ReactNode; sig: string; known: boolean; queueFocus?: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
+function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, live, hasScript, w }: { it: InboxItem; p: Preview; version: number; notice?: Notice; cuts: ReactNode; sig: string; params: Params; known: boolean; queueFocus?: string; live: number; hasScript: boolean; w: Awaited<ReturnType<typeof current>>["state"] }) {
   const closed = it.state === "approved" || it.state === "dismissed";
   const i = it.proposal?.interpretation, lot = w.ledger.snapshot.lots.find(l => l.id === i?.lotId);
   const quotes = (f: Field) => (it.proposal?.clarifications ?? []).filter(c => c.field === f && c.answer).map(c => c.answer!.source.text.slice(c.answer!.span.start, c.answer!.span.end));
   const byField = new Map<Field, string[]>();
   for (const q of p.questions) byField.set(q.field, [...(byField.get(q.field) ?? []), q.question.replace(/^Unanswered: /, "")]);
-  const asked = (it.proposal?.clarifications ?? []);
+  // Only questions still waiting: an answered one, or one a reading settled, stays in History.
+  const open = (it.proposal?.clarifications ?? []).filter(c => !c.answer && !c.question.startsWith("Coordinator reading") && !c.question.startsWith("Reply corrects"));
   const event = it.eventId ? w.ledger.events.find(e => e.id === it.eventId) : undefined;
   const v = { item: it.id, version };
+  // What was typed into a form that was refused comes back as its starting text (lib/kept.ts); a form that failed stays open.
+  const failedOn = (on: string) => !!notice && !notice.ok && notice.on === on;
+  const kv = (on: KeptForm, name: string) => failedOn(on) ? readKept(params, on, name) : undefined;
+  const mine = w.ledger.snapshot.lots.filter(l => l.growerId === it.source.growerId);
+  const lotChoices = mine.map(l => ({ value: l.id, label: `${l.product}, ${l.grade}, ${day(l.deliveryOn)}` }));
+  const kinds = Object.entries(OPERATION_CHOICE).map(([value, label]) => ({ value, label }));
+  const detailChoices = (only?: Field[]) => (only ?? FIELDS.filter(f => f !== "unit")).map(f => ({ value: f, label: FIELD[f] }));
+  const openDetails = byField.size ? [...byField.keys()] : undefined;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
   const decided = !!notice?.ok && (notice.on === "approve" || (notice.on === "hold" && it.state === "dismissed"));
   // Why Approve is off, said beside it.
@@ -120,7 +132,7 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
   // A problem with a field of a form still on the page (a missing name included) is shown
   // beside that field; anything else at the top of the message.
   const forms = closed ? [] : ["hold", ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
-    ...(i ? ["ask", "reply", "correct", ...(i.lotId ? ["lot"] : [])] : ["hand"]), ...(it.proposal ? [p.needsRefresh ? "refresh" : "approve"] : [])];
+    ...(i ? ["ask", "reply", "correct"] : ["hand"]), ...(it.proposal ? [p.needsRefresh ? "refresh" : "approve"] : [])];
   const bad: Bad = notice && !notice.ok && notice.field && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && !bad && !queueFocus ? notice : undefined;
   // Where focus goes: the field with the problem, else the result's heading.
@@ -133,11 +145,12 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
         <h1 id="msg" tabIndex={-1}>{from}</h1>
         <span className="muted small">{it.source.id.startsWith("call-") ? `${it.decisions[0]?.note ?? "Call note"}, ` : ""}Received {time(it.receivedAt)}</span>
       </div>
+      {it.state === "approved" && event && event.effect !== "forecast" && cuts}
       {ask && askOrder && <p className="small">Reply to your ask about {askOrder.product} for {buyer(askOrder.buyerId)}. <a href={`/orders?order=${encodeURIComponent(askOrder.id)}#${ask.id}`}>Open the order</a></p>}
       <p className="message"><Highlighted text={it.source.text} spans={evidence(it.proposal, it.source.id)} /></p>
-      {(asked.length > 0 || it.replies.length > 0) && (
+      {(open.length > 0 || it.replies.length > 0) && (
         <div className="thread" aria-label="Clarification conversation">
-          {asked.filter(c => !c.question.startsWith("Coordinator reading") && !c.question.startsWith("Reply corrects")).map((c, n) => (
+          {open.map((c, n) => (
             <div className="turn" key={`q${n}`}><span className="asked small">Question about {FIELD[c.field].toLowerCase()}</span><span>{c.question}</span></div>
           ))}
           {it.replies.map(r => (
@@ -149,11 +162,11 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
 
       {i ? <>
         <div>
-          <h2>Reading</h2>
+          <h2>What we understood</h2>
           <p className="muted small">{it.interpretedBy === BY_HAND ? "Entered by hand. Check the highlighted words." : "Read automatically. Check the highlighted words."}</p>
         </div>
         <table className="reading"><tbody>
-          <tr><td>Kind of update</td><td><b>{OPERATION[i.operation]}</b></td></tr>
+          <tr><td>What changed</td><td><b>{OPERATION[i.operation]}</b></td></tr>
           <tr><td>Lot</td><td>{lot ? `${lot.product}, ${grower(lot.growerId)}` : "not identified"}</td></tr>
           <tr><td>Quantity</td><td>{quantity(i.quantity)}{quotes("pack").length ? <span className="quote"><br />contents from reply: “{quotes("pack").join("”, “")}”</span> : null}</td></tr>
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
@@ -170,56 +183,45 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
 
       {!closed && <div className="form">
         <div className="row">
-          {hasScript && <form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} /></form>}
+          {hasScript && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} /></form></div>}
           {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="hold" bad={bad} /></form>}
           {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} /></form>}
         </div>
-        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} />}
-        {i?.lotId && <details open={bad?.on === "lot"}>
-          <summary>Mark the lot as checked</summary>
-          <form action={confirmLotAction} className="form"><Hidden {...v} />
-            <p className="muted small">Adds a line to the history that you checked this is the right lot. Approving does not need it.</p>
-            <div><NamedSubmit label="Confirm lot" known={known} on="lot" bad={bad} /></div>
+        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} kv={kv} />}
+        {i && <details open={byField.size > 0 || failedOn("reply")}>
+          <summary>Add the grower's reply</summary>
+          <form action={replyAction} className="form"><Hidden {...v} />
+            <label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
+            <Problem bad={bad} on="reply" name="reply" />
+            <ValueFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
+            <label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
+            <Problem bad={bad} on="reply" name="quote" />
+            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
           </form>
         </details>}
-        {i && <details open={bad?.on === "ask"}>
+        {i && <details open={failedOn("ask")}>
           <summary>Ask the grower</summary>
           <form action={askAction} className="form"><Hidden {...v} />
-            <FieldSelect only={byField.size ? [...byField.keys()] : undefined} bad={bad} on="ask" />
-            <label>Question<input name="question" required maxLength={500} placeholder="How much is in each case?" {...invalid(bad, "ask", "question")} /></label>
+            <FieldSelect only={openDetails} bad={bad} on="ask" kept={kv("ask", "field")} />
+            <label>Question<input name="question" required maxLength={500} placeholder="How much is in each case?" defaultValue={kv("ask", "question")} {...invalid(bad, "ask", "question")} /></label>
             <Problem bad={bad} on="ask" name="question" />
             <div><NamedSubmit label=<>Record question <span className="sr-only">for {from}</span></> known={known} on="ask" bad={bad} /></div>
           </form>
         </details>}
-        {i && <details open={bad?.on === "reply"}>
-          <summary>Add the grower's reply</summary>
-          <form action={replyAction} className="form"><Hidden {...v} />
-            <label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={2} {...invalid(bad, "reply", "reply")} /></label>
-            <Problem bad={bad} on="reply" name="reply" />
-            <FieldSelect only={byField.size ? [...byField.keys()] : undefined} bad={bad} on="reply" />
-            <label>Words in the reply that answer it<input name="quote" required {...invalid(bad, "reply", "quote")} /></label>
-            <Problem bad={bad} on="reply" name="quote" />
-            <label>Value<input name="value" required placeholder="3 kg" {...invalid(bad, "reply", "value")} /></label>
-            <Problem bad={bad} on="reply" name="value" />
-            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
-          </form>
-        </details>}
-        {i && <details open={bad?.on === "correct"}>
+        {i && <details open={failedOn("correct")}>
           <summary>Correct the reading</summary>
           <form action={correctAction} className="form"><Hidden {...v} />
             <p className="muted small">Use the grower's own words from the message. The change and the quote are kept in the history.</p>
-            <FieldSelect bad={bad} on="correct" />
-            <label>Words in the message<input name="quote" required {...invalid(bad, "correct", "quote")} /></label>
+            <ValueFields on="correct" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("correct", "field")} value={kv("correct", "value")} />
+            <label>Words in the message<input name="quote" required maxLength={500} defaultValue={kv("correct", "quote")} {...invalid(bad, "correct", "quote")} /></label>
             <Problem bad={bad} on="correct" name="quote" />
-            <label>Value<input name="value" required placeholder="add-quantity, 4 cases, standard or 2026-10-30" {...invalid(bad, "correct", "value")} /></label>
-            <Problem bad={bad} on="correct" name="value" />
             <div><NamedSubmit label="Apply correction" known={known} on="correct" bad={bad} /></div>
           </form>
         </details>}
-        <details open={bad?.on === "hold"}>
+        <details open={failedOn("hold")}>
           <summary>Leave pending, return or dismiss</summary>
           <form className="form"><Hidden {...v} />
-            <label>Note or reason<input name="note" required maxLength={500} {...invalid(bad, "hold", "note")} /></label>
+            <label>Note or reason<input name="note" required maxLength={500} defaultValue={kv("hold", "note")} {...invalid(bad, "hold", "note")} /></label>
             <Problem bad={bad} on="hold" name="note" />
             <NameField known={known} on="hold" bad={bad} />
             <div className="row">
@@ -245,10 +247,9 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
     </section>
 
     <aside className="preview" aria-labelledby="change">
-      <h2 id="change" tabIndex={-1}>Change preview</h2>
+      <h2 id="change" tabIndex={-1}>What changes</h2>
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
       <ChangeTag it={it} p={p} event={event} />
-      {it.state === "approved" && event && event.effect !== "forecast" && cuts}
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
       {!closed && <Impact p={p} names={names} />}
       {!closed && it.proposal && p.needsRefresh ? (
@@ -261,10 +262,10 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
           <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
           <div className="row">
-            <NamedSubmit label="Approve supply change" className="primary" known={known} on="approve" bad={bad} disabled={off} aria-describedby={off ? "approve-why" : undefined} />
+            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} disabled={off} aria-describedby={off ? "approve-why" : undefined} />
             {off && <span id="approve-why" className="small muted">{why}</span>}
           </div>
-          <p className="fine-print">Approving changes this lot's confirmed supply only. It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
+          <p className="fine-print">{p.change?.effect === "forecast" ? "Noting a forecast leaves confirmed supply as it is. " : "Approving changes this lot's confirmed supply only. "}It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
         </form>
       )}
     </aside>
@@ -277,8 +278,14 @@ function Item({ it, p, version, notice, cuts, sig, known, queueFocus, live, hasS
 function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; decided: boolean; back?: { id: string; buyerId: string } }) {
   const short = decided && it.state === "approved" ? madeShort(w, it.id) : [], orders = new Map(w.ledger.snapshot.orders.map(o => [o.id, o]));
   const next = queueOrder(w.items, new Map()).find(x => x.id !== it.id && x.state !== "approved" && x.state !== "dismissed");
+  // A reply to an ask: what is still short on that order, or that it is covered. An order already listed above is not said twice.
+  const gap = back && it.state === "approved" && !short.some(s => s.orderId === back.id) ? planOf(w.ledger).unfilled.find(u => u.orderId === back.id) : undefined;
   return (
     <div className="panel next-steps" aria-label="What to do next">
+      {back && it.state === "approved" && !short.some(s => s.orderId === back.id) && (gap
+        ? <ul><li className="worse">{buyer(back.buyerId)} is still {weight(gap.amount, gap.unit)} short{" "}
+            <a className="button" href={`/orders?order=${encodeURIComponent(back.id)}`}>Resolve<span className="sr-only"> {buyer(back.buyerId)}</span></a></li></ul>
+        : <p className="better">{buyer(back.buyerId)} is now covered.</p>)}
       {short.length > 0 && <ul>{short.map(s => { const o = orders.get(s.orderId)!; return (
         <li key={s.orderId} className="worse">{buyer(o.buyerId)} is now {weight(s.short, s.unit)} short{" "}
           <a className="button" href={`/orders?order=${encodeURIComponent(s.orderId)}`}>Resolve<span className="sr-only"> {buyer(o.buyerId)}</span></a></li>
@@ -294,9 +301,13 @@ function NextSteps({ it, w, decided, back }: { it: InboxItem; w: Awaited<ReturnT
 // The coordinator's own reading of an unread message, prefilled from the words in it. The
 // grower is the message's; the lot is one of theirs. A call note is its own evidence.
 const UNIT_NAMES: [string, string][] = [["lb", "lb"], ["kg", "kg"], ["g", "g"], ["each", "each"], ["case", "cases"]];
-function HandForm({ it, w, v, bad, known }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; v: { item: string; version: number }; bad: Bad; known: boolean }) {
+function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<ReturnType<typeof current>>["state"]; v: { item: string; version: number }; bad: Bad; known: boolean; kv: (on: KeptForm, name: string) => string | undefined }) {
   const guess = suggestReading(w, it.id), call = it.source.id.startsWith("call-"), s = w.ledger.snapshot;
   const lots = s.lots.filter(l => l.growerId === it.source.growerId);
+  // Starting text: what was typed if the form was refused, else the guess. The words default to the
+  // shortest stretch of the message holding the guessed amount, so a late message needs no typing.
+  const amount = kv("hand", "amount") ?? (guess.quantity ? String(guess.quantity.amount) : undefined);
+  const quote = kv("hand", "quote") ?? (!call && amount ? numberSpan(it.source.text, amount) : undefined);
   const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
   return (
     <details open>
@@ -304,33 +315,33 @@ function HandForm({ it, w, v, bad, known }: { it: InboxItem; w: Awaited<ReturnTy
       <form action={readByHandAction} className="form"><Hidden {...v} />
         <p className="muted small">{call ? "Your call note is the evidence. Add words from it only to point at one part." : "Copy the grower's own words from the message; they are kept as the evidence."} Then check it and approve as usual.</p>
         <label>What changed
-          <select name="operation" defaultValue={guess.operation ?? ""} required {...invalid(bad, "hand", "operation")}>
+          <select name="operation" defaultValue={kv("hand", "operation") ?? guess.operation ?? ""} required {...invalid(bad, "hand", "operation")}>
             <option value="" disabled>Choose</option>
-            {(["replace-total", "add-quantity", "correction", "forecast"] as const).map(o => <option key={o} value={o}>{OPERATION[o]}</option>)}
+            {Object.entries(OPERATION_CHOICE).map(([o, label]) => <option key={o} value={o}>{label}</option>)}
           </select></label>
         <Problem bad={bad} on="hand" name="operation" />
         <label>Lot
-          <select name="lot" defaultValue={guess.lotId ?? ""} required {...invalid(bad, "hand", "lot")}>
+          <select name="lot" defaultValue={kv("hand", "lot") ?? guess.lotId ?? ""} required {...invalid(bad, "hand", "lot")}>
             <option value="" disabled>Choose</option>
             {lots.map(l => <option key={l.id} value={l.id}>{l.product}, {l.grade}, {day(l.deliveryOn)}</option>)}
           </select></label>
         <Problem bad={bad} on="hand" name="lot" />
         <div className="row">
-          <label>Amount<input name="amount" inputMode="numeric" required defaultValue={guess.quantity?.amount} {...invalid(bad, "hand", "amount")} /></label>
+          <label>Amount<input name="amount" inputMode="numeric" required defaultValue={amount} {...invalid(bad, "hand", "amount")} /></label>
           <label>Unit
-            <select name="unit" defaultValue={guess.quantity?.unit ?? "lb"} {...invalid(bad, "hand", "unit")}>{UNIT_NAMES.map(([u, n]) => <option key={u} value={u}>{n}</option>)}</select></label>
+            <select name="unit" defaultValue={kv("hand", "unit") ?? guess.quantity?.unit ?? "lb"} {...invalid(bad, "hand", "unit")}>{UNIT_NAMES.map(([u, n]) => <option key={u} value={u}>{n}</option>)}</select></label>
         </div>
         <Problem bad={bad} on="hand" name="amount" />
         <Problem bad={bad} on="hand" name="unit" />
-        <label>Grade<input name="grade" required defaultValue={guess.grade} {...invalid(bad, "hand", "grade")} /></label>
+        <label>Grade<input name="grade" required maxLength={80} defaultValue={kv("hand", "grade") ?? guess.grade} {...invalid(bad, "hand", "grade")} /></label>
         <Problem bad={bad} on="hand" name="grade" />
-        <label>Delivery day<input name="day" type="date" required defaultValue={guess.deliveryOn} {...invalid(bad, "hand", "day")} /></label>
+        <label>Delivery day<input name="day" type="date" required defaultValue={kv("hand", "day") ?? guess.deliveryOn} {...invalid(bad, "hand", "day")} /></label>
         <Problem bad={bad} on="hand" name="day" />
         {targets.length > 0 && <label>Earlier update being corrected, if this is a correction
-          <select name="target" defaultValue=""><option value="">Not a correction</option>
+          <select name="target" defaultValue={kv("hand", "target") ?? ""}><option value="">Not a correction</option>
             {targets.map(e => { const l = s.lots.find(x => x.id === e.lotId)!; return <option key={e.id} value={e.id}>{l.product}: {quantity(e.lotBefore)} to {quantity(e.lotAfter)}</option>; })}
           </select></label>}
-        <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} {...invalid(bad, "hand", "quote")} /></label>
+        <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
         <div><NamedSubmit label=<>Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} /></div>
       </form>
@@ -367,7 +378,14 @@ function HistoryLine({ d, it }: { d: Decision; it: InboxItem }) {
   }
 }
 
-function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: string; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
+function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: string; effect: string; proposal: { interpretation: { quantity?: Quantity } }; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
+  if (event?.effect === "forecast") return (
+    <div className="tag done">
+      <p className="from">Approved by {event.approval.reviewer}</p>
+      <p className="to">Forecast noted{forecastTag({ expected: event.proposal.interpretation.quantity }) ? `: ${forecastTag({ expected: event.proposal.interpretation.quantity })}` : ""}</p>
+      <p className="what">Confirmed supply is unchanged. <a href={`/events/${event.id}`}>View recorded change</a></p>
+    </div>
+  );
   if (event) return (
     <div className="tag done">
       <p className="from">Approved by {event.approval.reviewer}</p>
@@ -379,7 +397,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   if (!it.proposal) return (
     <div className="tag blocked">
       <p className="from">Not read yet</p>
-      <p className="to">Not worked out yet</p>
+      <p className="to">Waiting on your answer</p>
       <p className="what">The change appears once the message has a reading.</p>
     </div>
   );
@@ -393,15 +411,15 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   if (!p.change) return (
     <div className="tag blocked">
       <p className="from">{p.error ? "Cannot preview" : "Waiting on answers"}</p>
-      <p className="to">Not worked out yet</p>
+      <p className="to">Waiting on your answer</p>
       <p className="what">{p.error ?? "The change can't be worked out until the open details are answered."}</p>
     </div>
   );
-  const c = p.change, before = normalize(c.before), after = normalize(c.after), delta = after.amount - before.amount;
+  const c = p.change;
   return (
     <div className="tag">
-      <p className="from">{c.effect === "forecast" ? "Forecast, kept apart from confirmed supply" : `${weight(before.amount, before.unit)} confirmed now`}</p>
-      {(c.effect !== "forecast" || forecastTag(c)) && <p className="to">{c.effect === "forecast" ? forecastTag(c) : <>{delta >= 0 ? "add" : "remove"} <span className="nowrap">{weight(Math.abs(delta), after.unit)}</span> <span className="nowrap">→ {weight(after.amount, after.unit)}</span></>}</p>}
+      <p className="from">{c.effect === "forecast" ? "Forecast, kept apart from confirmed supply" : "Confirmed supply, if you approve"}</p>
+      {(c.effect !== "forecast" || forecastTag(c)) && <p className="to">{c.effect === "forecast" ? forecastTag(c) : <span className="nowrap">{changeLine(c.before, c.after)}</span>}</p>}
       <p className="what">{c.effect === "replace-total" ? "New total replaces the old one" : c.effect === "add-quantity" ? "Added to the existing lot" : "Not allocatable until confirmed"}</p>
     </div>
   );
@@ -412,8 +430,7 @@ function Impact({ p, names }: { p: Preview; names: Map<string, string> }) {
   const extra = p.unallocated.filter(u => u.before !== u.after);
   return (
     <div className="panel impact">
-      <h3>If approved: proposed allocation</h3>
-      <p className="fine-print">A separate proposal; nothing here is reserved or sent.</p>
+      <h3>Who gets what if you approve</h3>
       {p.orders.map(o => {
         const moved = changed.includes(o);
         return (
@@ -425,7 +442,7 @@ function Impact({ p, names }: { p: Preview; names: Map<string, string> }) {
           </div>
         );
       })}
-      {extra.map(u => <div key={u.lotId} className="line"><span>Unallocated {names.get(u.lotId) ?? u.lotId}</span><span>{weight(u.after, u.unit)} <span className="muted small">(was {weight(u.before, u.unit)})</span></span></div>)}
+      {extra.map(u => <div key={u.lotId} className="line"><span>Not going to anyone yet: {names.get(u.lotId) ?? u.lotId}</span><span>{weight(u.after, u.unit)} <span className="muted small">(was {weight(u.before, u.unit)})</span></span></div>)}
     </div>
   );
 }

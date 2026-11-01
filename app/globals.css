@@ -380,3 +380,7 @@ label.check input { width: auto; margin-top: 3px; }
 
 /* Links on their own line in a sentence keep a 24 px target (2.5.8). */
 .pending-cover a, .history li a, .what a { display: inline-block; min-height: 24px; padding: 2px 0; line-height: 1.3; }
+
+/* Controls that exist only for the demo sit in a dashed box with a small "Demo" tag, so they can't be mistaken for the product. */
+.demo { position: relative; display: grid; gap: 6px; padding: 14px 10px 10px; border: 1px dashed var(--field-line); border-radius: var(--r-s); }
+.demo-tag { position: absolute; top: -0.7em; left: 8px; padding: 0 6px; background: var(--paper); font-size: 0.75rem; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.04em; }

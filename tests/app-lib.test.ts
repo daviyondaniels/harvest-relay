@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { checkName } from "../app/lib/names.ts";
 import { cutPage, readNotice, signNotice } from "../app/lib/notice.ts";
+import { KEEP, keepTyped, readKept } from "../app/lib/kept.ts";
+import { QUOTE_MAX, numberSpan, pickQuote } from "../app/lib/quote.ts";
 
 // Pure app helpers: the remembered-name rules and the signed page notices.
 test("names: trimmed, NFC, at most 80 characters, no hidden characters, not the reserved label", () => {
@@ -65,4 +67,38 @@ test("act refuses a stale version with the latest change, and with rebase runs o
   assert.equal((await current()).state.items.length, n);
   await act(start, w => receive(w, src("m-3"), "2026-10-28T09:10:00Z"), { rebase: true });
   assert.equal((await current()).state.items.length, n + 1);
+});
+
+test("quote picker: the shortest literal span with the value's number, else the whole reply, never words of its own", () => {
+  const reply = "That's the whole lot, 10 lb in each case.";
+  assert.equal(pickQuote(reply, "10 lb"), "10");
+  assert.equal(pickQuote("We have 1,200 lb and 12 cases", "1200 lb"), "1,200");
+  assert.equal(pickQuote("We have 120 lb", "12 lb"), "We have 120 lb", "12 is not inside 120");
+  assert.equal(pickQuote("Sorry, none left", "A new total"), "Sorry, none left", "no number: the whole reply");
+  assert.equal(pickQuote("Friday works", "2026-10-30"), "Friday works", "a date's digits are not in the reply");
+  assert.equal(numberSpan("no digits here", "5 lb"), undefined);
+  const long = ("word ".repeat(200)).trim();
+  for (const [text, value] of [[reply, "10 lb"], [reply, "standard"], [long, "x"], ["a 5 b 50 c", "50 lb"], ["é 7 ü", "7 lb"], ["", "3"]] as const) {
+    const q = pickQuote(text, value);
+    assert.ok(text.includes(q), `a literal part of the reply: ${JSON.stringify(q)}`);
+    assert.ok(q.length <= QUOTE_MAX || q === text);
+  }
+  assert.ok(pickQuote(long, "x").length <= QUOTE_MAX, "a long reply gives a bounded stretch of its own words");
+});
+
+test("kept values: typed text round trips through the redirect, cut to each field's limit, and is not part of the signed notice", () => {
+  const f = new FormData();
+  f.set("reply", "Line one\nLine two, “quoted” & more"); f.set("field", "quantity"); f.set("value", "x".repeat(5000)); f.set("quote", "  "); f.set("who", "Someone");
+  const kept = keepTyped(f, "reply");
+  assert.deepEqual(Object.keys(kept).sort(), ["k_reply_field", "k_reply_reply", "k_reply_value"], "blank and unlisted fields are dropped");
+  const q = new URLSearchParams({ item: "item-1", ...kept, ...signNotice({ text: "Enter the value.", on: "reply", field: "value" }, { page: "/review", id: "item-1" }) });
+  const back = Object.fromEntries(new URLSearchParams(q.toString()));
+  assert.equal(readKept(back, "reply", "reply"), "Line one\nLine two, “quoted” & more");
+  assert.equal(readKept(back, "reply", "value")?.length, KEEP.reply.value, "cut to the field's own limit");
+  assert.equal(readKept(back, "reply", "quote"), undefined);
+  assert.equal(readKept(back, "ask", "question"), undefined, "another form's values are not read");
+  assert.equal(readKept({ ...back, k_reply_who: "x" }, "reply", "who"), undefined, "only the form's own fields");
+  const plain = readNotice(back, { page: "/review", id: "item-1" });
+  assert.equal(plain?.text, "Enter the value.", "the notice still verifies with kept values beside it");
+  assert.equal(readNotice({ ...back, k_reply_value: "changed" }, { page: "/review", id: "item-1" })?.text, "Enter the value.", "kept values are display-only");
 });

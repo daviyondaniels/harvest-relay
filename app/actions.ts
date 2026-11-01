@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Answer } from "../src/answers.ts";
+import { parseOperation, type Answer } from "../src/answers.ts";
 import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTransport } from "../src/interpret.ts";
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
@@ -17,6 +17,8 @@ import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/n
 import { NAME_PROBLEM, checkName } from "./lib/names.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { cutPage, signNotice, type Notice } from "./lib/notice.ts";
+import { keepTyped, type KeptForm } from "./lib/kept.ts";
+import { pickQuote } from "./lib/quote.ts";
 
 // Form handlers for the workspace. Each one acts on the stored version the page showed;
 // any error comes back to the same page as a message, and the stored state is unchanged.
@@ -44,7 +46,7 @@ function fieldOf(e: unknown, on?: string): string | undefined {
   if (e instanceof FieldError) return e.field;
   const m = e instanceof Error ? e.message : "";
   if (/^Literal source evidence required/.test(m)) return "quote";
-  if ((on === "reply" || on === "correct") && /answer|operation|unit|Case contents/i.test(m)) return "value";
+  if ((on === "reply" || on === "correct") && /answer|operation|unit|Case contents|more than this hub handles|more than zero|whole numbers/i.test(m)) return "value";
   if (on === "hand") {
     if (/whole numbers/i.test(m)) return "amount";
     if (/date/i.test(m)) return "day";
@@ -85,7 +87,12 @@ function field(f: FormData): Field {
 // Reads a value typed by the coordinator, in the same shapes the model must use.
 function value(fieldName: Field, raw: string): unknown {
   if (!raw) throw new FieldError("Enter the value.", "value");
-  if (fieldName === "quantity" || fieldName === "pack") {
+  if (fieldName === "operation") {
+    const kind = parseOperation(raw);
+    if (!kind) throw new FieldError("Choose what changed: a new total, added to what they have, a correction or a forecast.", "value");
+    return kind;
+  }
+  if (fieldName === "quantity" || fieldName === "unit" || fieldName === "pack") {
     const m = raw.toLowerCase().match(/^(\d+)\s*(g|kg|lbs?|each|cases?)$/);
     if (!m) throw new FieldError(`Write the ${fieldName === "pack" ? "contents of one case" : "quantity"} as a whole number and a unit, like "3 kg", "30 lb" or "4 cases".`, "value");
     const unit = m[2].startsWith("case") ? "case" : m[2] === "lbs" ? "lb" : m[2];
@@ -94,10 +101,13 @@ function value(fieldName: Field, raw: string): unknown {
   }
   return raw;
 }
-function answers(f: FormData, from: "reply" | "message"): Answer[] {
-  const name = field(f), quote = str(f, "quote");
+// from "reply": the words that answer it may be left blank, and are then picked from the reply
+// itself (lib/quote.ts: a literal stretch of it, never words of our own). From the message they are required.
+function answers(f: FormData, from: "reply" | "message", text?: string): Answer[] {
+  const name = field(f), raw = str(f, "value"), given = str(f, "quote");
+  const v = value(name, raw), quote = given || (from === "reply" && text ? pickQuote(text, raw) : "");
   if (!quote) throw new FieldError(`Copy the words in the ${from} that support this value.`, "quote");
-  return [{ field: name, quote, value: value(name, str(f, "value")) }];
+  return [{ field: name, quote, value: v }];
 }
 // A required text field, refused beside the field when empty.
 function need(f: FormData, k: string, ask: string): string {
@@ -110,31 +120,32 @@ function need(f: FormData, k: string, ask: string): string {
 // It lands on the result: the change panel after an approval and the message (with any
 // notice at its top) otherwise. A problem with a field (a missing name included) has no
 // fragment, because a fragment blocks the autofocus, and the page moves focus to the field itself.
-function back(item: string, notice: Notice, on?: string): never {
+// A refused form also sends back what was typed (lib/kept.ts), outside the signed notice.
+function back(item: string, notice: Notice, on?: string, kept: Record<string, string> = {}): never {
   revalidatePath("/", "layout");
   const anchor = notice.field ? "" : notice.ok && on === "approve" ? "#change" : "#item";
-  redirect(`/review?${new URLSearchParams({ item, ...signNotice(notice, { page: "/review", id: item }) })}${anchor}`);
+  redirect(`/review?${new URLSearchParams({ item, ...kept, ...signNotice(notice, { page: "/review", id: item }) })}${anchor}`);
 }
 // on: the form, so the page shows the notice there; done: the result said once it worked;
 // rebase: apply to a newer stored version when the domain re-checks what the page showed.
 // Every step records the coordinator's name, so the form is refused without one beside its own
 // name field (named); only the demo's scripted arrival of a grower's reply (anon) is not theirs.
 // after: reads the changed workbench, and may replace the result (an approval that opens a conflict says so).
-type Step = { on: string; done: string; rebase?: boolean; anon?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
+type Step = { on: string; done: string; keep?: KeptForm; rebase?: boolean; anon?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
 async function run(f: FormData, change: (w: Workbench, item: string, who: string) => Workbench | Promise<Workbench>, step: Step): Promise<never> {
   const item = str(f, "item");
-  let notice: Notice;
+  let notice: Notice, kept: Record<string, string> = {};
   try {
     const who = step.anon ? "" : await named(f);
     let next: Workbench | undefined;
     await act(Number(str(f, "version")), async w => (next = await change(w, item, who)), { rebase: step.rebase });
     notice = { text: step.done, ok: true, on: step.on, ...step.after?.(next!, item) };
-  } catch (e) { notice = await failed(e, step.on); }
-  back(item, notice, step.on);
+  } catch (e) { notice = await failed(e, step.on); if (step.keep) kept = keepTyped(f, step.keep); }
+  back(item, notice, step.on, kept);
 }
 
 export async function askAction(f: FormData) {
-  return run(f, (w, i, who) => ask(w, i, field(f), need(f, "question", "Write the question to ask the grower."), who, now()), { on: "ask", done: "Question recorded." });
+  return run(f, (w, i, who) => ask(w, i, field(f), need(f, "question", "Write the question to ask the grower."), who, now()), { on: "ask", keep: "ask", done: "Question recorded." });
 }
 export async function replyAction(f: FormData) {
   return run(f, (w, i, who) => {
@@ -142,11 +153,11 @@ export async function replyAction(f: FormData) {
     if (!it) throw new Error("Unknown inbox item");
     const text = need(f, "reply", "Paste the grower's reply exactly as received.");
     const source = { id: `${it.source.id}-reply-${it.replies.length + 1}`, revision: 1, growerId: it.source.growerId, text };
-    return reply(w, i, source, answers(f, "reply"), [], who, now());
-  }, { on: "reply", done: "Reply added." });
+    return reply(w, i, source, answers(f, "reply", text), [], who, now());
+  }, { on: "reply", keep: "reply", done: "Reply added." });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
-export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", done: "Correction applied." }); }
+export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", keep: "correct", done: "Correction applied." }); }
 // The coordinator's own reading of a message: what kind of change, which lot, how much, the
 // grade and the day. A call note is its own evidence; any other message needs the words.
 const KINDS = ["replace-total", "add-quantity", "correction", "forecast"] as const;
@@ -166,20 +177,25 @@ function handReading(f: FormData, callNote: boolean): HandReading {
   return { operation, lotId, quantity: { amount: Number(amount), unit }, grade, deliveryOn, ...(str(f, "target") ? { correctsEventId: str(f, "target") } : {}), ...(quote ? { quote } : {}) };
 }
 export async function readByHandAction(f: FormData) {
-  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", done: "Reading saved. Check it, then approve." });
+  return run(f, (w, i, who) => readByHand(w, i, handReading(f, !!w.items.find(x => x.id === i)?.source.id.startsWith("call-")), who, now()), { on: "hand", keep: "hand", done: "Reading saved. Check it, then approve." });
 }
 export async function confirmLotAction(f: FormData) { return run(f, (w, i, who) => confirmLot(w, i, who, now()), { on: "lot", done: "Lot confirmed." }); }
 const note = (f: FormData) => need(f, "note", "Write a note or reason.");
-export async function pendingAction(f: FormData) { return run(f, (w, i, who) => leavePending(w, i, note(f), who, now()), { on: "hold", done: "Left pending." }); }
-export async function returnAction(f: FormData) { return run(f, (w, i, who) => returnForClarification(w, i, note(f), who, now()), { on: "hold", done: "Returned to the grower." }); }
-export async function dismissAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, note(f), who, now()), { on: "hold", done: "Dismissed." }); }
+export async function pendingAction(f: FormData) { return run(f, (w, i, who) => leavePending(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Left pending." }); }
+export async function returnAction(f: FormData) { return run(f, (w, i, who) => returnForClarification(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Returned to the grower." }); }
+export async function dismissAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Dismissed." }); }
 // A message with no supply change in it (thanks, a question, a time of arrival): one tap, no reason to type.
 export async function dismissNoChangeAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, "No supply change", who, now()), { on: "hold", done: "Dismissed. No supply change." }); }
 export async function refreshAction(f: FormData) { return run(f, (w, i, who) => refresh(w, i, who, now()), { on: "refresh", done: "Checked again against current supply." }); }
 export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply." }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one
 // change, against that review's hash.
-export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", rebase: true, after: openedConflict }); }
+export async function approveAction(f: FormData) { return run(f, (w, i, who) => refreshAndApprove(w, i, who, str(f, "hash"), now()), { on: "approve", done: "Supply change approved.", rebase: true, after: approved }); }
+// A forecast is noted, not applied: confirmed supply does not move.
+function approved(w: Workbench, item: string): Partial<Notice> {
+  const e = w.ledger.events.find(x => x.id === w.items.find(i => i.id === item)?.eventId);
+  return e?.effect === "forecast" ? { text: "Forecast noted. Confirmed supply is unchanged." } : openedConflict(w, item);
+}
 // An approval that leaves a lot holding less than was promised says so, and names the lot so the page can focus its panel.
 function openedConflict(w: Workbench, item: string): Partial<Notice> {
   const lotId = w.ledger.events.find(e => e.id === w.items.find(i => i.id === item)?.eventId)?.lotId, c = conflicts(w.ledger).find(x => x.lotId === lotId);
@@ -216,7 +232,7 @@ export async function liveReplyAction(f: FormData) {
     const r = await interpretReply(w.ledger, it.proposal!, source, await live());
     if (r.status !== "proposed") throw new Error("The automatic reading of the reply wasn't usable. Enter the answer yourself.");
     return replyRead(w, i, source, r, `Muse Spark, live, prompt ${PROMPT_VERSION}`, who, now());
-  }, { on: "reply", done: "Reply added." });
+  }, { on: "reply", keep: "reply", done: "Reply added." });
 }
 
 // Order resolution. Every form names the stored version, the order and, after drafting,

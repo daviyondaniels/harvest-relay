@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { forecastTag } from "../app/lib/format.ts";
+import { OPERATION, OPERATION_CHOICE, FIELD, changeLine, forecastTag } from "../app/lib/format.ts";
 
 // The app's own words, checked where a unit test cannot render the page.
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -197,8 +197,8 @@ test("Task 18 fix round 3: the menu shows the full name with Change name, closes
 
 test("H2: the forecast tag shows the forecast amount, not the lot total", () => {
   const lb = (amount: number) => ({ amount, unit: "lb" as const });
-  assert.equal(forecastTag({ effect: "forecast", lotId: "lot-d", before: lb(40), after: lb(40), expected: lb(20) }), "+20 lb expected");
-  assert.equal(forecastTag({ effect: "forecast", lotId: "lot-d", before: lb(40), after: lb(40) }), undefined, "no expected amount, no tag, never +0");
+  assert.equal(forecastTag({ expected: lb(20) }), "+20 lb expected");
+  assert.equal(forecastTag({}), undefined, "no expected amount, no tag, never +0");
   assert.match(source("app/review/page.tsx"), /forecastTag\(c\)/);
   assert.match(source("app/pack/page.tsx"), /!\(g && orderStatus\(w, id\) === "short"\)/, "no Short chip beside \"X short\"");
 });
@@ -381,8 +381,8 @@ test("Task 22 (R18): quieter review controls", () => {
   assert.match(review, /Done today \(\{done\.length\}\)/);
   assert.match(review, /aria-describedby=\{off \? "approve-why" : undefined\}/);
   assert.match(review, /Answer the open detail above to approve\./);
-  assert.match(review, /Approving does not need it\./, "Confirm lot is explained");
-  assert.doesNotMatch(review, /<div className="row">\s*\{hasScript[\s\S]{0,400}Confirm lot/, "Confirm lot is off the main row");
+  assert.doesNotMatch(review, /Mark the lot as checked|Confirm lot|confirmLotAction/, "the lot check is gone from the page");
+  assert.match(source("app/actions.ts"), /export async function confirmLotAction/, "its action stays, unused");
 });
 
 test("Task 23: reset clears the remembered name, and a dismissal offers the next update or the way back to Overview", () => {
@@ -444,4 +444,34 @@ test("a11y: stage results name the buyer, the late-message link takes focus, a s
 test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
   assert.match(source("app/actions.ts"), /You entered \$\{sum\} lb; the cuts must total \$\{excess\} lb\./);
   assert.match(source("app/conflict.tsx"), /amount to cut if splitting/);
+});
+
+test("Ease task 3: plain words on the review page, and the demo control sits in its own labelled box", () => {
+  const review = source("app/review/page.tsx"), fields = source("app/value-fields.tsx"), css = source("app/globals.css");
+  for (const banned of [/>Reading</, /Kind of update/, /Change preview/, /proposed allocation/, /Not worked out yet/, /A separate proposal/, /Unallocated/, /Mark the lot as checked/])
+    assert.doesNotMatch(review + fields, banned);
+  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Waiting on your answer", "Not going to anyone yet", "Words in the reply that answer it (optional)", "Note this forecast"])
+    assert.ok(review.includes(label), label);
+  assert.equal(FIELD.operation, "What changed");
+  assert.deepEqual(Object.values(OPERATION_CHOICE), ["A new total", "Added to what they have", "A correction", "A forecast, not confirmed"]);
+  assert.match(review, /<div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>[\s\S]*?Receive the grower's reply \(demo\)/);
+  assert.match(css, /\.demo \{[^}]*dashed/);
+  for (const raw of Object.keys(OPERATION_CHOICE)) assert.notEqual(OPERATION[raw as keyof typeof OPERATION], raw, "the history says the plain name, not the token");
+  assert.match(source("app/actions.ts"), /Forecast noted\. Confirmed supply is unchanged\./);
+  assert.match(review, /Forecast noted/);
+});
+
+test("Ease task 3: the change line says before, after and by how much", () => {
+  const lb = (amount: number) => ({ amount, unit: "lb" as const });
+  assert.equal(changeLine(lb(120), lb(60)), "120 lb → 60 lb (down 60 lb)");
+  assert.equal(changeLine(lb(40), lb(70)), "40 lb → 70 lb (up 30 lb)");
+  assert.equal(changeLine(lb(40), lb(40)), "40 lb → 40 lb (no change)");
+  assert.equal(changeLine({ amount: 2, unit: "kg" }, { amount: 1, unit: "kg" }), "2 kg → 1 kg (down 1 kg)");
+});
+
+test("Ease task 3: every review form that can be refused keeps what was typed", () => {
+  const actions = source("app/actions.ts");
+  for (const on of ["ask", "reply", "correct", "hold", "hand"]) assert.match(actions, new RegExp(`keep: "${on}"`), on);
+  assert.match(actions, /back\(item, notice, step\.on, kept\)/);
+  assert.match(actions, /\.\.\.kept, \.\.\.signNotice\(notice/, "kept values sit beside the signed notice, not inside it");
 });

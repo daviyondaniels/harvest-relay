@@ -21,7 +21,7 @@ export function quantity(q: Quantity | undefined): string {
 }
 // A forecast's tag: the amount the grower said might come, never the lot it would join.
 // With no expected amount there is no tag, never "+0".
-export function forecastTag(c: Change): string | undefined {
+export function forecastTag(c: { expected?: Quantity }): string | undefined {
   if (!c.expected) return undefined;
   const x = normalize(c.expected);
   return `+${weight(x.amount, x.unit)} expected`;
@@ -29,8 +29,15 @@ export function forecastTag(c: Change): string | undefined {
 export const OPERATION: Record<Operation, string> = {
   "replace-total": "New total", "add-quantity": "Addition", correction: "Correction", forecast: "Forecast", unresolved: "Not clear yet"
 };
+// The four kinds of change, said the way a coordinator would say them (the select's values are the tokens).
+export const OPERATION_CHOICE = { "replace-total": "A new total", "add-quantity": "Added to what they have", correction: "A correction", forecast: "A forecast, not confirmed" } as const;
+// "120 lb → 60 lb (down 60 lb)": the lot before and after, and by how much.
+export function changeLine(before: Quantity, after: Quantity): string {
+  const b = normalize(before), a = normalize(after), d = a.amount - b.amount;
+  return `${weight(b.amount, b.unit)} → ${weight(a.amount, a.unit)} (${d === 0 ? "no change" : `${d > 0 ? "up" : "down"} ${weight(Math.abs(d), a.unit)}`})`;
+}
 export const FIELD: Record<Field, string> = {
-  operation: "Kind of update", lot: "Lot", quantity: "Quantity", unit: "Unit", pack: "Case contents", grade: "Grade", date: "Delivery day", "correction-target": "Update being corrected"
+  operation: "What changed", lot: "Lot", quantity: "Quantity", unit: "Unit", pack: "Case contents", grade: "Grade", date: "Delivery day", "correction-target": "Update being corrected"
 };
 export function day(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
