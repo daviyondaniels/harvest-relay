@@ -13,7 +13,7 @@ import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
-import { readNotice, type Notice } from "../lib/notice.ts";
+import { RECHECK, readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
 import { AnswerFields, ValueFields } from "../value-fields.tsx";
 import { readKept, type KeptForm } from "../lib/kept.ts";
@@ -142,9 +142,14 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       if (ap && ap.change && !ap.questions.length && !ap.error && ap.reviewHash) answerPreview = ap;
     } catch { /* the values are not usable as shown: no preview */ }
   }
+  const names = new Map<string, string>([...w.ledger.snapshot.orders.map(o => [o.id, buyer(o.buyerId)] as const), ...w.ledger.snapshot.lots.map(l => [l.id, `${l.product}, ${grower(l.growerId)}`] as const)]);
   const start = !it.proposal ? handStart(it, w, kv) : undefined;
   const handPreview = start?.reading ? previewHand(w, it.id, start.reading, at) : undefined;
   const handShown = handPreview && handPreview.change && !handPreview.questions.length && !handPreview.error && handPreview.reviewHash ? handPreview : undefined;
+  // The outcome sits directly above the button that would act on it, in the form, so nobody reaches the button before
+  // the outcome; its review hash travels with the form ("shown") and only those exact values are approved in one step.
+  const handOutcome = handShown && <PreviewGate form="hand-form" note={CHECKED}><Impact title="If saved as shown:" head={lotLine(w, handShown)} p={handShown} names={names} why={cutReason(w, handShown, id => names.get(id) ?? id)} /></PreviewGate>;
+  const answerOutcome = answerPreview && <PreviewGate form="reply-form" note={CHECKED}><Impact title="If these answers are applied:" head={lotLine(w, answerPreview)} p={answerPreview} names={names} why={cutReason(w, answerPreview, id => names.get(id) ?? id)} /></PreviewGate>;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
   const decided = !!notice?.ok && (notice.on === "approve" || ((notice.on === "hold" || notice.on === "dismiss") && it.state === "dismissed"));
   // The one form in view that asks for a name when none is saved: Save these details for a message
@@ -158,7 +163,6 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const why = byField.size > 0 ? (byField.size === 1 ? "Answer the open detail above to approve." : `Answer the ${byField.size} open details above to approve.`) : "Approve is available once the change can be worked out.";
   // The ask this message answers, by the order's product and buyer.
   const ask = it.requestId ? w.resolutions.find(r => r.id === it.requestId) : undefined, askOrder = ask && w.ledger.snapshot.orders.find(o => o.id === ask.orderId);
-  const names = new Map<string, string>([...w.ledger.snapshot.orders.map(o => [o.id, buyer(o.buyerId)] as const), ...w.ledger.snapshot.lots.map(l => [l.id, `${l.product}, ${grower(l.growerId)}`] as const)]);
   const from = grower(it.source.growerId);
   // A problem with a field of a form still on the page (a missing name included) is shown
   // beside that field; anything else at the top of the message.
@@ -167,7 +171,8 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const bad: Bad = notice && !notice.ok && notice.field && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && !bad && !queueFocus ? notice : undefined;
   // Where focus goes: the field with the problem, else the result's heading.
-  const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : queueFocus ?? (notice ? "msg" : undefined);
+  const recheck = !!notice?.ok && notice.on === RECHECK, hasApprove = !closed && !!it.proposal && !p.needsRefresh && byField.size === 0;
+  const focus = bad ? fieldId(bad.on, bad.field) : recheck ? (hasApprove ? "approve-button" : "change") : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : queueFocus ?? (notice ? "msg" : undefined);
   return <>
     <section className="panel" id="item" tabIndex={-1} aria-labelledby="msg">
       {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} />}
@@ -203,7 +208,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
           <tr><td>Delivery day</td><td>{i.deliveryOn ? day(i.deliveryOn) : "not stated"}</td></tr>
         </tbody></table>
-      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
+      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : start?.complete ? "Check the details below, then save and approve." : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
 
       {byField.size > 0 && !closed && (
         <div className="blocker" role="status" id="open-questions" tabIndex={-1}>
@@ -217,16 +222,16 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="dismiss" bad={bad} quiet /></form>}
           {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} quiet /></form>}
         </div>
-        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} start={start!} quiet={elsewhere} />}
+        {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} start={start!} quiet={elsewhere} shown={handShown?.reviewHash} outcome={handOutcome} />}
         {i && <details open={byField.size > 0 || failedOn("reply")}>
           <summary>{recordedReply ? "Answer the remaining details" : "Add the grower's reply"}</summary>
-          <form action={replyAction} className="form" id="reply-form"><Hidden {...v} />
+          <form action={replyAction} className="form" id="reply-form" noValidate><Hidden {...v} />
             {recordedReply
               ? <><input type="hidden" name="recorded" value="1" /><p className="small">Their reply is recorded above. Give {byField.size === 1 ? "the remaining value" : "the remaining values"}; it does not need to be pasted again.</p></>
               : <><label>Reply, exactly as received<textarea name="reply" required maxLength={2000} rows={3} defaultValue={kv("reply", "reply")} {...invalid(bad, "reply", "reply")} /></label>
                 <Problem bad={bad} on="reply" name="reply" /></>}
             {openDetails
-              ? <AnswerFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply" || elsewhere}
+              ? <AnswerFields on="reply" shown={answerPreview?.reviewHash} preview={answerOutcome} details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply" || elsewhere}
                   kept={answerKept}
                   quote={<><label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
                   extra={live > 0 ? <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button> : undefined} />
@@ -240,7 +245,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
         </details>}
         {i && <details open={failedOn("ask")}>
           <summary>Ask the grower</summary>
-          <form action={askAction} className="form"><Hidden {...v} />
+          <form action={askAction} className="form" noValidate><Hidden {...v} />
             <FieldSelect only={openDetails} bad={bad} on="ask" kept={kv("ask", "field")} />
             <label>Question<input name="question" required maxLength={500} placeholder="How much is in each case?" defaultValue={kv("ask", "question")} {...invalid(bad, "ask", "question")} /></label>
             <Problem bad={bad} on="ask" name="question" />
@@ -249,7 +254,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
         </details>}
         {i && <details open={failedOn("correct")}>
           <summary>Correct what was read</summary>
-          <form action={correctAction} className="form"><Hidden {...v} />
+          <form action={correctAction} className="form" noValidate><Hidden {...v} />
             <p className="muted small">Use the grower's own words from the message. The change and the quote are kept in the history.</p>
             <ValueFields on="correct" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("correct", "field")} value={kv("correct", "value")} />
             <label>Words in the message<input name="quote" required maxLength={500} defaultValue={kv("correct", "quote")} {...invalid(bad, "correct", "quote")} /></label>
@@ -259,7 +264,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
         </details>}
         <details open={failedOn("hold")}>
           <summary>Leave pending, return or dismiss</summary>
-          <form className="form"><Hidden {...v} />
+          <form className="form" noValidate><Hidden {...v} />
             <label>Note or reason<input name="note" required maxLength={500} defaultValue={kv("hold", "note")} {...invalid(bad, "hold", "note")} /></label>
             <Problem bad={bad} on="hold" name="note" />
             <NameField known={known} on="hold" bad={bad} quiet />
@@ -292,14 +297,10 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
     <aside className="preview" aria-labelledby="change">
       <h2 id="change" tabIndex={-1}>What changes</h2>
       {notice?.ok && notice.on === "approve" && <Result key={sig} text={notice.text} />}
-      <ChangeTag it={it} p={p} event={event} />
+      <ChangeTag it={it} p={p} event={event} filled={!!start?.complete} />
       {closed && (decided || (ask && askOrder)) && <NextSteps it={it} w={w} decided={decided} back={ask && askOrder ? askOrder : undefined} />}
-      {!closed && !it.proposal && (handShown
-        ? <PreviewGate form="hand-form" note={CHECKED}><Impact title="If saved as shown:" head={lotLine(w, handShown)} p={handShown} names={names} why={cutReason(w, handShown, id => names.get(id) ?? id)} /></PreviewGate>
-        : <p className="small" role="status">{CHECKED}</p>)}
-      {!closed && it.proposal && p.questions.length > 0 && (answerPreview
-        ? <PreviewGate form="reply-form" note={CHECKED}><Impact title="If these answers are applied:" head={lotLine(w, answerPreview)} p={answerPreview} names={names} why={cutReason(w, answerPreview, id => names.get(id) ?? id)} /></PreviewGate>
-        : <p className="small" role="status">{CHECKED}</p>)}
+      {!closed && !it.proposal && <p className="small" role="status">{handShown ? "The outcome is shown above the Save and approve button." : CHECKED}</p>}
+      {!closed && it.proposal && p.questions.length > 0 && <p className="small" role="status">{answerPreview ? "The outcome is shown above the Apply and approve button." : CHECKED}</p>}
       {!closed && it.proposal && p.questions.length === 0 && <Impact p={p} names={names} why={cutReason(w, p, id => names.get(id) ?? id)} />}
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
@@ -312,9 +313,10 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       ) : !closed && it.proposal && (
         <form action={approveAction} className="panel"><Hidden {...v} />
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
+          {recheck && <p className="result" aria-hidden="true">{notice!.text}</p>}
           <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
           <div className="row">
-            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve" || elsewhere} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
+            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} id="approve-button" className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve" || elsewhere} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
             {off && <span id="approve-why" tabIndex={-1} className="small muted">{why}</span>}
           </div>
           <p className="fine-print">{p.change?.effect === "forecast" ? "Noting a forecast leaves confirmed supply as it is. " : "Approving changes this lot's confirmed supply only. "}It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
@@ -372,8 +374,10 @@ function handStart(it: InboxItem, w: World, kv: Kept) {
   return { call, amount, quote, grade, deliveryOn, operation, lotId, unit, target, complete, reading };
 }
 // noValidate: the browser's own bubble would hide the app's message; the server checks every field and names the one at fault.
-function HandForm({ it, w, v, bad, known, start, quiet }: { it: InboxItem; w: World; v: { item: string; version: number }; bad: Bad; known: boolean; start: ReturnType<typeof handStart>; quiet: boolean }) {
-  const { call, amount, quote, grade, deliveryOn, operation, lotId, unit, complete } = start, s = w.ledger.snapshot;
+function HandForm({ it, w, v, bad, known, start, quiet, shown, outcome }: { it: InboxItem; w: World; v: { item: string; version: number }; bad: Bad; known: boolean; start: ReturnType<typeof handStart>; quiet: boolean; shown?: string; outcome: ReactNode }) {
+  const { call, amount, quote, grade, deliveryOn, operation, lotId, unit } = start, s = w.ledger.snapshot;
+  // Save and approve is offered only with the outcome above it: it approves exactly the values that outcome was worked out from.
+  const complete = start.complete && !!shown;
   const lots = s.lots.filter(l => l.growerId === it.source.growerId);
   const targets = w.ledger.events.filter(e => e.effect !== "forecast" && lots.some(l => l.id === e.lotId));
   return (
@@ -410,12 +414,14 @@ function HandForm({ it, w, v, bad, known, start, quiet }: { it: InboxItem; w: Wo
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
-        {/* Every value above is in this form, so when all of them are filled the primary button saves them and approves the change they produce. */}
+        {/* The review hash of the outcome shown; the button approves only the values it came from. */}
+        {shown && <input type="hidden" name="shown" value={shown} />}
+        {outcome}
         <div className="row">
           <NamedSubmit label=<>{complete ? "Save and approve" : "Save these details"} <span className="sr-only">for {grower(it.source.growerId)}</span></> {...(complete ? { name: "andApprove", value: "1" } : {})} className="primary" known={known} on="hand" bad={bad} quiet={quiet} purpose={complete ? "this approval" : "this reading"} />
           {complete && <button type="submit">Save these details <span className="sr-only">for {grower(it.source.growerId)}</span></button>}
         </div>
-        {complete && <p className="fine-print">Save and approve saves these details, then approves the change they show. Save these details only saves them.</p>}
+        {complete && <p className="fine-print">Save and approve saves these details, then approves the change shown above. If you change a value, it is saved and you check the new change first. Save these details only saves them.</p>}
       </form>
     </details>
   );
@@ -451,7 +457,7 @@ function HistoryLine({ d, it }: { d: Decision; it: InboxItem }) {
   }
 }
 
-function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: string; effect: string; proposal: { interpretation: { quantity?: Quantity } }; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
+function ChangeTag({ it, p, event, filled }: { it: InboxItem; p: Preview; filled: boolean; event?: { id: string; effect: string; proposal: { interpretation: { quantity?: Quantity } }; approval: { reviewer: string }; lotBefore: { amount: number; unit: Quantity["unit"] }; lotAfter: { amount: number; unit: Quantity["unit"] } } }) {
   if (event?.effect === "forecast") return (
     <div className="tag done">
       <p className="from">Approved by {event.approval.reviewer}</p>
@@ -468,9 +474,9 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   );
   if (it.state === "dismissed") return <div className="tag"><p className="to">No change</p><p className="what">Dismissed: {it.decisions.at(-1)?.note}</p></div>;
   if (!it.proposal) return (
-    <div className="tag blocked">
+    <div className={filled ? "tag" : "tag blocked"}>
       <p className="from">Not checked yet</p>
-      <p className="to">Enter the details below</p>
+      <p className="to">{filled ? "Check the details below, then save and approve." : "Enter the details below"}</p>
       <p className="what">The change appears once the message has a reading.</p>
     </div>
   );
@@ -482,7 +488,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
     </div>
   );
   if (!p.change) return (
-    <div className="tag blocked">
+    <div className={p.questions.length && !p.error ? "tag" : "tag blocked"}>
       <p className="from">{p.error ? "Cannot preview" : p.questions.length ? "Needs your answer" : "Enter the details below"}</p>
       <p className="to">{p.questions.length ? "The change will show here once these answers are applied." : "Check the details above"}</p>
       <p className="what">{p.error ?? "The change can't be worked out until the open details are answered."}</p>

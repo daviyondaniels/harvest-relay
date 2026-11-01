@@ -88,7 +88,7 @@ test("Ease task 2: NamedSubmit shows the name input only when no name is known, 
   const ns = source("app/named-submit.tsx");
   assert.match(ns, /^"use client";/);
   assert.match(ns, /if \(known\) return null;/, "a known name shows nothing extra");
-  assert.match(ns, /<input name="who" required defaultValue=\{kept\} aria-label=\{`Your name, for \$\{purpose \?\? purposeOf\(on\)\}`\} maxLength=\{NAME_MAX\} autoComplete="name"/);
+  assert.match(ns, /<input name="who" aria-required="true" defaultValue=\{kept\} aria-label=\{`Your name, for \$\{purpose \?\? purposeOf\(on\)\}`\} maxLength=\{NAME_MAX\} autoComplete="name"/);
   assert.match(ns, /<Problem bad=\{bad\} on=\{on\} name="who" \/>/, "a refused name is explained beside the input");
   assert.match(ns, /<NameField known=\{known\}[^>]*\/>\s*<button type="submit"/, "the input comes directly before the button, in the same form");
   assert.doesNotMatch(ns, />\s*Save\s*</, "no separate Save button");
@@ -521,7 +521,7 @@ test("Ease task 4: Orders wording, the one-step send, the single status chip and
   assert.match(actions, /answerOf\(f, true\)/);
   // Demo-only control sits in the Demo group.
   assert.match(orders, /<details className="demo-tools"[^\n]*>\s*<summary>Demo tools<\/summary>[\s\S]*?className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>\s*<form action=\{scriptedRequestReplyAction\}/);
-  assert.match(cover, /coverLine\(/);
+  assert.match(cover, /waitingCover\(/);
   assert.match(conflict, /\{!sole && <label className="check"><input type="radio" name="choice" value="split"/, "no Split with one promise");
 });
 

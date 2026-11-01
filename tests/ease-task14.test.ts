@@ -7,7 +7,7 @@ import { confirmPlan, conflicts } from "../src/commitments.ts";
 import { options, shortages } from "../src/orders.ts";
 import { draftWaiting, factsFor, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { LATE, seedWorkbench } from "../src/seed.ts";
-import { approve, preview, readByHand, readByHandAndApprove, receive, suggestReading, type HandReading, type Workbench } from "../src/workbench.ts";
+import { approve, preview, previewHand, readByHand, readByHandAndApprove, receive, suggestReading, type HandReading, type Workbench } from "../src/workbench.ts";
 import { FORM_FIELDS, FieldError, fieldOf } from "../app/lib/errors.ts";
 import { status, ORDER_STATUS, promiseText } from "../app/lib/format.ts";
 import { NAME_NEEDED, runAs } from "../app/lib/names.ts";
@@ -151,7 +151,7 @@ async function lateDay() {
 test("Save and approve: the hand reading and the approval in one step, against the review hash of the state it produced", async () => {
   const { w, id } = await lateDay();
   const reading = hand(w, id), before = structuredClone(w);
-  const done = readByHandAndApprove(w, id, reading, ME, LATER);
+  const done = readByHandAndApprove(w, id, reading, ME, LATER, previewHand(w, id, reading, LATER)!.reviewHash);
   assert.deepEqual(w, before, "the input is unchanged");
   assert.equal(done.approved, true);
   assert.equal(done.next.items.find(i => i.id === id)!.state, "approved");
@@ -168,7 +168,7 @@ test("Save and approve: the hand reading and the approval in one step, against t
 test("Save and approve: with something left open only the reading is kept, and a hash from another state is never used", async () => {
   const { w, id } = await lateDay();
   const bad = { ...hand(w, id), quantity: { amount: 2, unit: "case" as const } };
-  const r = readByHandAndApprove(w, id, bad, ME, LATER);
+  const r = readByHandAndApprove(w, id, bad, ME, LATER, "any-hash");
   assert.equal(r.approved, false);
   assert.notEqual(r.next.items.find(i => i.id === id)!.state, "approved");
   assert.ok(r.next.items.find(i => i.id === id)!.proposal, "the reading was saved");
@@ -180,7 +180,7 @@ test("Save and approve is the primary button of the hand form when every value i
   assert.match(review, /complete \? "Save and approve" : "Save these details"/);
   assert.match(review, /\{\.\.\.\(complete \? \{ name: "andApprove", value: "1" \} : \{\}\)\} className="primary"/);
   assert.match(review, /const complete = !!\(/);
-  assert.match(actions, /readByHandAndApprove\(w, i, reading, who, now\(\)\)/);
+  assert.match(actions, /readByHandAndApprove\(w, i, reading, who, now\(\), shown\)/);
   assert.doesNotMatch(actions.slice(actions.indexOf("export async function readByHandAction"), actions.indexOf("export async function confirmLotAction")), /rebase/, "no rebase");
 });
 
@@ -209,7 +209,7 @@ test("Done today lists a noted forecast as Noted, not Approved", async () => {
 test("copy: Needs your answer only with an open question, the preview sentence, and the other wording changes", () => {
   const review = source("app/review/page.tsx");
   assert.doesNotMatch(review, /Waiting on your answer/);
-  assert.match(review, /<p className="to">Enter the details below<\/p>/);
+  assert.match(review, /"Enter the details below"/);
   assert.match(review, /"Needs your answer"/);
   assert.match(review, /The change will show here once these answers are applied\./);
   assert.match(review, /"Check what they said\."/);
@@ -224,4 +224,26 @@ test("Orders puts its demo control in a closed Demo tools fold", () => {
   const orders = source("app/orders/page.tsx");
   assert.match(orders, /<details className="demo-tools" open=\{demo\.some/);
   assert.equal((orders.match(/scriptedRequestReplyAction\}>/g) ?? []).length, 1);
+});
+
+// Task 20: the edited-value check on the hand path.
+test("Save and approve: values the preview showed approve; an edited amount is saved without approving, and the second press approves", async () => {
+  const { w, id } = await lateDay();
+  const reading = hand(w, id), shown = previewHand(w, id, reading, LATER)!.reviewHash!;
+  assert.equal(readByHandAndApprove(w, id, reading, ME, LATER, shown).approved, true, "unedited values approve in one step");
+  // The amount was edited after the preview (70 lb became 90 lb): saved, not approved.
+  const edited = { ...reading, quantity: { ...reading.quantity, amount: 90 } };
+  const r = readByHandAndApprove(w, id, edited, ME, LATER, shown);
+  assert.deepEqual([r.approved, r.changed], [false, true]);
+  const item = r.next.items.find(i => i.id === id)!;
+  assert.notEqual(item.state, "approved");
+  assert.ok(item.proposal, "the edited reading was saved");
+  assert.equal(r.next.ledger.version, w.ledger.version, "no supply change");
+  // The page now shows the new preview; the second press carries its hash and approves exactly that change.
+  const second = preview(r.next, id), again = approve(r.next, id, ME, second.reviewHash!, LATER);
+  assert.notEqual(second.reviewHash, shown);
+  assert.equal(again.items.find(i => i.id === id)!.state, "approved");
+  assert.equal(again.ledger.events.at(-1)!.lotAfter.amount, 90);
+  // No preview was shown (no complete pre-fill), so there is no hash: saved, not approved.
+  assert.deepEqual([readByHandAndApprove(w, id, reading, ME, LATER).approved, readByHandAndApprove(w, id, reading, ME, LATER).changed], [false, true]);
 });

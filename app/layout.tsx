@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import type { ReactNode } from "react";
 import { rememberedName } from "./lib/name.ts";
+import { ClearErrors } from "./clear-errors.tsx";
 import { Header, TabBar } from "./nav.tsx";
 import type { Theme } from "./theme.tsx";
 import { Who } from "./who.tsx";
@@ -27,6 +28,7 @@ export default async function Layout({ children }: { children: ReactNode }) {
         </header>
         <main id="main" tabIndex={-1} className="page">{children}</main>
         <TabBar />
+        <ClearErrors />
       </body>
     </html>
   );

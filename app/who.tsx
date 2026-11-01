@@ -35,7 +35,7 @@ export function Who({ name }: { name?: string }) {
         {name ? <><span>Recording as</span><b className="who-name" title={name}>{name}</b><span aria-hidden="true">·</span></> : <span>Not signed in</span>}
         <button type="button" className="link" ref={button} aria-expanded={open} aria-controls="who-form" onClick={() => setOpen(o => !o)}>{name ? "not you?" : "set name"}</button>
       </p>
-      <form id="who-form" className="who-form" action={act} hidden={!open}>
+      <form id="who-form" className="who-form" noValidate action={act} hidden={!open}>
         <label><span className="who-label">{name ? "Your name instead" : "Your name"}</span>
           <input name="who" required maxLength={NAME_MAX} autoComplete="name" ref={field}
             aria-invalid={error ? true : undefined} aria-describedby={error ? "who-error" : undefined} /></label>

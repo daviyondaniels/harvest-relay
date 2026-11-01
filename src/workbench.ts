@@ -105,10 +105,18 @@ export function reply(w: Workbench, id: string, source: Source, answers: Answer[
 // The coordinator's answers and the approval in one step. The approval is checked against the review
 // hash of the state the answers produce, so it approves exactly the change that state previews. When the
 // answers leave a question open, or no change can be worked out, only the reply is kept (approved: false).
-export function replyAndApprove(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string): { next: Workbench; approved: boolean } {
-  const replied = reply(w, id, source, answers, unclear, actor, at), p = preview(replied, id);
-  if (p.questions.length || p.error || !p.change || !p.reviewHash) return { next: replied, approved: false };
-  return { next: approve(replied, id, actor, p.reviewHash, at), approved: true };
+export type Approved = { next: Workbench; approved: boolean; changed: boolean };
+// shown: the review hash of the preview the coordinator was shown (a hidden field of the form). The approval is
+// made only when the produced state has exactly that hash; values the coordinator edited after the preview,
+// or a form that had no preview, are saved without approving (changed: true), so the new outcome is shown first.
+function approveIfShown(saved: Workbench, id: string, actor: string, at: string, shown: string | undefined, open: (p: Preview) => boolean): Approved {
+  const p = preview(saved, id);
+  if (open(p) || !p.reviewHash) return { next: saved, approved: false, changed: false };
+  if (!shown || shown !== p.reviewHash) return { next: saved, approved: false, changed: true };
+  return { next: approve(saved, id, actor, p.reviewHash, at), approved: true, changed: false };
+}
+export function replyAndApprove(w: Workbench, id: string, source: Source, answers: Answer[], unclear: Field[], actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(reply(w, id, source, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
 }
 // Answers to the open details from a reply that is already recorded (an earlier "Apply answers" left a question
 // open). The reply is not recorded a second time: the history gets one "answered" line, never another "replied".
@@ -126,10 +134,8 @@ function answerRecordedOnly(w: Workbench, id: string, answers: Answer[], unclear
   return next;
 }
 export const answerRecorded = answerRecordedOnly;
-export function answerRecordedAndApprove(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string): { next: Workbench; approved: boolean } {
-  const answered = answerRecordedOnly(w, id, answers, unclear, actor, at), p = preview(answered, id);
-  if (p.questions.length || p.error || !p.change || !p.reviewHash) return { next: answered, approved: false };
-  return { next: approve(answered, id, actor, p.reviewHash, at), approved: true };
+export function answerRecordedAndApprove(w: Workbench, id: string, answers: Answer[], unclear: Field[], actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(answerRecordedOnly(w, id, answers, unclear, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || !p.change));
 }
 // What the answers would do, worked out on a copy: the preview of the state they produce. Undefined when they are refused.
 export function previewAnswers(w: Workbench, id: string, source: Source, answers: Answer[], at: string): Preview | undefined {
@@ -197,10 +203,8 @@ export function readByHand(w: Workbench, id: string, r: HandReading, actor: stri
 // coordinator submitted, so nothing hidden is approved: the approval is checked against the review hash of
 // the state the reading produces, exactly the change that state previews. When the reading leaves a question
 // open, or no change can be worked out, only the reading is kept (approved: false). It does not rebase.
-export function readByHandAndApprove(w: Workbench, id: string, r: HandReading, actor: string, at: string): { next: Workbench; approved: boolean } {
-  const saved = readByHand(w, id, r, actor, at), p = preview(saved, id);
-  if (p.questions.length || p.error || p.needsRefresh || !p.change || !p.reviewHash) return { next: saved, approved: false };
-  return { next: approve(saved, id, actor, p.reviewHash, at), approved: true };
+export function readByHandAndApprove(w: Workbench, id: string, r: HandReading, actor: string, at: string, shown?: string): Approved {
+  return approveIfShown(readByHand(w, id, r, actor, at), id, actor, at, shown, p => !!(p.questions.length || p.error || p.needsRefresh || !p.change));
 }
 
 // What the coordinator's reading would do if it were saved as shown, worked out on a copy: the preview of the state the

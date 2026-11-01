@@ -101,8 +101,9 @@ export const STAGE: Record<"planned" | "promised" | "packed" | "handed-off", Sta
 };
 // "Promised 40 of 50 lb", and what the live plan gives the order beyond that, when it does.
 // settled: the buyer has already agreed to a substitute or been told they will be short, so "not promised yet" would mislead.
+export const NOT_PROMISED = "Not promised to the buyer yet";
 export function promiseText(s: { promised: number; ordered: number; unit: "g" | "lb" | "each"; confirmedBefore?: boolean }, planned: number, settled = false): string[] {
   const of = s.unit === "g" ? `${weight(s.promised, s.unit)} of ${weight(s.ordered, s.unit)}` : `${s.promised} of ${weight(s.ordered, s.unit)}`;
   const extra = planned - s.promised;
-  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 && !settled ? ["Not promised to the buyer yet"] : [])];
+  return [...(s.promised > 0 || s.confirmedBefore ? [`Promised ${of}`] : []), ...(extra > 0 && !settled ? [NOT_PROMISED] : [])];
 }

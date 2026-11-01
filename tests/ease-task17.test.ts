@@ -51,7 +51,7 @@ test("a partial answer keeps the reply: the rest is applied against it, with no 
   assert.ok(shown.change && !shown.questions.length, "the preview shows the finished change");
   const before = structuredClone(kept);
   assert.equal(answerRecorded(kept, "item-1", [PACK], [], ME, T(4)).items[0].decisions.filter(d => d.kind === "replied").length, 1);
-  const done = answerRecordedAndApprove(kept, "item-1", [PACK], [], ME, T(4));
+  const done = answerRecordedAndApprove(kept, "item-1", [PACK], [], ME, T(4), shown.reviewHash);
   assert.equal(done.approved, true);
   const item = done.next.items[0];
   assert.deepEqual([item.state, item.replies.length], ["approved", 1], "the reply is not recorded twice");
@@ -86,11 +86,11 @@ test("They said yes with no channel records only who recorded the answer, claimi
   w = sendMessage(w, "res-1", CONTACTS, SME, ST(31));
   w = recordBuyerReply(w, "res-1", { channel: "recorded", text: "", accept: true }, "Sam", ST(40));
   const r = w.resolutions.find(x => x.id === "res-1")!;
-  assert.deepEqual([r.reply!.channel, r.reply!.text, r.reply!.quote], ["recorded", "Answer recorded by Sam", "Answer recorded by Sam"]);
+  assert.deepEqual([r.reply!.channel, r.reply!.text, r.reply!.quote], ["recorded", "Answer recorded by Sam, no note", "Answer recorded by Sam, no note"]);
   assert.equal(r.status, "accepted");
   const src = permissionSource(w.ledger, "order-b", "zucchini");
   assert.ok(src.kind === "agreed" && src.record.kind === "substitute-accepted", "recorded permission");
-  if (src.kind === "agreed" && src.record.kind === "substitute-accepted") assert.deepEqual([src.record.evidence.channel, src.record.evidence.quote], ["recorded", "Answer recorded by Sam"]);
+  if (src.kind === "agreed" && src.record.kind === "substitute-accepted") assert.deepEqual([src.record.evidence.channel, src.record.evidence.quote], ["recorded", "Answer recorded by Sam, no note"]);
 });
 
 test("names and copy", () => {

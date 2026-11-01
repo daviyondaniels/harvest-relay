@@ -3,7 +3,7 @@ import { useSearchParams } from "next/navigation";
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from "react";
 import { Problem, invalid, type Bad } from "./lib/field-error.tsx";
 import { NAME_MAX } from "./lib/names.ts";
-import { KEPT_WHO } from "./lib/kept.ts";
+import { keptWho } from "./lib/kept.ts";
 
 // The coordinator's name is asked on the first action that records it, in the same form, so
 // there is no separate Save: typing it and pressing Enter or the button does both. With a name
@@ -23,13 +23,14 @@ const PURPOSE: [RegExp, string][] = [
 ];
 const purposeOf = (on: string) => PURPOSE.find(([re]) => re.test(on))?.[1] ?? "this change";
 export function NameField({ known, on = "named", bad, purpose, quiet }: Named) {
-  const kept = useSearchParams().get(KEPT_WHO) ?? undefined;
+  const kept = keptWho(useSearchParams(), on);
   if (known) return null;
   const refused = bad?.on === on && bad.field === "who";
   if (quiet && !refused) return null;
   return <>
+    <input type="hidden" name="who_on" value={on} />
     <label className="named"><span>Your name</span>
-      <input name="who" required defaultValue={kept} aria-label={`Your name, for ${purpose ?? purposeOf(on)}`} maxLength={NAME_MAX} autoComplete="name" {...invalid(bad, on, "who")} />
+      <input name="who" aria-required="true" defaultValue={kept} aria-label={`Your name, for ${purpose ?? purposeOf(on)}`} maxLength={NAME_MAX} autoComplete="name" {...invalid(bad, on, "who")} />
     </label>
     <Problem bad={bad} on={on} name="who" />
   </>;

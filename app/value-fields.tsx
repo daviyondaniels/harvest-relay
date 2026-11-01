@@ -36,12 +36,15 @@ export function ValueFields({ on, details, kinds, lots, bad, field, value }: {
 // Sent as "value-<detail>" fields. When every open detail has a value, the answers close the last question and the
 // button is "Apply and approve" (it sends andApprove=1); otherwise it is "Apply answers". Without scripts the
 // button is "Apply answers", which never approves.
-export function AnswerFields({ on, details, kinds, lots, bad, kept, known, quiet, quote, extra }: {
-  on: string; details: Choice[]; kinds: Choice[]; lots: Choice[]; bad: Bad; kept: Record<string, string | undefined>; known: boolean; quiet: boolean; quote: ReactNode; extra?: ReactNode;
+// shown: the review hash of the preview rendered with the form (a hidden field). Apply and approve approves in one
+// step only the values that preview was worked out from; with no preview there is no hash and the button only applies.
+// preview: that outcome, rendered directly above the button so nobody reaches it before the outcome.
+export function AnswerFields({ on, details, kinds, lots, bad, kept, known, quiet, quote, extra, shown, preview }: {
+  on: string; details: Choice[]; kinds: Choice[]; lots: Choice[]; bad: Bad; kept: Record<string, string | undefined>; known: boolean; quiet: boolean; quote: ReactNode; extra?: ReactNode; shown?: string; preview?: ReactNode;
 }) {
   const [typed, setTyped] = useState<Record<string, string>>(() => Object.fromEntries(details.map(d => [d.value, kept[d.value] ?? ""])));
   const set = (k: string) => (e: { target: { value: string } }) => setTyped(t => ({ ...t, [k]: e.target.value }));
-  const all = details.every(d => typed[d.value]?.trim()), name = (k: string) => `value-${k}`;
+  const all = !!shown && details.every(d => typed[d.value]?.trim()), name = (k: string) => `value-${k}`;
   return <>
     {details.map(d => {
       const k = d.value, shared = { name: name(k), value: typed[k] ?? "", onChange: set(k), required: details.length === 1, ...invalid(bad, on, name(k)) };
@@ -56,10 +59,12 @@ export function AnswerFields({ on, details, kinds, lots, bad, kept, known, quiet
     })}
     {bad?.on === on && bad.field === "value" && <div id={fieldId(on, "value")} tabIndex={-1}><Problem bad={bad} on={on} name="value" /></div>}
     {quote}
+    {shown && <input type="hidden" name="shown" value={shown} />}
+    {preview}
     <div className="row">
       <NamedSubmit label={all ? "Apply and approve" : "Apply answers"} {...(all ? { name: "andApprove", value: "1" } : {})} className={all ? "primary" : undefined} known={known} on={on} bad={bad} quiet={quiet} purpose={all ? "this approval" : "this answer"} />
       {extra}
     </div>
-    {all && <p className="fine-print">Applies these answers, then approves the change shown, in one step.</p>}
+    {all && <p className="fine-print">Applies these answers, then approves the change shown above, in one step. If you change them, you check the new change first.</p>}
   </>;
 }

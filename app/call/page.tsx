@@ -25,7 +25,7 @@ export default async function Call({ searchParams }: { searchParams: Promise<Rec
       {notice && !bad && <p className="error" role="alert">{notice.text}</p>}
       <h1 id="call" tabIndex={-1}>Log a call</h1>
       <p className="muted small">Write what the grower said, in their terms. The note goes to Review updates as a message and changes nothing until it is reviewed and approved.</p>
-      <form action={logCallAction} className="form">
+      <form action={logCallAction} className="form" noValidate>
         <input type="hidden" name="version" value={version} />
         <label>Who called
           <select name="grower" required defaultValue={CONTACTS.some(c => c.id === grower) ? grower : ""} {...invalid(bad, "call", "grower")}>

@@ -229,7 +229,7 @@ export function sendMessage(w: Workbench, resId: string, contacts: Contact[], ac
 // A phone answer with nothing written is recorded as exactly that: the coordinator heard it and has no words to quote.
 export const noNote = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""} without a note`;
 // An answer with no channel picked says only who recorded it.
-export const recordedBy = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""}`;
+export const recordedBy = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""}, no note`;
 export function recordBuyerReply(w: Workbench, resId: string, given: Reply & { accept: boolean }, actor: string, at: string): Workbench {
   const blank = typeof given?.text !== "string" || !given.text.trim();
   const reply = given?.channel === "call" && blank ? { ...given, text: noNote(actor) } : given?.channel === "recorded" && blank ? { ...given, text: recordedBy(actor) } : given;

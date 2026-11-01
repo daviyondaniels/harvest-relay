@@ -23,10 +23,16 @@ const cut = (s: string, max: number) => Array.from(s).slice(0, max).join("");
 
 // The name typed beside a refused form is kept too, so a refusal about something else does not empty it.
 // It is the same kind of starting text as any other kept field (NameField reads it back).
-export const KEPT_WHO = "k_who";
+// k_who carries the name; k_who_on carries the form whose name field it was typed in (the NameField's own "on", sent
+// with the form as "who_on"), so only that form's name field starts with it and no other form's field fills.
+export const KEPT_WHO = "k_who", KEPT_WHO_ON = "k_who_on";
 export function keepWho(f: FormData): Record<string, string> {
-  const v = f.get("who");
-  return typeof v === "string" && v.trim() ? { [KEPT_WHO]: cut(v.trim(), NAME_MAX) } : {};
+  const v = f.get("who"), on = f.get("who_on");
+  return typeof v === "string" && v.trim() ? { [KEPT_WHO]: cut(v.trim(), NAME_MAX), ...(typeof on === "string" && on.trim() ? { [KEPT_WHO_ON]: cut(on.trim(), 60) } : {}) } : {};
+}
+// The kept name for the name field of form `on`: only when it was typed in that form.
+export function keptWho(p: { get(k: string): string | null }, on: string): string | undefined {
+  return p.get(KEPT_WHO_ON) === on ? p.get(KEPT_WHO) ?? undefined : undefined;
 }
 
 // The query parameters that carry a refused form's typed fields.
