@@ -222,4 +222,13 @@ Counts are clicks plus typed fields, from `reports/tools/click_paths.py`.
 - Update `reports/tools/click_paths.py` for the new UI and run it on a fresh app copy.
 - Re-run the three scenario audits and the interface rating (four Sonnet agents, each on its own port).
 - Anything above target, or any new friction rated serious, becomes a numbered follow-up task in this plan. Run the loop until every task meets its target or the remaining gap is an explicit safety step (review hash, named action, evidence).
+- **Interface target, set by the user on 2026-11-01: an overall interface rating of about 9/10 or higher.** That means every one of the six interface scores is at least 4.5/5:
+  - visual hierarchy;
+  - layout and density;
+  - navigation;
+  - comprehension;
+  - visual design;
+  - feedback.
+
+  After each re-rating, every interface score below 4.5 gets its own follow-up task, named from the rater's evidence. The loop does not end until the target is met. Each follow-up's brief tells the implementer to read the `frontend-design` skill: a deliberate hierarchy for every page (one primary action above the fold), a consistent spacing scale, and type sizes of at least 14 px for chips and meta text.
 - Final whole-branch review on Opus, then report to the user.

@@ -127,7 +127,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
   const optBad: Bad = notice && !notice.ok && notice.on === "draft" && (notice.field === "who" || notice.field === "body") && notice.res?.startsWith("opt-") && offered.some(x => `opt-${x.index}` === notice.res)
     ? { on: `${notice.res}-draft`, field: notice.field, text: notice.text } : undefined;
   const focus = !notice ? undefined
-    : optBad ? fieldId(optBad.on, "who")
+    : optBad ? fieldId(optBad.on, optBad.field)
     : onCard && notice.field ? `${notice.res}-${notice.on}-${notice.field}`
     : (notice.ok || onCard) && notice.res && resolutions.some(r => r.id === notice.res) ? `${notice.res}-title` : "order";
   const today = hubDay(new Date().toISOString());
