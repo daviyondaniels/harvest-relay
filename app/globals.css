@@ -520,6 +520,7 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 .cov-phone, .phone-chip { display: none; }
 @media (max-width: 600px) {
   .hero .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hero .stats > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .hero .stat { padding: 8px 8px; gap: 8px; min-width: 0; }
   .hero .stat b { font-size: 1.15rem; }
   table.buyers td[data-label="Wants"], table.buyers td.bar, table.buyers td[data-label="Short"] { display: none; }
