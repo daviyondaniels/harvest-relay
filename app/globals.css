@@ -461,8 +461,9 @@ p a, li a:not(.button), .attention .more, a.plain, .result a { color: var(--link
   .top { column-gap: 8px; }
 }
 @media (max-width: 300px) {
-  :root { --tabbar-h: 122px; }
-  .tabbar { grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+  /* At 200% zoom five 44 px tabs don't fit one row; one row of icons (about 39 px, above the 24 px WCAG 2.5.8
+     minimum) keeps the bar short on a short screen. A two-row bar would cover about 29% of the view. */
+  .tabbar { grid-template-columns: repeat(5, minmax(24px, 1fr)); }
   .tabbar a span { display: none; }
   .top { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand menu" "name name" "who who"; }
   .brand img { width: 32px; height: 32px; }

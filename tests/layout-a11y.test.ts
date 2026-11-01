@@ -144,10 +144,9 @@ test("the phone tab bar follows <main> in the DOM, and the fixed bar is not insi
   assert.match(nav, /aria-current/);
 });
 
-test("at 300 px and below the tab links are at least 44 px wide and the body padding follows --tabbar-h", () => {
+test("at 300 px and below the tab bar stays one row of icons at least 24 px wide, and the body padding follows --tabbar-h", () => {
   const narrow = css.slice(css.indexOf("@media (max-width: 300px)"));
-  assert.match(narrow, /grid-template-columns: repeat\(3, minmax\(44px, 1fr\)\)/);
-  assert.match(narrow, /--tabbar-h: (\d+)px/);
+  assert.match(narrow, /\.tabbar \{ grid-template-columns: repeat\(5, minmax\(24px, 1fr\)\); \}/);
   assert.match(css, /padding-bottom: calc\(var\(--tabbar-h\)/);
 });
 
