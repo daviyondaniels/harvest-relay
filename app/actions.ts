@@ -8,7 +8,7 @@ import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, type Option } from "../src/orders.ts";
 import { conflicts, confirmPlan, decideCut, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
-import { confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
+import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
 import { ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, type HandReading, receive, refresh, refreshAll, refreshAndApprove, refreshIfStale, reply, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
@@ -260,9 +260,10 @@ function res(w: Workbench, f: FormData): Resolution {
   if (!r || r.orderId !== str(f, "order")) throw new Error("Unknown message for this order");
   return r;
 }
-function answerOf(f: FormData): { channel: "text" | "call"; text: string; quote?: string } {
+// callBlank: a call may be recorded with no note (the domain says so in the history).
+function answerOf(f: FormData, callBlank = false): { channel: "text" | "call"; text: string; quote?: string } {
   const channel = str(f, "channel");
-  if (channel === "call") return { channel, text: words(f, "text", "the call note") };
+  if (channel === "call") return { channel, text: callBlank && !str(f, "text") ? "" : words(f, "text", "the call note") };
   if (channel !== "text") throw new FieldError("Choose whether the answer came by text or by phone.", "channel");
   const text = words(f, "text", "the reply text"), quote = words(f, "quote", "the words that answer it");
   if (!text.includes(quote)) throw new FieldError("Copy these words exactly from the reply.", "quote");
@@ -270,32 +271,56 @@ function answerOf(f: FormData): { channel: "text" | "call"; text: string; quote?
 }
 // A notice from a message card names the card (res) and its form (on), so the page shows it
 // there rather than at the top. A result focuses the card it is about.
-function toOrders(order: string, resId: string, notice: Notice): never {
+function toOrders(order: string, resId: string, notice: Notice, kept: Record<string, string> = {}): never {
   revalidatePath("/", "layout");
-  const q = new URLSearchParams({ order, ...signNotice(notice, { page: "/orders", id: order }) });
+  const q = new URLSearchParams({ order, ...kept, ...signNotice(notice, { page: "/orders", id: order }) });
   // A field problem (a missing name included) has no fragment, because the page moves focus to the field.
   redirect(`/orders?${q}${resId && !notice.field ? `#${resId}` : ""}`);
 }
 async function onOrder(f: FormData, change: (w: Workbench, who: string) => Workbench | Promise<Workbench>, step: Step, after?: (w: Workbench) => string): Promise<never> {
   const order = str(f, "order");
-  let notice: Notice, resId = str(f, "res");
+  let notice: Notice, resId = str(f, "res"), kept: Record<string, string> = {};
   try {
     const who = step.anon ? "" : await named(f);
     await act(Number(str(f, "version")), async w => { const next = await change(w, who); if (after) resId = after(next); return next; }, { rebase: step.rebase });
     notice = { text: step.done, ok: true, on: step.on, ...(resId ? { res: resId } : {}) };
-  } catch (e) { notice = await failed(e, step.on, resId || undefined); }
-  toOrders(order, resId, notice);
+  } catch (e) { notice = await failed(e, step.on, resId || undefined); if (step.keep) kept = keepTyped(f, step.keep); }
+  toOrders(order, resId, notice, kept);
 }
 
+// The option a card offered, if the order still offers exactly it; its draft is started from that.
+function startFrom(w: Workbench, f: FormData, who: string): Workbench {
+  const order = str(f, "order"), index = Number(str(f, "index")), offered = options(w.ledger, order, CONTACTS);
+  const o = Number.isSafeInteger(index) ? offered[index] : undefined;
+  if (!o || o.kind !== str(f, "kind") || amountOf(o) !== Number(str(f, "amount")) || target(o) !== str(f, "target"))
+    throw new Error("The options for this order changed since the page loaded. Review them and choose again.");
+  const facts = factsFor(w, order, o, NAMES);
+  return startResolution(w, order, o, CONTACTS, facts, templateDraft(facts, products(w), hubDay(now())), who, now());
+}
 export async function startResolutionAction(f: FormData) {
+  return onOrder(f, (w, who) => startFrom(w, f, who), { on: "draft", done: "Message drafted. Check it, then send." }, w => w.resolutions.at(-1)!.id);
+}
+
+// The Next step's one button: draft (with the coordinator's own wording, if edited), check, and send, in one
+// recorded step. If the words need confirming, or the check found something, only the draft is kept and the
+// draft card shows it: those are the coordinator's to decide before anything is sent (src/resolve.ts).
+export async function sendNowAction(f: FormData) {
+  const step: Step = { on: "draft", done: "Recorded as sent.", keep: "send" };
   return onOrder(f, (w, who) => {
-    const order = str(f, "order"), index = Number(str(f, "index")), offered = options(w.ledger, order, CONTACTS);
-    const o = Number.isSafeInteger(index) ? offered[index] : undefined;
-    if (!o || o.kind !== str(f, "kind") || amountOf(o) !== Number(str(f, "amount")) || target(o) !== str(f, "target"))
-      throw new Error("The options for this order changed since the page loaded. Review them and choose again.");
-    const facts = factsFor(w, order, o, NAMES);
-    return startResolution(w, order, o, CONTACTS, facts, templateDraft(facts, products(w), hubDay(now())), who, now());
-  }, { on: "draft", done: "Message drafted. Check it, then send." }, w => w.resolutions.at(-1)!.id);
+    const body = words(f, "body", "the message");
+    let next = startFrom(w, f, who);
+    const id = next.resolutions.at(-1)!.id;
+    if (body !== next.resolutions.at(-1)!.text) next = editDraft(next, id, body, who, now());
+    const r = next.resolutions.at(-1)!;
+    if (!r.check.ok || !canSend(next, r, hubDay(now()))) {
+      step.on = "draft";
+      step.done = canSend(next, r, hubDay(now())) ? "Message drafted. The check found something. Look it over, then send." : "Message drafted. Confirm the words below, then send.";
+      return next;
+    }
+    const sent = sendMessage(next, id, CONTACTS, who, now());
+    step.on = "send";
+    return sent;
+  }, step, w => w.resolutions.at(-1)!.id);
 }
 
 // "Suggest other wording": a recorded or live model draft. Recorded drafts are replayed
@@ -341,8 +366,8 @@ export async function buyerReplyAction(f: FormData) {
       if (!quote) throw new FieldError("Their words don't say plainly yes or no. Select or type the words that answer it.", "quote");
       f.set("quote", quote);
     }
-    return recordBuyerReply(w, res(w, f).id, { ...answerOf(f), accept }, who, now());
-  }, { on: "reply", done: "Reply recorded." });
+    return recordBuyerReply(w, res(w, f).id, { ...answerOf(f, true), accept }, who, now());
+  }, { on: "reply", done: "Reply recorded.", keep: "buyer" });
 }
 export async function supplyReplyAction(f: FormData) {
   return onOrder(f, (w, who) => {

@@ -38,6 +38,8 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
   const name = (orderId: string) => buyer(order(orderId)?.buyerId ?? orderId), packed = (s: string) => s === "packed" || s === "handed-off";
   const single = c.suggestion?.length === 1 ? c.suggestion[0].orderId : undefined, split = (c.suggestion?.length ?? 0) > 1;
   const alone = c.promises.some(p => p.amount >= c.excess);
+  // One promise has nobody to split with: the only choice is that buyer.
+  const sole = c.promises.length === 1 && alone;
   const one = (k: string) => typeof kept?.[k] === "string" ? kept[k] as string : undefined;
   const picked = one("choice") && (one("choice") === "split" || c.promises.some(p => p.orderId === one("choice") && p.amount >= c.excess)) ? one("choice") : undefined;
   const typed = (orderId: string) => { const v = one(`cut-${orderId}`); return v && /^\d{1,9}$/.test(v) ? v : undefined; };
@@ -58,16 +60,16 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
           <legend>Who takes the cut?</legend>
           {!c.suggestion && <p className="muted small">Every order on this lot is packed or handed off. Choose who takes the cut.</p>}
           {c.promises.filter(p => p.amount >= c.excess).map(p => (
-            <label key={p.orderId} className="check"><input type="radio" name="choice" value={p.orderId} defaultChecked={picked ? picked === p.orderId : single === p.orderId} />
+            <label key={p.orderId} className="check"><input type="radio" name="choice" value={p.orderId} defaultChecked={picked ? picked === p.orderId : sole || single === p.orderId} />
               <span>{name(p.orderId)} takes {excess}{single === p.orderId && SUGGESTED}{packed(p.stage) && " (already packed)"}</span></label>
           ))}
-          <label className="check"><input type="radio" name="choice" value="split" defaultChecked={picked ? picked === "split" : split || !alone} /><span>Split it{split && SUGGESTED}</span></label>
-          <div className="split">
+          {!sole && <label className="check"><input type="radio" name="choice" value="split" defaultChecked={picked ? picked === "split" : split || !alone} /><span>Split it{split && SUGGESTED}</span></label>}
+          {!sole && <div className="split">
             {c.promises.map(p => (
               <label key={p.orderId}>{name(p.orderId)}: amount to cut if splitting (up to {weight(p.amount, c.unit)})
                 <input type="number" inputMode="numeric" min={0} max={p.amount} step={1} name={`cut-${p.orderId}`} defaultValue={picked ? typed(p.orderId) : split ? cutOf(p.orderId) ?? 0 : undefined} /></label>
             ))}
-          </div>
+          </div>}
           <Problem bad={bad} on={on} name="cut" />
         </fieldset>
         <div className="row"><NamedSubmit label={<>Settle the cut<span className="sr-only"> for {who}'s {c.product}</span></>} className="primary" known={known} on={on} bad={bad} /></div>

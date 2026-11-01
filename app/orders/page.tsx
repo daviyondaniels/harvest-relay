@@ -9,13 +9,14 @@ import { planOf, stageOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { PendingCover } from "../pending-cover.tsx";
 import { canSend, factsFor, openFor, orderStatus, toConfirm, type Resolution } from "../../src/resolve.ts";
-import { BUYER_REPLIES, REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
+import { REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
-import { buyerReplyAction, confirmDraftAction, discardDraftAction, editDraftAction, liveAllowance, museDraftAction, requestedCallAction, scriptedRequestReplyAction, sendAction, startResolutionAction, supplyReplyAction } from "../actions.ts";
-import { ORDER_STATUS, STAGE, buyer, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
+import { buyerReplyAction, confirmDraftAction, discardDraftAction, editDraftAction, liveAllowance, museDraftAction, requestedCallAction, scriptedRequestReplyAction, sendAction, sendNowAction, startResolutionAction, supplyReplyAction } from "../actions.ts";
+import { ORDER_STATUS, buyer, orderChip, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
 import { current, extras } from "../lib/hub.ts";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { rememberedName } from "../lib/name.ts";
+import { readKept } from "../lib/kept.ts";
 import { readNotice, type Notice } from "../lib/notice.ts";
 import { QueueFold } from "../queue-fold.tsx";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
@@ -88,6 +89,7 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, raw = readNotice(params, { page: "/orders", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
   const { state: w, version } = await current(), me = await rememberedName();
+  const typed = (form: "send" | "buyer", name: string) => readKept(params, form, name);
   const orders = w.ledger.snapshot.orders, statuses = new Map(orders.map(o => [o.id, orderStatus(w, o.id)]));
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
   return (
@@ -104,26 +106,26 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
           ); })}
         </QueueFold>
       </nav>
-      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} /> : <p className="muted">No orders yet.</p>}
+      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} typed={typed} /> : <p className="muted">No orders yet.</p>}
     </div>
   );
 }
 
-async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string }) {
-  const o = w.ledger.snapshot.orders.find(x => x.id === orderId)!, st = ORDER_STATUS[orderStatus(w, orderId)];
+async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined }) {
+  const o = w.ledger.snapshot.orders.find(x => x.id === orderId)!;
   const plan = planOf(w.ledger), lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l]));
   const mine = plan.allocations.filter(a => a.orderId === orderId), unit = normalize(o.quantity).unit;
   const direct = mine.filter(a => a.kind === "requested").reduce((n, a) => n + a.amount, 0);
   const subs = mine.filter(a => a.kind === "approved-substitution"), gap = plan.unfilled.find(u => u.orderId === orderId)?.amount ?? 0;
-  const stage = stageOf(w.ledger, orderId), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0));
+  const stage = stageOf(w.ledger, orderId), st = orderChip(orderStatus(w, orderId), stage.stage, gap, unit), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0));
   const offered = options(w.ledger, orderId, CONTACTS).map((opt, index) => ({ opt, index }));
   const resolutions = w.resolutions.filter(r => r.orderId === orderId);
   // A problem from a card's form is shown on that card while the card still shows the form;
   // otherwise at the top. A result moves focus to the card it is about, or to the order.
   const onCard = !!notice && !notice.ok && !!notice.res && resolutions.some(r => r.id === notice.res && cardForms(w, r).includes(notice.on ?? ""));
-  // A missing name on "Use this message" / "Draft message" is shown on that option's own card.
-  const optBad: Bad = notice && !notice.ok && notice.on === "draft" && notice.field === "who" && notice.res?.startsWith("opt-") && offered.some(x => `opt-${x.index}` === notice.res)
-    ? { on: `${notice.res}-draft`, field: "who", text: notice.text } : undefined;
+  // A missing name on "Send" / "Draft message", or an empty message on "Send", is shown on that option's own card.
+  const optBad: Bad = notice && !notice.ok && notice.on === "draft" && (notice.field === "who" || notice.field === "body") && notice.res?.startsWith("opt-") && offered.some(x => `opt-${x.index}` === notice.res)
+    ? { on: `${notice.res}-draft`, field: notice.field, text: notice.text } : undefined;
   const focus = !notice ? undefined
     : optBad ? fieldId(optBad.on, "who")
     : onCard && notice.field ? `${notice.res}-${notice.on}-${notice.field}`
@@ -153,7 +155,6 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
       <div className="section-head row">
         <h1 id="order" tabIndex={-1}>{buyer(o.buyerId)}</h1>
         <span className={`chip ${st.tone}`}>{st.label}</span>
-        <span className={`chip ${STAGE[stage.stage].tone}`}>{STAGE[stage.stage].label}</span>
         {unsent(w, orderId) && <span className="chip quiet">Draft not sent</span>}
       </div>
       {cuts}
@@ -165,9 +166,9 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
         <tr><td>Gets {o.product}</td><td><b>{weight(direct, unit)}</b>{mine.filter(a => a.kind === "requested").map(a => <span key={a.lotId} className="muted small"><br />{weight(a.amount, unit)} from {grower(lots.get(a.lotId)!.growerId)}</span>)}</td></tr>
         {subs.length > 0 && <tr><td>Gets by substitute</td><td>{subs.map(a => <span key={a.lotId}>{weight(a.amount, unit)} {lots.get(a.lotId)!.product} from {grower(lots.get(a.lotId)!.growerId)}<br /></span>)}</td></tr>}
         <tr><td>Short</td><td className={gap ? "worse" : ""}>{weight(gap, unit)}</td></tr>
-        <tr><td>Substitute permissions</td><td>{o.approvedSubstitutions.length ? o.approvedSubstitutions.map(s => { const src = permissionSource(w.ledger, orderId, s.product); return (
+        <tr><td>Substitutes this buyer accepts</td><td>{o.approvedSubstitutions.length ? o.approvedSubstitutions.map(s => { const src = permissionSource(w.ledger, orderId, s.product); return (
           <span key={s.product}>{s.product} ({s.acceptedGrades.join(", ")}){s.maxAmount !== undefined ? `, up to ${weight(s.maxAmount, unit)}` : ""}: {src.kind === "on-file" ? "standing permission on file" : src.record.kind === "substitute-accepted" ? <>agreed {src.record.evidence.channel === "call" ? "by phone" : "by text"}, recorded by {src.record.recordedBy}: <span className="quote">“{src.record.evidence.quote}”</span></> : "agreed"}<br /></span>
-        ); }) : <span className="muted">None</span>}</td></tr>
+        ); }) : <span className="muted">None yet</span>}</td></tr>
       </tbody></table>
 
       {gap > 0 && <PendingCover w={w} orderId={orderId} />}
@@ -183,7 +184,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
       {picked && <div className="option-group" aria-labelledby="next-step">
         <h2 id="next-step">Next step</h2>
         <PrimaryCard x={picked} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, picked.opt)} known={known} bad={optBadOf(picked.index)} why={why(picked.opt, o.product)}
-          draft={template(factsFor(w, orderId, picked.opt, names))} />
+          draft={(notice && !notice.ok && notice.res === `opt-${picked.index}` ? typed("send", "body") : undefined) ?? template(factsFor(w, orderId, picked.opt, names))} />
       </div>}
       {offered.length > 0 ? (rest.length > 0 && <details className="option-group" open={rest.some(x => optBadOf(x.index)) || undefined}>
         <summary>Other options ({rest.length})</summary>
@@ -210,7 +211,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me }: { w: 
     <aside className="preview" aria-labelledby="drafts">
       <h2 id="drafts">Messages</h2>
       {resolutions.length ? [...resolutions].reverse().map(r => (
-        <ResolutionCard key={r.id} r={r} w={w} version={version} me={me} canSuggest={recordedDraft(ex, r.facts) !== undefined || live > 0} today={today} error={onCard && notice!.res === r.id ? { on: notice!.on!, text: notice!.text, field: notice!.field } : undefined} />
+        <ResolutionCard key={r.id} r={r} w={w} version={version} me={me} typed={typed} canSuggest={recordedDraft(ex, r.facts) !== undefined || live > 0} today={today} error={onCard && notice!.res === r.id ? { on: notice!.on!, text: notice!.text, field: notice!.field } : undefined} />
       )) : <p className="muted small panel">Choose an option to draft a message. Drafts start from a template that uses only the order's facts.</p>}
     </aside>
   </>;
@@ -224,17 +225,21 @@ function why(o: Option, product: string): string {
   return o.hasLot ? `they hold ${product} for this day` : `${o.contactKind === "member" ? "a member grower" : "an outside source"} to try next`;
 }
 function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draft }: { x: { opt: Option; index: number }; order: string; buyerName: string; version: number; open?: Resolution; known: boolean; bad?: Bad; why: string; draft: string }) {
-  const { opt } = x, amt = weight(amountOf(opt), opt.unit);
+  const { opt } = x, amt = weight(amountOf(opt), opt.unit), on = `opt-${x.index}-draft`;
   const line = opt.kind === "ask-grower" ? `Ask ${grower(opt.contactId)} for ${amt}` : opt.kind === "offer-substitute" ? `Offer ${buyerName} ${opt.product} (${opt.grade}) for ${amt}` : `Tell ${buyerName} the order is ${amt} short`;
   return (
-    <form action={startResolutionAction} className="option-card primary-card">
+    <form action={sendNowAction} className="option-card primary-card">
       <Hidden order={order} version={version} res={`opt-${x.index}`} />
       <input type="hidden" name="index" value={x.index} /><input type="hidden" name="kind" value={opt.kind} />
       <input type="hidden" name="amount" value={amountOf(opt)} /><input type="hidden" name="target" value={target(opt)} />
       <b>{line}: {why}</b>
-      <p className="draft">{draft}</p>
-      {open ? <a className="small" href={`#${open.id}`}>Message already open<span className="sr-only"> for this step</span></a>
-        : <div><NamedSubmit label={<>Use this message<span className="sr-only">: {line}</span></>} className="primary" known={known} on={`opt-${x.index}-draft`} bad={bad} /></div>}
+      {open ? <><p className="draft">{draft}</p><a className="small" href={`#${open.id}`}>Message already open<span className="sr-only"> for this step</span></a></>
+        : <>
+          <label>Message<span className="sr-only">: {line}</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
+          <Problem bad={bad} on={on} name="body" />
+          <div className="row"><NamedSubmit label={<>Send<span className="sr-only">: {line}</span></>} className="primary" known={known} on={on} bad={bad} />
+            <span className="fine-print">Recorded only; nothing is delivered. You can edit the words first.</span></div>
+        </>}
     </form>
   );
 }
@@ -265,7 +270,7 @@ function OptionCard({ opt, index, order, buyerName, version, open, known, bad }:
   );
 }
 
-function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Resolution; w: Workbench; version: number; me?: string; canSuggest: boolean; today: string; error?: CardError }) {
+function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: { r: Resolution; w: Workbench; version: number; me?: string; typed: (form: "send" | "buyer", name: string) => string | undefined; canSuggest: boolean; today: string; error?: CardError }) {
   const h = { order: r.orderId, version, res: r.id }, st = r.status === "sent" ? sentLabel(w, r) : STATE[r.status];
   // The words shown here are posted with Confirm, so only these are confirmed.
   const asks = r.status === "drafted" ? toConfirm(w, r, today) : [], confirmed = (c: Confirm) => !!r.confirmation?.items.includes(c.token);
@@ -332,15 +337,15 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
           </form>
         </details>
       </>}
-      {out && <p className="fine-print">Recorded as sent (demo: not delivered) by {out.sentBy}, {time(out.sentAt)}.</p>}
-      {r.status === "sent" && r.option.kind === "offer-substitute" && <BuyerReply h={h} to={to} error={error} known={known} prefill={r.option.kind === "offer-substitute" && BUYER_REPLIES[o.buyerId]?.text.includes(r.option.product) ? BUYER_REPLIES[o.buyerId].text : undefined} />}
+      {out && <p className="fine-print">Sent by {out.sentBy}, {time(out.sentAt)}. (This demo records messages; it doesn't deliver them.)</p>}
+      {r.status === "sent" && r.option.kind === "offer-substitute" && <BuyerReply h={h} to={to} error={error} known={known} kept={error?.on === "reply" ? { channel: typed("buyer", "channel"), text: typed("buyer", "text"), quote: typed("buyer", "quote") } : {}} />}
       {r.status === "sent" && r.option.kind === "ask-grower" && !r.option.hasLot && <ReplyForm h={h} to={to} error={error} known={known} grades={o.acceptedGrades} unit={r.option.unit} />}
       {r.status === "sent" && r.option.kind === "ask-grower" && r.option.hasLot && (r.linkedItemId
         ? reviewed
           ? <p className="small">Their reply was reviewed. <a href={`/review?item=${r.linkedItemId}`}>See their reply</a></p>
           : <p className="small">Their reply is in review. <a href={`/review?item=${r.linkedItemId}`}>Review the reply</a></p>
         : <>
-            {REQUEST_REPLIES[r.option.contactId] && <form action={scriptedRequestReplyAction}><Hidden {...h} /><button type="submit" aria-describedby={errId("script")}>Receive the grower's reply (demo)<span className="sr-only"> from {to}</span></button></form>}
+            {REQUEST_REPLIES[r.option.contactId] && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedRequestReplyAction}><Hidden {...h} /><button type="submit" aria-describedby={errId("script")}>Receive the grower's reply (demo)<span className="sr-only"> from {to}</span></button></form></div>}
             {fieldError("script")}
             <details open={error?.on === "call"}>
               <summary>Log their call<span className="sr-only"> ({to})</span></summary>
@@ -358,20 +363,21 @@ function ResolutionCard({ r, w, version, me, canSuggest, today, error }: { r: Re
   );
 }
 
-// Two taps: They said yes, They said no. What they said is a call note or the text pasted in full;
-// a text holding the word supplies its own quote, otherwise the words that answer it are typed or pasted.
-function BuyerReply({ h, to, error, known, prefill }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; prefill?: string }) {
+// Two taps: They said yes, They said no. A phone answer needs no words; a pasted text is recorded in
+// full, and a text holding the word supplies its own quote, otherwise the words that answer it are typed.
+// Nothing is prefilled. A refused answer comes back with what was typed.
+function BuyerReply({ h, to, error, known, kept }: { h: { order: string; version: number; res: string }; to: string; error?: CardError; known: boolean; kept: { channel?: string; text?: string; quote?: string } }) {
   const { inv, problem, named } = fields(h.res, error), mine = error?.on === "reply";
   return (
     <details open>
       <summary>Record the buyer's answer<span className="sr-only"> ({to})</span></summary>
       <form action={buyerReplyAction} className="form"><Hidden {...h} />
-        <label>How it came<select name="channel" defaultValue={prefill ? "call" : "text"} {...inv("reply", "channel")}><option value="text">Text message</option><option value="call">Phone call</option></select></label>
+        <label>How it came<select name="channel" defaultValue={kept.channel === "text" ? "text" : "call"} {...inv("reply", "channel")}><option value="call">Phone call</option><option value="text">Text message</option></select></label>
         {problem("reply", "channel")}
-        <label>What they said<textarea name="text" required maxLength={480} rows={2} defaultValue={prefill} {...inv("reply", "text")} /></label>
-        <span className="fine-print">Paste their text in full, or write your call note.</span>
+        <label>What they said (optional for a call)<textarea name="text" maxLength={480} rows={2} defaultValue={kept.text} {...inv("reply", "text")} /></label>
+        <span className="fine-print">For a text, paste it in full. For a call, a note is optional.</span>
         {problem("reply", "text")}
-        <label>Only if their text doesn't say plainly yes or no: the words that answer it<input name="quote" maxLength={480} {...inv("reply", "quote")} /></label>
+        <label>Only if their text doesn't say plainly yes or no: the words that answer it<input name="quote" maxLength={480} defaultValue={kept.quote} {...inv("reply", "quote")} /></label>
         {problem("reply", "quote")}
         {problem("reply", "accept")}
         {mine && !error!.field && <p className="field-error" role="alert">{error!.text}</p>}

@@ -53,6 +53,14 @@ export const ORDER_STATUS: Record<OrderStatus, Status> = {
   covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Waiting on reply", tone: "wait" },
   "buyer-told": { label: "Buyer told", tone: "quiet" }, "substitute-agreed": { label: "Substitute agreed", tone: "done" }
 };
+// The one chip an order shows: how short it is (and what is being done), or, once covered, how far it has got.
+export function orderChip(st: OrderStatus, stage: keyof typeof STAGE, short: number, unit: "g" | "lb" | "each"): Status {
+  if (st === "covered" || st === "substitute-agreed") return { label: st === "covered" ? STAGE[stage].label : `${STAGE[stage].label}, substitute agreed`, tone: STAGE[stage].tone };
+  const gap = `Short ${weight(short, unit)}`;
+  return { label: st === "resolving" ? `${gap}, waiting on reply` : st === "buyer-told" ? `${gap}, buyer told` : gap, tone: ORDER_STATUS[st].tone };
+}
+// One line per grower under a shortfall: their unreviewed updates that could raise supply.
+export const coverLine = (name: string, n: number) => `${name} has ${n} ${n === 1 ? "update" : "updates"} to review that may cover this.`;
 export function status(i: InboxItem, p: Preview | undefined): Status {
   if (i.state === "approved") return { label: "Approved", tone: "done" };
   if (i.state === "dismissed") return { label: "Dismissed", tone: "quiet" };

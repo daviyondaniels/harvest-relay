@@ -143,13 +143,35 @@ function reduced(l: Ledger, lotId: string): boolean {
   return !!e && normalize(e.lotAfter).amount < normalize(e.lotBefore).amount;
 }
 
-// Updates not yet reviewed from growers who hold this order's product: one of them may
-// already cover the shortfall, so the coordinator reads it before calling anyone. An update
-// that is plainly about another product is left out.
-export function pendingCover(w: Workbench, orderId: string): InboxItem[] {
+// Could this unreviewed message raise supply of the order's product? An unread message might.
+// A reading counts when it adds, or sets a total above the lot it names (or names no lot, or a
+// quantity that cannot be compared). Forecasts, corrections and cuts cannot cover a shortfall.
+function couldRaise(i: InboxItem, lots: Lot[]): boolean {
+  const p = i.proposal?.interpretation;
+  if (!p) return true;
+  if (p.operation === "add-quantity") return true;
+  if (p.operation !== "replace-total") return false;
+  const lot = lots.find(l => l.id === p.lotId);
+  if (!lot || !p.quantity) return true;
+  try { const a = normalize(p.quantity), b = normalize(lot.quantity); return a.unit !== b.unit || a.amount > b.amount; }
+  catch { return true; }
+}
+
+// Updates not yet reviewed, from growers who hold this order's product, that could raise its
+// supply: one of them may already cover the shortfall, so the coordinator reads it before calling
+// anyone. Grouped by grower, in the order the first of each arrived. An update that is plainly
+// about another product, or that cannot raise supply, is left out.
+export function pendingCover(w: Workbench, orderId: string): { growerId: string; items: InboxItem[] }[] {
   const order = w.ledger.snapshot.orders.find(o => o.id === orderId);
   if (!order) throw new Error("Unknown order");
   const lots = w.ledger.snapshot.lots, holders = new Set(lots.filter(l => l.product === order.product).map(l => l.growerId));
-  return w.items.filter(i => i.state !== "approved" && i.state !== "dismissed" && holders.has(i.source.growerId) &&
-    !(i.proposal?.interpretation.lotId && lots.some(l => l.id === i.proposal!.interpretation.lotId && l.product !== order.product)));
+  const out = new Map<string, InboxItem[]>();
+  for (const i of w.items) {
+    if (i.state === "approved" || i.state === "dismissed" || !holders.has(i.source.growerId)) continue;
+    const named = i.proposal?.interpretation.lotId;
+    if (named && lots.some(l => l.id === named && l.product !== order.product)) continue;
+    if (!couldRaise(i, lots)) continue;
+    out.set(i.source.growerId, [...out.get(i.source.growerId) ?? [], i]);
+  }
+  return [...out].map(([growerId, items]) => ({ growerId, items }));
 }

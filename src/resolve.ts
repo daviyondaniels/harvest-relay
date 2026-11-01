@@ -224,7 +224,10 @@ export function sendMessage(w: Workbench, resId: string, contacts: Contact[], ac
 }
 
 // Consent comes only from the buyer's recorded answer (E8, E9).
-export function recordBuyerReply(w: Workbench, resId: string, reply: Reply & { accept: boolean }, actor: string, at: string): Workbench {
+// A phone answer with nothing written is recorded as exactly that: the coordinator heard it and has no words to quote.
+export const noNote = (actor: string): string => `Answer recorded by ${typeof actor === "string" ? actor.trim() : ""} without a note`;
+export function recordBuyerReply(w: Workbench, resId: string, given: Reply & { accept: boolean }, actor: string, at: string): Workbench {
+  const reply = given?.channel === "call" && (typeof given.text !== "string" || !given.text.trim()) ? { ...given, text: noNote(actor) } : given;
   return update(w, resId, (r, n) => {
     if (r.option.kind !== "offer-substitute") throw new Error("Only a substitute offer takes a buyer reply");
     awaiting(r, "offer");

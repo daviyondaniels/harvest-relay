@@ -73,7 +73,7 @@ test("Ease task 2: NamedSubmit shows the name input only when no name is known, 
   assert.match(ns, /<NameField known=\{known\}[^>]*\/>\s*<button type="submit"/, "the input comes directly before the button, in the same form");
   assert.doesNotMatch(ns, />\s*Save\s*</, "no separate Save button");
   // Every form that records a name has the field: none of these actions is posted by a bare button.
-  const plain = /<form[^>]*action=\{(?:approve|ask|reply|correct|readByHand|confirmLot|dismissNoChange|refresh|refreshAll|scriptedReply|liveRead|decideCut|logCall|confirm|lateMessage|stage|startResolution|confirmDraft|editDraft|museDraft|send|discardDraft|requestedCall|buyerReply|supplyReply)Action\}[^>]*>[^]*?<\/form>/g;
+  const plain = /<form[^>]*action=\{(?:approve|ask|reply|correct|readByHand|confirmLot|dismissNoChange|refresh|refreshAll|scriptedReply|liveRead|decideCut|logCall|confirm|lateMessage|stage|startResolution|sendNow|confirmDraft|editDraft|museDraft|send|discardDraft|requestedCall|buyerReply|supplyReply)Action\}[^>]*>[^]*?<\/form>/g;
   let seen = 0;
   for (const path of ["app/review/page.tsx", "app/orders/page.tsx", "app/pack/page.tsx", "app/call/page.tsx", "app/conflict.tsx"]) {
     for (const form of source(path).match(plain) ?? []) {
@@ -474,4 +474,46 @@ test("Ease task 3: every review form that can be refused keeps what was typed", 
   for (const on of ["ask", "reply", "correct", "hold", "hand"]) assert.match(actions, new RegExp(`keep: "${on}"`), on);
   assert.match(actions, /back\(item, notice, step\.on, kept\)/);
   assert.match(actions, /\.\.\.kept, \.\.\.signNotice\(notice/, "kept values sit beside the signed notice, not inside it");
+});
+
+test("Ease task 4: Orders wording, the one-step send, the single status chip and the Demo group", () => {
+  const orders = source("app/orders/page.tsx"), actions = source("app/actions.ts"), cover = source("app/pending-cover.tsx"), conflict = source("app/conflict.tsx");
+  assert.match(orders, /Substitutes this buyer accepts/);
+  assert.match(orders, /None yet/);
+  assert.doesNotMatch(orders, /Substitute permissions|>None</);
+  assert.match(orders, /Sent by \{out\.sentBy\}, \{time\(out\.sentAt\)\}\. \(This demo records messages; it doesn't deliver them\.\)/);
+  assert.doesNotMatch(orders, /Recorded as sent \(demo/);
+  // The Next step sends in one step from an editable message; the other options still draft first.
+  assert.match(orders, /<form action=\{sendNowAction\} className="option-card primary-card">/);
+  assert.match(orders, /<textarea name="body" required maxLength=\{480\} rows=\{4\} defaultValue=\{draft\}/);
+  assert.doesNotMatch(orders, /Use this message/);
+  assert.match(orders, /<form action=\{startResolutionAction\} className="option-card">/);
+  assert.match(actions, /canSend\(next, r, hubDay\(now\(\)\)\)/, "the domain's own rule decides whether it can be sent");
+  assert.match(actions, /sendMessage\(next, id, CONTACTS, who, now\(\)\)/);
+  assert.match(actions, /keep: "send"/);
+  // One status chip: how short, or the stage.
+  assert.match(orders, /orderChip\(/);
+  assert.equal((orders.match(/className=\{`chip \$\{st\.tone\}`\}>\{st\.label\}<\/span>\n        \{unsent/g) ?? []).length, 1);
+  assert.doesNotMatch(orders, /STAGE\[/);
+  // The buyer's answer: nothing prefilled, a call needs no note, and a refusal keeps what was typed.
+  assert.doesNotMatch(orders, /BUYER_REPLIES|prefill=/);
+  assert.match(actions, /keep: "buyer"/);
+  assert.match(actions, /answerOf\(f, true\)/);
+  // Demo-only control sits in the Demo group.
+  assert.match(orders, /className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span><form action=\{scriptedRequestReplyAction\}/);
+  assert.match(cover, /coverLine\(/);
+  assert.match(conflict, /\{!sole && <label className="check"><input type="radio" name="choice" value="split"/, "no Split with one promise");
+});
+
+test("Ease task 4: the order chip and the cover line", async () => {
+  const { orderChip, coverLine } = await import("../app/lib/format.ts");
+  assert.deepEqual(orderChip("short", "planned", 60, "lb"), { label: "Short 60 lb", tone: "block" });
+  assert.equal(orderChip("resolving", "planned", 30, "lb").label, "Short 30 lb, waiting on reply");
+  assert.equal(orderChip("buyer-told", "planned", 30, "lb").label, "Short 30 lb, buyer told");
+  assert.equal(orderChip("covered", "promised", 0, "lb").label, "Promised");
+  assert.equal(orderChip("substitute-agreed", "packed", 0, "lb").label, "Packed, substitute agreed");
+  for (const st of ["covered", "short", "resolving", "buyer-told", "substitute-agreed"] as const) for (const stage of ["planned", "promised", "packed", "handed-off"] as const)
+    assert.ok(!(/Short/.test(orderChip(st, stage, st === "covered" || st === "substitute-agreed" ? 0 : 5, "lb").label) && /Promised/.test(orderChip(st, stage, 5, "lb").label)), "never both Short and Promised");
+  assert.equal(coverLine("Alder Creek Farm", 2), "Alder Creek Farm has 2 updates to review that may cover this.");
+  assert.equal(coverLine("Alder Creek Farm", 1), "Alder Creek Farm has 1 update to review that may cover this.");
 });
