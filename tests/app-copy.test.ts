@@ -467,7 +467,7 @@ test("Ease task 3: plain words on the review page, and the demo control sits in 
   const review = source("app/review/page.tsx"), fields = source("app/value-fields.tsx"), css = source("app/globals.css");
   for (const banned of [/>Reading</, /Kind of update/, /Change preview/, /proposed allocation/, /Not worked out yet/, /A separate proposal/, /Unallocated/, /Mark the lot as checked/])
     assert.doesNotMatch(review + fields, banned);
-  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Waiting on your answer", "Not going to anyone yet", "Words in the reply that answer it (optional)", "Note this forecast"])
+  for (const label of ["What we understood", "What changed", "What changes", "Who gets what if you approve", "Waiting on your answer", "Not going to anyone yet", "Words in the reply that answer these (optional)", "Note this forecast"])
     assert.ok(review.includes(label), label);
   assert.equal(FIELD.operation, "What changed");
   assert.deepEqual(Object.values(OPERATION_CHOICE), ["A new total", "Added to what they have", "A correction", "A forecast, not confirmed"]);

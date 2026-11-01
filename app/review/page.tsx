@@ -200,11 +200,11 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
             {openDetails
               ? <AnswerFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} known={known} quiet={main !== "reply"}
                   kept={Object.fromEntries(openDetails.map(f => [f, kv("reply", `value-${f}`)]))}
-                  quote={<><label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
+                  quote={<><label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label><Problem bad={bad} on="reply" name="quote" /></>}
                   extra={live > 0 ? <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button> : undefined} />
               : <>
                 <ValueFields on="reply" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
-                <label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
+                <label>Words in the reply that answer these (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
                 <Problem bad={bad} on="reply" name="quote" />
                 <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply"} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
               </>}

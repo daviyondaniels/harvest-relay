@@ -60,5 +60,6 @@ export function AnswerFields({ on, details, kinds, lots, bad, kept, known, quiet
       <NamedSubmit label={all ? "Apply and approve" : "Apply answers"} {...(all ? { name: "andApprove", value: "1" } : {})} className={all ? "primary" : undefined} known={known} on={on} bad={bad} quiet={quiet} purpose={all ? "this approval" : "this answer"} />
       {extra}
     </div>
+    {all && <p className="fine-print">Applies these answers, then approves the change shown, in one step.</p>}
   </>;
 }
