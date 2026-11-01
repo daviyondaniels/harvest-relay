@@ -50,7 +50,7 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
         {c.promises.map(p => { const cut = cutOf(p.orderId); return <li key={p.orderId}>{name(p.orderId)}: promised {weight(p.amount, c.unit)}{cut !== undefined && <> → can now get {weight(p.amount - cut, c.unit)}</>}</li>; })}
       </ul>
       <p>Everyone else's {c.product} is unchanged.</p>
-      <form action={decideCutAction} className="form">
+      <form action={decideCutAction} className="form" noValidate>
         <input type="hidden" name="version" value={version} />
         <input type="hidden" name="lot" value={c.lotId} />
         <input type="hidden" name="excess" value={c.excess} />

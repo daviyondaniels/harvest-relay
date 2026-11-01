@@ -81,11 +81,13 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
   const allBad: Bad = notice && !notice.ok && notice.on === "refreshAll" && notice.field === "who" && stale > 0 ? { on: "refreshAll", field: "who", text: notice.text } : undefined;
   return (
     <div className="workspace item-first">
+      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
+        : <p className="muted">No messages yet.</p>}
       <nav className="queue" id="queue" aria-label="Incoming messages">
         <QueueFold count={todo.length} noun="messages" open={!!allBad}>
           <h2>Incoming</h2>
           {stale > 0 && it && <form action={refreshAllAction} className="form"><Hidden item={it.id} version={version} />
-            <NamedSubmit label="Refresh all stale items" known={known} on="refreshAll" bad={allBad} />
+            <NamedSubmit label="Refresh all stale items" known={known} on="refreshAll" bad={allBad} quiet />
             <span className="fine-print"> Supply changed since {stale === 1 ? "one message was" : `${stale} messages were`} read.</span>
           </form>}
           {todo.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} />)}
@@ -96,8 +98,6 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
           </details>}
         </QueueFold>
       </nav>
-      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
-        : <p className="muted">No messages yet.</p>}
     </div>
   );
 }
@@ -121,7 +121,11 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const detailChoices = (only?: Field[]) => (only ?? FIELDS.filter(f => f !== "unit")).map(f => ({ value: f, label: FIELD[f] }));
   const openDetails = byField.size ? [...byField.keys()] : undefined;
   // Just approved, or just dismissed (with "No change, dismiss" or Dismiss): the result panel says what comes next.
-  const decided = !!notice?.ok && (notice.on === "approve" || (notice.on === "hold" && it.state === "dismissed"));
+  const decided = !!notice?.ok && (notice.on === "approve" || ((notice.on === "hold" || notice.on === "dismiss") && it.state === "dismissed"));
+  // The one form in view that asks for a name when none is saved: Save the reading for a message
+  // not read yet, Refresh review, Apply answer while a detail is open, else Approve. The other
+  // forms use the remembered name, or are refused and then show their own field.
+  const main = !it.proposal ? "hand" : p.needsRefresh ? "refresh" : byField.size > 0 ? "reply" : "approve";
   // Why Approve is off, said beside it.
   const off = p.questions.length > 0 || !p.change;
   const why = byField.size > 0 ? (byField.size === 1 ? "Answer the open detail above to approve." : `Answer the ${byField.size} open details above to approve.`) : "Approve is available once the change can be worked out.";
@@ -131,14 +135,14 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const from = grower(it.source.growerId);
   // A problem with a field of a form still on the page (a missing name included) is shown
   // beside that field; anything else at the top of the message.
-  const forms = closed ? [] : ["hold", ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
+  const forms = closed ? [] : ["hold", ...(!i || i.operation === "unresolved" ? ["dismiss"] : []), ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
     ...(i ? ["ask", "reply", "correct"] : ["hand"]), ...(it.proposal ? [p.needsRefresh ? "refresh" : "approve"] : [])];
   const bad: Bad = notice && !notice.ok && notice.field && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && !bad && !queueFocus ? notice : undefined;
   // Where focus goes: the field with the problem, else the result's heading.
   const focus = bad ? fieldId(bad.on, bad.field) : notice?.ok && notice.on === "approve" ? (notice.res && conflicts(w.ledger).some(c => c.lotId === notice.res) ? `cut-${notice.res}-head` : "change") : queueFocus ?? (notice ? "msg" : undefined);
   return <>
-    <section className="panel" id="item" aria-labelledby="msg">
+    <section className="panel" id="item" tabIndex={-1} aria-labelledby="msg">
       {notice && <Result key={sig} text={notice.ok && notice.on !== "approve" ? notice.text : undefined} focus={focus} />}
       {top && <p className="error" role="alert">{top.text}</p>}
       <div className="section-head">
@@ -175,7 +179,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       </> : <p className="blocker">This message has not been read yet. {closed ? "" : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
 
       {byField.size > 0 && !closed && (
-        <div className="blocker" role="status">
+        <div className="blocker" role="status" id="open-questions" tabIndex={-1}>
           <b>{byField.size === 1 ? "One detail needs an answer before approval" : `${byField.size} details need answers before approval`}</b>
           <ul>{[...byField].map(([f, qs]) => <li key={f}><b>{FIELD[f]}:</b> {qs[0]}</li>)}</ul>
         </div>
@@ -183,9 +187,9 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
 
       {!closed && <div className="form">
         <div className="row">
-          {hasScript && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} /></form></div>}
-          {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="hold" bad={bad} /></form>}
-          {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} /></form>}
+          {hasScript && <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span><form action={scriptedReplyAction} className="form"><Hidden {...v} /><NamedSubmit label="Receive the grower's reply (demo)" known={known} on="script" bad={bad} quiet /></form></div>}
+          {(!i || i.operation === "unresolved") && <form action={dismissNoChangeAction} className="form"><Hidden {...v} /><NamedSubmit label="No change, dismiss" known={known} on="dismiss" bad={bad} quiet /></form>}
+          {live > 0 && <form action={liveReadAction} className="form"><Hidden {...v} /><NamedSubmit label={i ? "Read again automatically" : "Read automatically"} known={known} on="read" bad={bad} quiet /></form>}
         </div>
         {!i && <HandForm it={it} w={w} v={v} bad={bad} known={known} kv={kv} />}
         {i && <details open={byField.size > 0 || failedOn("reply")}>
@@ -196,7 +200,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
             <ValueFields on="reply" details={detailChoices(openDetails)} kinds={kinds} lots={lotChoices} bad={bad} field={kv("reply", "field")} value={kv("reply", "value")} />
             <label>Words in the reply that answer it (optional)<input name="quote" maxLength={500} defaultValue={kv("reply", "quote")} {...invalid(bad, "reply", "quote")} /></label>
             <Problem bad={bad} on="reply" name="quote" />
-            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
+            <div className="row"><NamedSubmit label="Apply answer" known={known} on="reply" bad={bad} quiet={main !== "reply"} purpose="this answer" />{live > 0 && <button type="submit" formAction={liveReplyAction} formNoValidate>Read the reply automatically</button>}</div>
           </form>
         </details>}
         {i && <details open={failedOn("ask")}>
@@ -205,7 +209,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
             <FieldSelect only={openDetails} bad={bad} on="ask" kept={kv("ask", "field")} />
             <label>Question<input name="question" required maxLength={500} placeholder="How much is in each case?" defaultValue={kv("ask", "question")} {...invalid(bad, "ask", "question")} /></label>
             <Problem bad={bad} on="ask" name="question" />
-            <div><NamedSubmit label=<>Record question <span className="sr-only">for {from}</span></> known={known} on="ask" bad={bad} /></div>
+            <div><NamedSubmit label=<>Record question <span className="sr-only">for {from}</span></> known={known} on="ask" bad={bad} quiet /></div>
           </form>
         </details>}
         {i && <details open={failedOn("correct")}>
@@ -215,7 +219,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
             <ValueFields on="correct" details={detailChoices()} kinds={kinds} lots={lotChoices} bad={bad} field={kv("correct", "field")} value={kv("correct", "value")} />
             <label>Words in the message<input name="quote" required maxLength={500} defaultValue={kv("correct", "quote")} {...invalid(bad, "correct", "quote")} /></label>
             <Problem bad={bad} on="correct" name="quote" />
-            <div><NamedSubmit label="Apply correction" known={known} on="correct" bad={bad} /></div>
+            <div><NamedSubmit label="Apply correction" known={known} on="correct" bad={bad} quiet /></div>
           </form>
         </details>}
         <details open={failedOn("hold")}>
@@ -223,7 +227,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <form className="form"><Hidden {...v} />
             <label>Note or reason<input name="note" required maxLength={500} defaultValue={kv("hold", "note")} {...invalid(bad, "hold", "note")} /></label>
             <Problem bad={bad} on="hold" name="note" />
-            <NameField known={known} on="hold" bad={bad} />
+            <NameField known={known} on="hold" bad={bad} quiet />
             <div className="row">
               <button type="submit" formAction={pendingAction}>Leave pending</button>
               <button type="submit" formAction={returnAction}>Return to grower</button>
@@ -255,15 +259,15 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
       {!closed && it.proposal && p.needsRefresh ? (
         <form action={refreshAction} className="panel"><Hidden {...v} />
           <p>Supply changed since this was read, and checking it again {p.error ? "found a problem" : "raised a new question"}. Refresh it to review it against current supply.</p>
-          <div><NamedSubmit label="Refresh review" known={known} on="refresh" bad={bad} /></div>
+          <div><NamedSubmit label="Refresh review" known={known} on="refresh" bad={bad} purpose="this refresh" /></div>
         </form>
       ) : !closed && it.proposal && (
         <form action={approveAction} className="panel"><Hidden {...v} />
           {p.stale && p.moved && <p className="fine-print" role="status">Supply changed since this was read: was {weight(p.moved.was, p.moved.unit)}, now {weight(p.moved.now, p.moved.unit)}.</p>}
           <input type="hidden" name="hash" value={p.reviewHash ?? ""} />
           <div className="row">
-            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} disabled={off} aria-describedby={off ? "approve-why" : undefined} />
-            {off && <span id="approve-why" className="small muted">{why}</span>}
+            <NamedSubmit label={p.change?.effect === "forecast" ? "Note this forecast" : "Approve supply change"} className="primary" known={known} on="approve" bad={bad} quiet={main !== "approve"} blocked={off ? (byField.size > 0 ? "open-questions" : "approve-why") : undefined} aria-describedby={off ? "approve-why" : undefined} />
+            {off && <span id="approve-why" tabIndex={-1} className="small muted">{why}</span>}
           </div>
           <p className="fine-print">{p.change?.effect === "forecast" ? "Noting a forecast leaves confirmed supply as it is. " : "Approving changes this lot's confirmed supply only. "}It does not approve substitutions, notify buyers, confirm deliveries or record food as rescued.</p>
         </form>
@@ -343,7 +347,7 @@ function HandForm({ it, w, v, bad, known, kv }: { it: InboxItem; w: Awaited<Retu
           </select></label>}
         <label>{call ? "Words from the note (optional)" : "Words in the message"}<input name="quote" required={!call} maxLength={500} defaultValue={quote} {...invalid(bad, "hand", "quote")} /></label>
         <Problem bad={bad} on="hand" name="quote" />
-        <div><NamedSubmit label=<>Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} /></div>
+        <div><NamedSubmit label=<>Save the reading <span className="sr-only">for {grower(it.source.growerId)}</span></> known={known} on="hand" bad={bad} purpose="this reading" /></div>
       </form>
     </details>
   );
@@ -419,7 +423,7 @@ function ChangeTag({ it, p, event }: { it: InboxItem; p: Preview; event?: { id: 
   return (
     <div className="tag">
       <p className="from">{c.effect === "forecast" ? "Forecast, kept apart from confirmed supply" : "Confirmed supply, if you approve"}</p>
-      {(c.effect !== "forecast" || forecastTag(c)) && <p className="to">{c.effect === "forecast" ? forecastTag(c) : <span className="nowrap">{changeLine(c.before, c.after)}</span>}</p>}
+      {(c.effect !== "forecast" || forecastTag(c)) && <p className="to">{c.effect === "forecast" ? forecastTag(c) : changeLine(c.before, c.after)}</p>}
       <p className="what">{c.effect === "replace-total" ? "New total replaces the old one" : c.effect === "add-quantity" ? "Added to the existing lot" : "Not allocatable until confirmed"}</p>
     </div>
   );

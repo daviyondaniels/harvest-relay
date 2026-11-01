@@ -22,7 +22,6 @@ export default async function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-theme={theme === "auto" ? undefined : theme}>
       <body className={type.className}>
-        <a className="skip" href="#main">Skip to content</a>
         <header className="top">
           <Header theme={theme} name={name} who={<Who name={name} />} />
         </header>

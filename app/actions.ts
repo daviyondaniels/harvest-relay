@@ -188,7 +188,7 @@ export async function pendingAction(f: FormData) { return run(f, (w, i, who) => 
 export async function returnAction(f: FormData) { return run(f, (w, i, who) => returnForClarification(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Returned to the grower." }); }
 export async function dismissAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, note(f), who, now()), { on: "hold", keep: "hold", done: "Dismissed." }); }
 // A message with no supply change in it (thanks, a question, a time of arrival): one tap, no reason to type.
-export async function dismissNoChangeAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, "No supply change", who, now()), { on: "hold", done: "Dismissed. No supply change." }); }
+export async function dismissNoChangeAction(f: FormData) { return run(f, (w, i, who) => dismiss(w, i, "No supply change", who, now()), { on: "dismiss", done: "Dismissed. No supply change." }); }
 export async function refreshAction(f: FormData) { return run(f, (w, i, who) => refresh(w, i, who, now()), { on: "refresh", done: "Checked again against current supply." }); }
 export async function refreshAllAction(f: FormData) { return run(f, (w, _i, who) => refreshAll(w, who, now()), { on: "refreshAll", done: "Stale messages checked again against current supply." }); }
 // A stale item was shown its rebased review, so approval refreshes and approves in one

@@ -213,7 +213,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     </form>
                   ) : (
                     <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
-                      <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} known={known} on={on("hold")} bad={bad} />
+                      <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} known={known} on={on("dismiss")} bad={bad} />
                     </form>
                   )}
                 </div>

@@ -133,7 +133,8 @@ test("Task 17: Orders confirms and discards drafts, and both pages show a capped
 
 test("Task 18: a skip link, a main target and a title for every page", () => {
   const layout = source("app/layout.tsx");
-  assert.match(layout, /className="skip" href="#main"/);
+  // The skip link sits in the header (it knows the page) and lands on the message or order panel (Task 9).
+  assert.match(source("app/nav.tsx"), /className="skip" href=\{SKIP\[path\] \?\? "#main"\}/);
   assert.match(layout, /<main id="main"/);
   assert.match(layout, /template: "%s · Harvest Relay"/);
   assert.match(source("app/page.tsx"), /title: \{ absolute: "Overview · Harvest Relay" \}/);
@@ -170,9 +171,8 @@ test("Task 18: the header says who is recording, once, and the name can be chang
 test("Task 18: on a phone the selected message comes before the queue, which folds to N messages; actions return to their result", () => {
   const review = source("app/review/page.tsx");
   assert.match(review, /className="panel" id="item"/);
-  // Fix round 3 (N4): the list comes first in the page order, as drawn from 761 px; only the
-  // phone grid places the item first.
-  assert.ok(review.indexOf('<nav className="queue"') < review.indexOf("{it ? <Item"), "queue first in the page order");
+  // Task 9: the panel comes first in the page order and the queue after it; the grid draws the queue beside it.
+  assert.ok(review.indexOf('<nav className="queue"') > review.indexOf("{it ? <Item"), "queue after the panel in the page order");
   assert.match(source("app/globals.css"), /\.workspace\.item-first \{ grid-template-areas: "item" "preview" "queue"; \}/);
   assert.match(source("app/queue-fold.tsx"), /setOpen\(e\.matches\)/, "folds again when narrowed (N6)");
   assert.match(review, /<QueueFold count=\{todo\.length\}/);
@@ -196,7 +196,7 @@ test("Task 18 round 2: the header stays one row on tablets, with the phone layou
 test("Task 18 round 2: Orders puts the selected order first on phones and folds the list", () => {
   const orders = source("app/orders/page.tsx");
   assert.match(orders, /className="workspace item-first"/);
-  assert.ok(orders.indexOf('<nav className="queue"') < orders.indexOf("{o ? <Order"), "list first in the page order; the phone grid puts the order first");
+  assert.ok(orders.indexOf('<nav className="queue"') > orders.indexOf("{o ? <Order"), "the order first in the page order, the list after it");
   assert.match(orders, /<QueueFold count=\{orders\.length\} noun="orders"/);
   assert.match(source("app/review/page.tsx"), /className="workspace item-first"/);
 });
@@ -405,7 +405,7 @@ test("Task 23: reset clears the remembered name, and a dismissal offers the next
   assert.match(source("app/actions.ts"), /await resetDemo\(\);\s*await forgetName\(\);/);
   assert.match(source("app/lib/name.ts"), /delete\(NAME_COOKIE\)/);
   const review = source("app/review/page.tsx");
-  assert.match(review, /notice\.on === "hold" && it\.state === "dismissed"/);
+  assert.match(review, /\(notice\.on === "hold" \|\| notice\.on === "dismiss"\) && it\.state === "dismissed"/);
   assert.match(review, /Back to Overview/);
   assert.doesNotMatch(review, /No more updates waiting/);
 });
@@ -538,7 +538,7 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
   const nav = source("app/nav.tsx"), page = source("app/page.tsx"), css = source("app/globals.css");
   const tabs = nav.match(/const PAGES = \[(.*?)\] as const;/)![1];
   assert.deepEqual([...tabs.matchAll(/"([^"/][^"]*)"\]/g)].map(m => m[1]), ["Overview", "Review updates", "Orders", "Pack", "Log a call"]);
-  assert.match(nav, /aria-current=\{\(href === "\/" \? path === "\/" : path\.startsWith\(href\)\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
+  assert.match(nav, /aria-current=\{here\(href\) \? "page" : undefined\}/, "every tab, Log a call included, marks its page");
   assert.doesNotMatch(page, /Open review workspace/);
   assert.match(page, />Review updates</);
   // The measures, gauge, donut and grower lots sit in one closed fold below Buyer orders; the export link stays out of it.

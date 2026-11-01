@@ -94,6 +94,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
   return (
     <div className="workspace item-first">
+      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} typed={typed} /> : <p className="muted">No orders yet.</p>}
       <nav className="queue" aria-label="Buyer orders">
         <QueueFold count={orders.length} noun="orders" open={false}>
           <h2>Orders</h2>
@@ -106,7 +107,6 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
           ); })}
         </QueueFold>
       </nav>
-      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} typed={typed} /> : <p className="muted">No orders yet.</p>}
     </div>
   );
 }
