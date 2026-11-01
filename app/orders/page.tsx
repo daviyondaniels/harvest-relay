@@ -90,6 +90,9 @@ function Hidden({ order, version, res }: { order: string; version: number; res?:
   return <><input type="hidden" name="order" value={order} /><input type="hidden" name="version" value={version} />{res && <input type="hidden" name="res" value={res} />}</>;
 }
 
+// What a recorded reply is called: an answer recorded with no channel claims no call or text.
+const replyLabel = (channel: string) => channel === "call" ? "Call note" : channel === "recorded" ? "Answer recorded" : "Reply";
+
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams, wanted = typeof params.order === "string" ? params.order : undefined, raw = readNotice(params, { page: "/orders", id: wanted }), notice = raw?.on === "cut" ? undefined : raw;
   const { state: w, version } = await current(), me = await rememberedName();
@@ -233,7 +236,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
         <ol>{resolutions.flatMap(r => r.decisions.map((d, n) => (
           <li key={`${r.id}-${n}`}><span className="muted">{time(d.at)}</span> <ThreadLine r={r} d={d} reviewed={["approved", "dismissed"].includes(w.items.find(i => i.id === r.linkedItemId)?.state ?? "")} /></li>
         ))).concat(resolutions.filter(r => r.reply).map(r => (
-          <li key={`${r.id}-reply`}><span className="muted">{r.reply!.channel === "call" ? "Call note" : "Reply"}</span> “{r.reply!.text}”</li>
+          <li key={`${r.id}-reply`}><span className="muted">{replyLabel(r.reply!.channel)}</span> “{r.reply!.text}”</li>
         )))}</ol>
       </div>}
       <p className="fine-print">Who gets what: direct orders first, by priority, then substitutes the buyer has agreed to.</p>
@@ -411,7 +414,7 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
       {out && <p className="fine-print">Sent by {out.sentBy}, {time(out.sentAt)}. (This demo records messages; it doesn't deliver them.)</p>}
       {isWaiting(r) && <p className="small">Waiting on the answer. Record it under <a href="#next-step">Next step</a>.</p>}
       {r.status === "sent" && r.option.kind === "ask-grower" && r.option.hasLot && r.linkedItemId && <ReplyControls r={r} w={w} version={version} me={me} typed={typed} error={error} />}
-      {r.reply && <p className="small">{r.reply.channel === "call" ? "Call note" : "Reply"}: <span className="quote">“{r.reply.quote}”</span></p>}
+      {r.reply && <p className="small">{replyLabel(r.reply.channel)}: <span className="quote">“{r.reply.quote}”</span></p>}
     </div>
   );
 }
