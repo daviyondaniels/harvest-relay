@@ -170,6 +170,8 @@ export function markStage(w: Workbench, orderId: string, stage: "packed" | "hand
 }
 
 // The orders that could take this stage now, by exactly the rules of markStage (stage order, open cuts).
+// It probes markStage with a placeholder name and time, so it stays exact only while markStage
+// checks neither against the confirm.
 export function stageable(w: Workbench, stage: "packed" | "handed-off"): string[] {
   return w.ledger.snapshot.orders.filter(o => { try { markStage(w, o.id, stage, "x", "2000-01-01T00:00:00.000Z"); return true; } catch { return false; } }).map(o => o.id);
 }

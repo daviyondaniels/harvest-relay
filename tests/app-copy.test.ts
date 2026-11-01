@@ -547,7 +547,8 @@ test("Task 5: the header tabs, the Overview's folded day details, all-clear card
 test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and print rules", () => {
   const pack = source("app/pack/page.tsx"), css = source("app/globals.css"), domain = source("src/commitments.ts");
   assert.ok(domain.includes("Orders still to resolve: ${blocking.join(\", \")}. Resolve them, or tick “Ship these orders short” to confirm anyway."));
-  assert.match(pack, /<\/label>|Ship these orders short without telling the buyer/);
+  assert.match(pack, /Ship these orders short without telling the buyer/);
+  assert.match(pack, /Sheets printed from the plan confirmed at \{time\(c\.confirmed\.at\)\} are out of date for:/, "dated by the confirm, not the page load");
   for (const t of ["Mark all packed", "Mark all handed off", "arrived since you confirmed", "are out of date for:", "Confirmed by ${c.confirmed.by}"]) assert.ok(pack.includes(t), t);
   assert.match(pack, /className="demo no-print" role="group" aria-label="Demo"[\s\S]*Late grower message \(demo\)/);
   assert.match(pack, /<PrintButton primary=\{!stale\} \/>/);

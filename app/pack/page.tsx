@@ -73,7 +73,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
             <p><b>Confirmed by {c.confirmed.by} at {time(c.confirmed.at)}.</b> {stale ? <span>The plan has changed since. Each changed line says what it was; confirm again to promise the new amounts.</span> : <span>Print the sheets.</span>}</p>
-            {stale && behind.length > 0 && <p className="small">Sheets printed before {time(new Date().toISOString())} are out of date for: {behind.join(", ")}.</p>}
+            {stale && behind.length > 0 && <p className="small">Sheets printed from the plan confirmed at {time(c.confirmed.at)} are out of date for: {behind.join(", ")}.</p>}
             {arrived > 0 && <p className="small"><b>{arrived} grower {arrived === 1 ? "message" : "messages"} arrived since you confirmed.</b> <a href="/review">Open Review</a></p>}
             <div className="row"><PrintButton primary={!stale} /><a className="button" href="/export">Download day record</a></div>
             {confirmForm}
