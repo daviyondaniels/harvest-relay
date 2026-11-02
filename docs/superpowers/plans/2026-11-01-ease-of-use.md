@@ -834,3 +834,46 @@ Replace the source-regex checks that guard safety rules with behaviour tests:
 
 - [ ] `npm test` exits 0. Report which regex tests were replaced.
 - [ ] Commit.
+
+### Task 26: Split the cut, from audit D
+
+Source: `reports/round7/audit-d-split-cut.md` (6.5/10). The numbers were correct throughout. The problems are in input, wording and print.
+
+**Files:** `app/conflict.tsx`, `app/actions.ts` (`decideCutAction` and its result only), `app/pack/page.tsx` (checklist link and print marker only), `app/pack/print.tsx`, `src/commitments.ts` (only if the result helper needs it), `app/lib/*`, and tests.
+
+Rules for this task:
+- Don't touch `app/page.tsx`. Task 24 owns it.
+- In `app/globals.css`, only append new rules at the end.
+
+- **No silently dropped split.**
+  - Typing in a split box selects "Split it" (client).
+  - The server refuses a split amount posted with any other choice: "You typed split amounts. Choose Split it, or clear the amounts." It keeps the typed values and focuses the fieldset.
+  - Tie the boxes to the Split radio: nest them in their own fieldset with legend "Split it: pounds each buyer gets less". Use `aria-describedby` to point at the total line.
+  - The suggested buyer may stay pre-selected.
+- **Say the total and what's left.**
+  - The split label says "The amounts must add up to {excess} {unit}."
+  - A live line says "{left} {unit} left to place" (`aria-live="polite"`, client), and "All {excess} {unit} placed." when done.
+  - A blank box counts as 0, and the label says so.
+- **Errors.**
+  - A negative number gets "Enter 0 or more pounds."
+  - A decimal gets "Enter whole pounds."
+- **The result names the outcome.** After any settle, the result says who now gets what and who is short, using the same `buyerChanges`/approval-result helpers, for example: "Northside Grocery Co-op now gets 116 of 120 lb (4 short). Riverbend School Kitchen now gets 14 of 80 lb (66 short). Confirm today's plan again so the sheets match."
+  - Link to Pack for the re-confirm.
+  - Don't say "Find more tomato on Orders." when on Orders. Link to the order's Next step instead (Task 23 already handled this elsewhere; reuse that).
+- **Printed sheets.**
+  - When the plan is stale, every printed sheet that changed carries a print-visible line: "Changed since the plan was confirmed at {time}. Confirm again before packing."
+  - The screen warning box stays as it is.
+- **Wording.**
+  - The heading uses a plain possessive ("Birch Hollow Gardens' tomato"; add a `possessive()` helper for names ending in s).
+  - The heading doesn't repeat the amount twice.
+  - "takes the cut" becomes "gets {n} {unit} less".
+- **The Pack checklist's "Settle the cut"** links to the cut card on the same page (`#cut-…`) when it is there. Otherwise it links to the cut's page.
+
+- [ ] Tests:
+  - the server refusal of split amounts with another choice (pure validation helper);
+  - the negative and decimal messages;
+  - the result wording (helper);
+  - `possessive()`;
+  - the print line (helper or source);
+  - copy tests.
+- [ ] Implement, run all checks, then commit.
