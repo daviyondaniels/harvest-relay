@@ -20,6 +20,7 @@ import { buyer, grower, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
 import { answerLine, buyerChanges, sentLine } from "./lib/result.ts";
+import { RECONFIRM, cutOutcome, splitProblem } from "./lib/cut.ts";
 import { SHIP_SHORT as SHIP, approvalResult, noChangeDismissable, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
 import { value } from "./lib/values.ts";
@@ -579,13 +580,16 @@ export async function decideCutAction(f: FormData) {
     await act(Number(str(f, "version")), w => {
       const c = conflicts(w.ledger).find(x => x.lotId === lot), ids = c?.promises.map(p => p.orderId) ?? [];
       if (!c) throw new Error("Supply changed since this was shown. Look at the current numbers and choose again.");
-      const amount = (orderId: string) => { const v = str(f, `cut-${orderId}`); if (!/^\d{0,9}$/.test(v)) throw new FieldError("Enter whole numbers of pounds for the split.", "cut"); return Number(v); };
+      // Amounts typed beside another choice are refused, never dropped; a blank box is 0.
+      const problem = splitProblem(choice, ids.map(orderId => str(f, `cut-${orderId}`)));
+      if (problem) throw new FieldError(problem, "cut");
+      const amount = (orderId: string) => Number(str(f, `cut-${orderId}`).trim() || "0");
       const cuts = choice === "split" ? ids.map(orderId => ({ orderId, amount: amount(orderId) })) : ids.includes(choice) ? [{ orderId: choice, amount: excess }] : undefined;
       if (!cuts) throw new FieldError("Choose who takes the cut.", "cut");
-      const next = decideCut(w, lot, cuts, excess, who, now()), taken = cuts.filter(x => x.amount > 0), product = c!.product, unit = c!.unit;
-      // Says what was settled, and where to go next: the order's own Next step when already on Orders, else Orders.
-      const owner = w.ledger.snapshot.lots.find(l => l.id === lot), from = owner ? ` from ${grower(owner.growerId)}` : "";
-      const done = `Settled: ${taken.map(x => `${buyer(w.ledger.snapshot.orders.find(o => o.id === x.orderId)?.buyerId ?? x.orderId)} takes the ${weight(x.amount, unit)} cut`).join(", ")} of ${product}${from}. ${page === "/orders" ? "See the next step." : `Find more ${product} on Orders.`}`;
+      const next = decideCut(w, lot, cuts, excess, who, now()), taken = cuts.filter(x => x.amount > 0), product = c!.product;
+      // Says who now gets what and who is short, then where to go next: re-confirm on Pack, and the order's own Next step on Orders, else Orders.
+      const outcome = cutOutcome(next.ledger, taken.map(x => x.orderId)).join(" "), confirmed = !!next.ledger.commitments;
+      const done = `${outcome}${confirmed ? ` ${RECONFIRM}` : ""} ${page === "/orders" ? "See the next step." : `Find more ${product} on Orders.`}`;
       notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
       return next;
     }, { rebase: true });
@@ -595,9 +599,9 @@ export async function decideCutAction(f: FormData) {
     if (e instanceof Error && /^Supply changed since this was shown/.test(e.message)) notice.text = "Supply changed since this was shown. Look at the current numbers and choose again.";
     notice.field ??= "cut";
     // A refusal keeps what was chosen and typed, and a split that misses the total says what it came to.
-    const typed = [...f.keys()].filter(k => /^cut-/.test(k) && /^\d{1,9}$/.test(str(f, k)));
+    const typed = [...f.keys()].filter(k => /^cut-/.test(k) && /^-?\d{1,9}(\.\d{1,9})?$/.test(str(f, k).trim()));
     kept = { choice, ...Object.fromEntries(typed.map(k => [k, str(f, k)])), ...keepWho(f) };
-    const sum = typed.reduce((n, k) => n + Number(str(f, k)), 0);
+    const sum = typed.reduce((n, k) => n + (/^\d{1,9}$/.test(str(f, k).trim()) ? Number(str(f, k).trim()) : 0), 0);
     if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = `You entered ${sum} lb; the cuts must total ${excess} lb.`;
   }
   revalidatePath("/", "layout");

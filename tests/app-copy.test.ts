@@ -464,7 +464,7 @@ test("a11y: stage results name the buyer, the late-message link takes focus, a s
 
 test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
   assert.match(source("app/actions.ts"), /You entered \$\{sum\} lb; the cuts must total \$\{excess\} lb\./);
-  assert.match(source("app/conflict.tsx"), /amount to cut if splitting/);
+  assert.match(source("app/cut-choice.tsx"), /Split it: pounds each buyer gets less/);
 });
 
 test("Ease task 3: plain words on the review page, and the demo control sits in its own labelled box", () => {
@@ -523,7 +523,7 @@ test("Ease task 4: Orders wording, the one-step send, the single status chip and
   // Demo-only control sits in the Demo group.
   assert.match(orders, /<details className="demo-tools"[^\n]*>\s*<summary>Demo tools<\/summary>[\s\S]*?className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo<\/span>\s*<form action=\{scriptedRequestReplyAction\}/);
   assert.match(cover, /waitingCover\(/);
-  assert.match(conflict, /\{!sole && <label className="check"><input type="radio" name="choice" value="split"/, "no Split with one promise");
+  assert.match(conflict, /split=\{!sole\}/, "no Split with one promise");
 });
 
 test("Ease task 4: the order chip and the cover line", async () => {

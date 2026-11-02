@@ -132,7 +132,7 @@ test("They said yes with no channel is never in quotation marks; the title says 
 });
 
 test("Settle the cut on Orders says what was settled and links to the Next step instead of Orders", () => {
-  assert.match(actions, /Settled: \$\{taken\.map/);
+  assert.match(actions, /cutOutcome\(next\.ledger/);
   assert.match(actions, /page === "\/orders" \? "See the next step\." : `Find more \$\{product\} on Orders\.`/);
   const c = source("app/conflict.tsx");
   assert.match(c, /<a href="#next-step">See the next step<\/a>/);
