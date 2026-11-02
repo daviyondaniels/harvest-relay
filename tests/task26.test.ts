@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { seedWorkbench } from "../src/seed.ts";
-import { approve, preview } from "../src/workbench.ts";
+import { LATE, seedWorkbench } from "../src/seed.ts";
+import { approve, preview, previewHand, readByHandAndApprove, receive, suggestReading } from "../src/workbench.ts";
+import { numberSpan } from "../app/lib/quote.ts";
 import { confirmPlan, conflicts, decideCut } from "../src/commitments.ts";
-import { changedSheets, cutOutcome, leftToPlace, splitProblem, staleSheetLine, NEGATIVE_POUNDS, RECONFIRM, SPLIT_WITH_OTHER, WHOLE_POUNDS } from "../app/lib/cut.ts";
+import { changedSheets, cutOutcome, leftToPlace, leftToPlaceSaid, splitProblem, splitTotalMessage, staleSheetLine, NEGATIVE_POUNDS, RECONFIRM, SPLIT_WITH_OTHER, TOO_LARGE, WHOLE_POUNDS } from "../app/lib/cut.ts";
 import { possessive } from "../app/lib/format.ts";
 
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z";
@@ -71,8 +72,45 @@ test("the cut card: copy, tie between boxes and radio, and the checklist link", 
   assert.match(choice, /<legend>Split it: pounds each buyer gets less<\/legend>/);
   assert.match(choice, /The amounts must add up to \{excessText\}\. A blank box counts as 0\./);
   assert.match(choice, /aria-describedby=\{`\$\{on\}-total`\}/);
-  assert.match(choice, /aria-live="polite"/);
+  assert.match(choice, /role="status">{leftToPlaceSaid\(line\)}/);
   assert.match(choice, /setChoice\("split"\)/);
   assert.match(actions, /splitProblem\(choice/);
   assert.match(pack, /cutOpen \? `#cut-\$\{lot\}-head`/);
+});
+
+// Audit D's path: tomato approved (lot-b now promised to Northside 60 and Riverbend 20), plan confirmed, then
+// Birch Hollow's late drop from 80 to 70 lb read and approved. That opens a 10 lb cut on a lot with two buyers.
+const sharedCut = async () => {
+  let w = await seedWorkbench(JSON.parse(source("data/seed-readings.json")), NOW);
+  const t = w.items.find(i => i.source.id === "msg-tomato")!;
+  w = confirmPlan(approve(w, t.id, "A Name", preview(w, t.id).reviewHash!, NOW), "A Name", NOW, { shipShort: true });
+  w = receive(w, LATE.source, LATER);
+  const id = w.items.at(-1)!.id, g = suggestReading(w, id);
+  const reading = { operation: g.operation!, lotId: g.lotId!, quantity: g.quantity!, grade: g.grade!, deliveryOn: g.deliveryOn!, quote: numberSpan(LATE.source.text, String(g.quantity!.amount)) };
+  w = readByHandAndApprove(w, id, reading, "A Name", LATER, previewHand(w, id, reading, LATER)!.reviewHash).next;
+  return { w, c: conflicts(w.ledger).find(x => x.lotId === "lot-b")! };
+};
+
+test("the result says exactly who now gets what, for the suggested buyer, the other buyer and a split", async () => {
+  const { w, c } = await sharedCut();
+  assert.equal(c.excess, 10);
+  assert.deepEqual(c.promises.map(p => p.orderId).sort(), ["order-a", "order-b"]);
+  const settle = (cuts: { orderId: string; amount: number }[]) =>
+    cutOutcome(decideCut(w, "lot-b", cuts, 10, "A Name", LATER).ledger, cuts.filter(x => x.amount > 0).map(x => x.orderId));
+  assert.deepEqual(settle([{ orderId: "order-b", amount: 10 }]), ["Riverbend School Kitchen now gets 10 of 80 lb (70 short)."]);
+  assert.deepEqual(settle([{ orderId: "order-a", amount: 10 }]), ["Northside Grocery Co-op now gets 110 of 120 lb (10 short)."]);
+  assert.deepEqual(settle([{ orderId: "order-a", amount: 4 }, { orderId: "order-b", amount: 6 }]),
+    ["Northside Grocery Co-op now gets 116 of 120 lb (4 short).", "Riverbend School Kitchen now gets 14 of 80 lb (66 short)."]);
+});
+
+test("a split that misses the total says so in the lot's unit; a huge number is called too large", () => {
+  assert.equal(splitTotalMessage(6, 10, "lb"), "You entered 6 lb; the cuts must total 10 lb.");
+  assert.equal(splitTotalMessage(3, 5, "each"), "You entered 3 each; the cuts must total 5 each.");
+  assert.equal(splitProblem("split", ["12345678901", "0"]), TOO_LARGE);
+});
+
+test("the screen reader hears the live line only when the split is all placed or overshoots", () => {
+  assert.equal(leftToPlaceSaid(leftToPlace(10, ["4", ""], "lb")), "");
+  assert.equal(leftToPlaceSaid(leftToPlace(10, ["4", "6"], "lb")), "All 10 lb placed.");
+  assert.equal(leftToPlaceSaid(leftToPlace(10, ["8", "6"], "lb")), "4 lb too many");
 });

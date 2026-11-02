@@ -463,7 +463,7 @@ test("a11y: stage results name the buyer, the late-message link takes focus, a s
 });
 
 test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
-  assert.match(source("app/actions.ts"), /You entered \$\{sum\} lb; the cuts must total \$\{excess\} lb\./);
+  assert.match(source("app/actions.ts"), /splitTotalMessage\(sum, excess, unitOf\)/);
   assert.match(source("app/cut-choice.tsx"), /Split it: pounds each buyer gets less/);
 });
 

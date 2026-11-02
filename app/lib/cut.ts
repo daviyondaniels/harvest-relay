@@ -9,6 +9,7 @@ export { possessive } from "./format.ts";
 export const SPLIT_WITH_OTHER = "You typed split amounts. Choose Split it, or clear the amounts.";
 export const NEGATIVE_POUNDS = "Enter 0 or more pounds.";
 export const WHOLE_POUNDS = "Enter whole pounds.";
+export const TOO_LARGE = "That number is too large. Enter the pounds each buyer gets less.";
 
 // The problem with the split amounts as posted, or undefined when they can be used. `choice` is what the radio group
 // said: amounts typed beside any other choice are refused rather than dropped, and a negative number or a decimal each
@@ -19,6 +20,7 @@ export function splitProblem(choice: string, amounts: string[]): string | undefi
   for (const a of typed) {
     if (a === "" || /^\d{1,9}$/.test(a)) continue;
     if (/^-\d+(\.\d+)?$/.test(a)) return NEGATIVE_POUNDS;
+    if (/^\d{10,}$/.test(a)) return TOO_LARGE;
     return WHOLE_POUNDS;
   }
   return undefined;
@@ -47,6 +49,13 @@ export function leftToPlace(excess: number, amounts: string[], unit: "g" | "lb" 
 }
 
 // A printed sheet whose lines changed since the plan was confirmed says so on paper, where the screen's warning box is hidden.
+// What a screen reader hears from the live line: only when the amounts are all placed or overshoot, not on every digit.
+export const leftToPlaceSaid = (line: string): string => /^All |too many$/.test(line) ? line : "";
+
+// A split that misses the total says what it came to, in the order's own unit.
+export const splitTotalMessage = (sum: number, excess: number, unit: "g" | "lb" | "each"): string =>
+  `You entered ${weight(sum, unit)}; the cuts must total ${weight(excess, unit)}.`;
+
 export const staleSheetLine = (at: string): string => `Changed since the plan was confirmed at ${at}. Confirm again before packing.`;
 // The orders and the lots whose lines differ from the confirm: an order sheet or a pick list is stale when it holds one.
 export function changedSheets(l: Ledger): { orders: Set<string>; lots: Set<string> } {

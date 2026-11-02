@@ -6,7 +6,7 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, shortages, type Option } from "../src/orders.ts";
-import { PromisesMoved, approveRebased, commitKey, conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
+import { PromisesMoved, type Conflict, approveRebased, commitKey, conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
@@ -22,7 +22,7 @@ import { buyer, grower, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
 import { answerLine, buyerChanges, sentLine } from "./lib/result.ts";
-import { RECONFIRM, cutOutcome, splitProblem } from "./lib/cut.ts";
+import { RECONFIRM, cutOutcome, splitProblem, splitTotalMessage } from "./lib/cut.ts";
 import { SHIP_SHORT as SHIP, approvalResult, noChangeDismissable, shortMap } from "./lib/view.ts";
 import { pickQuote } from "./lib/quote.ts";
 import { value } from "./lib/values.ts";
@@ -552,13 +552,14 @@ export async function stageAllAction(f: FormData) {
 export async function decideCutAction(f: FormData) {
   const lot = str(f, "lot"), { page, key: ctxKey } = cutPage(str(f, "page")), ctx = str(f, "ctx").slice(0, 200);
   const choice = str(f, "choice"), excess = Number(str(f, "excess"));
-  let notice: Notice, kept: Record<string, string> = {};
+  let notice: Notice, kept: Record<string, string> = {}, unitOf: Conflict["unit"] = "lb";
   try {
     await asNamed(f, async who => {
     if (!choice) throw new FieldError("Choose who takes the cut.", "cut");
     await act(Number(str(f, "version")), w => {
       const c = conflicts(w.ledger).find(x => x.lotId === lot), ids = c?.promises.map(p => p.orderId) ?? [];
       if (!c) throw new Error("Supply changed since this was shown. Look at the current numbers and choose again.");
+      unitOf = c.unit;
       // Amounts typed beside another choice are refused, never dropped; a blank box is 0.
       const problem = splitProblem(choice, ids.map(orderId => str(f, `cut-${orderId}`)));
       if (problem) throw new FieldError(problem, "cut");
@@ -581,7 +582,7 @@ export async function decideCutAction(f: FormData) {
     const typed = [...f.keys()].filter(k => /^cut-/.test(k) && /^-?\d{1,9}(\.\d{1,9})?$/.test(str(f, k).trim()));
     kept = { choice, ...Object.fromEntries(typed.map(k => [k, str(f, k)])), ...keepWho(f) };
     const sum = typed.reduce((n, k) => n + (/^\d{1,9}$/.test(str(f, k).trim()) ? Number(str(f, k).trim()) : 0), 0);
-    if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = `You entered ${sum} lb; the cuts must total ${excess} lb.`;
+    if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = splitTotalMessage(sum, excess, unitOf);
   }
   revalidatePath("/", "layout");
   const q = ctxKey && ctx ? { [ctxKey]: ctx } : {};
