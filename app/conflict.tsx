@@ -68,7 +68,7 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
           <CutChoice on={on} excess={c.excess} excessText={excess} unit={c.unit} initial={initial} split={!sole}
             radios={c.promises.filter(p => p.amount >= c.excess).map(p => ({ id: p.orderId, label: `${name(p.orderId)} gets ${excess} less${single === p.orderId ? SUGGESTED : ""}${packed(p.stage) ? " (already packed)" : ""}` }))}
             splitLabel={`Split it${split ? SUGGESTED : ""}`}
-            rows={c.promises.map(p => ({ id: p.orderId, label: `${name(p.orderId)}: gets less by (up to ${weight(p.amount, c.unit)})`, max: p.amount, initial: (picked ? typed(p.orderId) : split ? String(cutOf(p.orderId) ?? 0) : undefined) ?? "" }))} />
+            rows={c.promises.map(p => ({ id: p.orderId, label: `${name(p.orderId)} gets less by (up to ${weight(p.amount, c.unit)})`, max: p.amount, initial: (picked ? typed(p.orderId) : split ? String(cutOf(p.orderId) ?? 0) : undefined) ?? "" }))} />
           <Problem bad={bad} on={on} name="cut" />
         </fieldset>
         <div className="row"><NamedSubmit label={<>Settle the cut<span className="sr-only"> for {possessive(who)} {c.product}</span></>} className="primary" known={known} on={on} bad={bad} /></div>

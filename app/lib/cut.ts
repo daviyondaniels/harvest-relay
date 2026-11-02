@@ -26,17 +26,17 @@ export function splitProblem(choice: string, amounts: string[]): string | undefi
   return undefined;
 }
 
-// Who now gets what after a cut is settled, said by name for each buyer whose promise was cut:
-// "Northside Grocery Co-op now gets 116 of 120 lb (4 short)." Read from the ledger after the decision.
-export function cutOutcome(l: Ledger, orderIds: string[]): string[] {
-  return orderIds.flatMap(id => {
+// Who now gets what after a cut is settled, said by name for each buyer whose promise was cut, with what they had:
+// "Northside Grocery Co-op now gets 116 of 120 lb, was 120 (4 short)." Read from the ledger after the decision; what
+// they had is that plus the cut taken from them.
+export function cutOutcome(l: Ledger, cuts: { orderId: string; amount: number }[]): string[] {
+  return cuts.filter(x => x.amount > 0).flatMap(({ orderId: id, amount }) => {
     const o = l.snapshot.orders.find(x => x.id === id);
     if (!o) return [];
     const s = stageOf(l, id), short = Math.max(0, s.ordered - s.promised), name = buyer(o.buyerId);
     // "116 of 120 lb": the unit is said once, after the total.
     const bare = (n: number) => s.unit === "g" ? weight(n, s.unit) : String(n);
-    const got = bare(s.promised);
-    return [short > 0 ? `${name} now gets ${got} of ${weight(s.ordered, s.unit)} (${bare(short)} short).` : `${name} now gets all ${weight(s.ordered, s.unit)}.`];
+    return [`${name} now gets ${bare(s.promised)} of ${weight(s.ordered, s.unit)}, was ${bare(s.promised + amount)} (${bare(short)} short).`];
   });
 }
 export const RECONFIRM = "Confirm today's plan again so the sheets match.";

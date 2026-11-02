@@ -47,9 +47,9 @@ test("the live line says what is left, or that it is all placed", () => {
 test("a settled cut says who now gets what and who is short", async () => {
   const w = await cutState(), c = conflicts(w.ledger)[0];
   const next = decideCut(w, c.lotId, [{ orderId: c.promises[0].orderId, amount: c.excess }], c.excess, "A Name", LATER);
-  const lines = cutOutcome(next.ledger, [c.promises[0].orderId]);
+  const lines = cutOutcome(next.ledger, [{ orderId: c.promises[0].orderId, amount: c.excess }]);
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /^.+ now gets \d+ of \d+ lb \(\d+ short\)\.$/);
+  assert.match(lines[0], /^.+ now gets \d+ of \d+ lb, was \d+ \(\d+ short\)\.$/);
   assert.equal(RECONFIRM, "Confirm today's plan again so the sheets match.");
 });
 
@@ -69,7 +69,7 @@ test("the cut card: copy, tie between boxes and radio, and the checklist link", 
   assert.match(card, /possessive\(who\)/);
   assert.doesNotMatch(card, /takes \{excess\}|dropped \{excess\}\. \{excess\}/);
   assert.match(card, /gets \$\{excess\} less/);
-  assert.match(choice, /<legend>Split it: pounds each buyer gets less<\/legend>/);
+  assert.match(choice, /<legend>Pounds each buyer gets less<\/legend>/);
   assert.match(choice, /The amounts must add up to \{excessText\}\. A blank box counts as 0\./);
   assert.match(choice, /aria-describedby=\{`\$\{on\}-total`\}/);
   assert.match(choice, /role="status">{leftToPlaceSaid\(line\)}/);
@@ -96,11 +96,11 @@ test("the result says exactly who now gets what, for the suggested buyer, the ot
   assert.equal(c.excess, 10);
   assert.deepEqual(c.promises.map(p => p.orderId).sort(), ["order-a", "order-b"]);
   const settle = (cuts: { orderId: string; amount: number }[]) =>
-    cutOutcome(decideCut(w, "lot-b", cuts, 10, "A Name", LATER).ledger, cuts.filter(x => x.amount > 0).map(x => x.orderId));
-  assert.deepEqual(settle([{ orderId: "order-b", amount: 10 }]), ["Riverbend School Kitchen now gets 10 of 80 lb (70 short)."]);
-  assert.deepEqual(settle([{ orderId: "order-a", amount: 10 }]), ["Northside Grocery Co-op now gets 110 of 120 lb (10 short)."]);
+    cutOutcome(decideCut(w, "lot-b", cuts, 10, "A Name", LATER).ledger, cuts);
+  assert.deepEqual(settle([{ orderId: "order-b", amount: 10 }]), ["Riverbend School Kitchen now gets 10 of 80 lb, was 20 (70 short)."]);
+  assert.deepEqual(settle([{ orderId: "order-a", amount: 10 }]), ["Northside Grocery Co-op now gets 110 of 120 lb, was 120 (10 short)."]);
   assert.deepEqual(settle([{ orderId: "order-a", amount: 4 }, { orderId: "order-b", amount: 6 }]),
-    ["Northside Grocery Co-op now gets 116 of 120 lb (4 short).", "Riverbend School Kitchen now gets 14 of 80 lb (66 short)."]);
+    ["Northside Grocery Co-op now gets 116 of 120 lb, was 120 (4 short).", "Riverbend School Kitchen now gets 14 of 80 lb, was 20 (66 short)."]);
 });
 
 test("a split that misses the total says so in the lot's unit; a huge number is called too large", () => {
@@ -113,4 +113,11 @@ test("the screen reader hears the live line only when the split is all placed or
   assert.equal(leftToPlaceSaid(leftToPlace(10, ["4", ""], "lb")), "");
   assert.equal(leftToPlaceSaid(leftToPlace(10, ["4", "6"], "lb")), "All 10 lb placed.");
   assert.equal(leftToPlaceSaid(leftToPlace(10, ["8", "6"], "lb")), "4 lb too many");
+});
+
+test("picking a buyer sets typed split amounts aside, and Split it brings them back", () => {
+  const choice = source("app/cut-choice.tsx");
+  assert.match(choice, /if \(typedAny\) setAside\(vals\); setVals\(blank\)/);
+  assert.match(choice, /setChoice\("split"\); if \(aside && !typedAny\) setVals\(aside\)/);
+  assert.match(choice, /The amounts are set aside\. Choose Split it to bring them back\./);
 });

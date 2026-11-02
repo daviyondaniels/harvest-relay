@@ -464,7 +464,7 @@ test("a11y: stage results name the buyer, the late-message link takes focus, a s
 
 test("a11y: a refused split keeps the choice and amounts, and says what was entered", () => {
   assert.match(source("app/actions.ts"), /splitTotalMessage\(sum, excess, unitOf\)/);
-  assert.match(source("app/cut-choice.tsx"), /Split it: pounds each buyer gets less/);
+  assert.match(source("app/cut-choice.tsx"), /Pounds each buyer gets less/);
 });
 
 test("Ease task 3: plain words on the review page, and the demo control sits in its own labelled box", () => {

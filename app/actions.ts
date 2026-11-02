@@ -568,7 +568,7 @@ export async function decideCutAction(f: FormData) {
       if (!cuts) throw new FieldError("Choose who takes the cut.", "cut");
       const next = decideCut(w, lot, cuts, excess, who, now()), taken = cuts.filter(x => x.amount > 0), product = c!.product;
       // Says who now gets what and who is short, then where to go next: re-confirm on Pack, and the order's own Next step on Orders, else Orders.
-      const outcome = cutOutcome(next.ledger, taken.map(x => x.orderId)).join(" "), confirmed = !!next.ledger.commitments;
+      const outcome = cutOutcome(next.ledger, taken).join(" "), confirmed = !!next.ledger.commitments;
       const done = `${outcome}${confirmed ? ` ${RECONFIRM}` : ""} ${page === "/orders" ? "See the next step." : `Find more ${product} on Orders.`}`;
       notice = { text: done, ok: true, on: "cut", res: taken[0].orderId };
       return next;

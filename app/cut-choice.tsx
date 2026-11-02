@@ -13,14 +13,17 @@ export function CutChoice({ on, excess, excessText, unit, radios, split, splitLa
   on: string; excess: number; excessText: string; unit: "g" | "lb" | "each"; radios: Radio[]; split: boolean; splitLabel: string; rows: Row[]; initial?: string;
 }) {
   const [choice, setChoice] = useState(initial), [vals, setVals] = useState(() => Object.fromEntries(rows.map(r => [r.id, r.initial])));
+  // Amounts set aside when a buyer is picked, so picking Split again brings them back.
+  const [aside, setAside] = useState<Record<string, string> | undefined>();
+  const blank = Object.fromEntries(rows.map(x => [x.id, ""])), typedAny = Object.values(vals).some(v => v !== "");
   const amounts = rows.map(r => vals[r.id] ?? ""), line = leftToPlace(excess, amounts, unit);
   return <>
     {radios.map(r => (
-      <label key={r.id} className="check"><input type="radio" name="choice" value={r.id} checked={choice === r.id} onChange={() => { setChoice(r.id); setVals(Object.fromEntries(rows.map(x => [x.id, ""]))); }} /><span>{r.label}</span></label>
+      <label key={r.id} className="check"><input type="radio" name="choice" value={r.id} checked={choice === r.id} onChange={() => { setChoice(r.id); if (typedAny) setAside(vals); setVals(blank); }} /><span>{r.label}</span></label>
     ))}
-    {split && <label className="check"><input type="radio" name="choice" value="split" checked={choice === "split"} onChange={() => setChoice("split")} /><span>{splitLabel}</span></label>}
+    {split && <label className="check"><input type="radio" name="choice" value="split" checked={choice === "split"} onChange={() => { setChoice("split"); if (aside && !typedAny) setVals(aside); }} /><span>{splitLabel}</span></label>}
     {split && <fieldset className="split" aria-describedby={`${on}-total`}>
-      <legend>Split it: pounds each buyer gets less</legend>
+      <legend>Pounds each buyer gets less</legend>
       <p id={`${on}-total`} className="small muted">The amounts must add up to {excessText}. A blank box counts as 0.</p>
       {rows.map(r => (
         <label key={r.id}>{r.label}
@@ -28,6 +31,7 @@ export function CutChoice({ on, excess, excessText, unit, radios, split, splitLa
       ))}
       <p className="small">{line}</p>
       <p className="sr-only" role="status">{leftToPlaceSaid(line)}</p>
+      {choice !== "split" && aside && <p className="small muted">The amounts are set aside. Choose Split it to bring them back.</p>}
     </fieldset>}
   </>;
 }
