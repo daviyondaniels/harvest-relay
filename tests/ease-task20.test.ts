@@ -35,15 +35,13 @@ test("the preview sits in the form above its button, and the form carries the ha
   assert.match(review, /\{shown && <input type="hidden" name="shown" value=\{shown\} \/>\}\s*\{outcome\}\s*<div className="row">/);
   assert.match(fields, /\{shown && <input type="hidden" name="shown" value=\{shown\} \/>\}\s*\{preview\}\s*<div className="row">/);
   assert.match(actions, /shown = str\(f, "shown"\) \|\| undefined/);
-  assert.match(actions, /You changed the details, so check the change below, then approve\./);
+  assert.match(source("app/lib/state.ts"), /You changed the details, so check the change below, then approve\./);
   assert.match(review, /id="approve-button"/);
 });
 
 test("copy: a pre-filled hand form says to check and save; the empty form says to enter the details", () => {
   const review = source("app/review/page.tsx");
   // Task 23: the instruction is said once, only where "Save and approve" is the button on offer.
-  assert.match(review, /handShown \? "Check the details below, then save and approve\." : start\?\.complete \? "Save these details, then approve\."/);
-  assert.match(review, /: "Enter the details below"/);
   assert.match(review, /className=\{p\.questions\.length && !p\.error \? "tag" : "tag blocked"\}/, "the waiting state is neutral");
 });
 

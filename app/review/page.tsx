@@ -14,6 +14,7 @@ import { Conflicts } from "../conflict.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { RECHECK, readNotice, type Notice } from "../lib/notice.ts";
+import { unreadNote } from "../lib/state.ts";
 import { QueueFold } from "../queue-fold.tsx";
 import { AnswerFields, ValueFields } from "../value-fields.tsx";
 import { readKept, type KeptForm } from "../lib/kept.ts";
@@ -207,7 +208,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
           <tr><td>Grade</td><td>{i.grade ?? "not stated"}</td></tr>
           <tr><td>Delivery day</td><td>{i.deliveryOn ? day(i.deliveryOn) : "not stated"}</td></tr>
         </tbody></table>
-      </> : <p className="blocker">{it.source.id.startsWith("call-") ? "Check what they said." : "This message has not been read yet."} {closed ? "" : handShown ? "Check the details below, then save and approve." : start?.complete ? "Save these details, then approve." : live > 0 ? "Use Read automatically below, or enter the details yourself." : "Enter the details below."}</p>}
+      </> : <p className="blocker">{unreadNote({ call: it.source.id.startsWith("call-"), closed: !!closed, handShown: !!handShown, startComplete: !!start?.complete, live })}</p>}
 
       {byField.size > 0 && !closed && (
         <div className="blocker" role="status" id="open-questions" tabIndex={-1}>

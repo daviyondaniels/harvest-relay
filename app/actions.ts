@@ -15,7 +15,9 @@ import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dis
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
 import { forgetName, forgetOldName, rememberName, rememberedName } from "./lib/name.ts";
 import { NAME_NEEDED, NAME_PROBLEM, checkName, needsName, runAs } from "./lib/names.ts";
-import { FieldError, fieldOf, manyMissing, type Missing, type Where } from "./lib/errors.ts";
+import { FieldError, fieldOf, manyMissing, type Where } from "./lib/errors.ts";
+import { callRefusal, handFields } from "./lib/hand.ts";
+import { stopNote } from "./lib/state.ts";
 import { buyer, grower, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
@@ -118,7 +120,6 @@ function back(item: string, notice: Notice, on?: string, kept: Record<string, st
 type Step = { on: string; done: string; say?: (w: Workbench) => string; keep?: KeptForm; rebase?: boolean; anon?: boolean; supply?: boolean; after?: (w: Workbench, item: string) => Partial<Notice> };
 // Save/Apply and approve stopped at the preview because the values are not the ones it was worked out from:
 // they are saved, the new outcome is shown, and the page puts focus on Approve (page.tsx, id APPROVE_ID).
-const CHANGED = "You changed the details, so check the change below, then approve.";
 const filledDetails = (f: FormData) => FIELDS.filter(x => str(f, `value-${x}`));
 async function run(f: FormData, change: (w: Workbench, item: string, who: string) => Workbench | Promise<Workbench>, step: Step): Promise<never> {
   const item = str(f, "item");
@@ -166,30 +167,13 @@ export async function replyAction(f: FormData) {
     const r = replyAndApprove(w, i, source, answers(f, "reply", text), [], who, now(), shown);
     approvedNow = r.approved; changedNow = r.changed;
     return r.next;
-  }, { on: "reply", keep: "reply", done: "Reply added.", after: (w, item) => !both ? (recorded ? { text: "Answers applied." } : {}) : approvedNow ? { ...approved(w, item, before), on: "approve" } : changedNow ? { text: CHANGED, on: RECHECK } : { text: "Answers applied. One more detail needs an answer." } });
+  }, { on: "reply", keep: "reply", done: "Reply added.", after: (w, item) => !both ? (recorded ? { text: "Answers applied." } : {}) : approvedNow ? { ...approved(w, item, before), on: "approve" } : stopNote("reply", changedNow) });
 }
 export async function scriptedReplyAction(f: FormData) { return run(f, (w, i, who) => scriptedReply(w, i, recording(), who, now()), { on: "script", done: "The grower's reply was added." }); }
 export async function correctAction(f: FormData) { return run(f, (w, i, who) => correct(w, i, answers(f, "message"), who, now()), { on: "correct", keep: "correct", done: "Correction applied." }); }
 // The coordinator's own reading of a message: what kind of change, which lot, how much, the
 // grade and the day. A call note is its own evidence; any other message needs the words.
-const KINDS = ["replace-total", "add-quantity", "correction", "forecast"] as const;
-const UNIT_CHOICES = ["g", "kg", "lb", "each", "case"] as const;
-function handReading(f: FormData, callNote: boolean): HandReading {
-  const operation = need(f, "operation", "Choose what kind of update this is.") as HandReading["operation"];
-  if (!KINDS.includes(operation)) throw new FieldError("Choose what kind of update this is.", "operation");
-  const lotId = need(f, "lot", "Choose the lot.");
-  const amount = need(f, "amount", "Enter the amount.");
-  // A number that is not above zero (0, -5) is told so; only what is not a whole number at all asks for one.
-  if (/^-?\d+$/.test(amount) && Number(amount) <= 0) throw new FieldError("Enter an amount above zero.", "amount");
-  if (!/^\d{1,9}$/.test(amount)) throw new FieldError("Enter the amount as a whole number.", "amount");
-  const unit = str(f, "unit") as (typeof UNIT_CHOICES)[number];
-  if (!UNIT_CHOICES.includes(unit)) throw new FieldError("Choose a unit.", "unit");
-  const grade = need(f, "grade", "Enter the grade."), deliveryOn = need(f, "day", "Choose the delivery day.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryOn)) throw new FieldError("Choose the delivery day.", "day");
-  const quote = str(f, "quote");
-  if (!quote && !callNote) throw new FieldError("Copy the words in the message that support this.", "quote");
-  return { operation, lotId, quantity: { amount: Number(amount), unit }, grade, deliveryOn, ...(str(f, "target") ? { correctsEventId: str(f, "target") } : {}), ...(quote ? { quote } : {}) };
-}
+const handReading = (f: FormData, callNote: boolean): HandReading => handFields(k => str(f, k), callNote);
 // "Save and approve" (andApprove) saves the reading and approves it in the same step, against the review hash of the
 // state the reading produces. Every value is in the form the coordinator submitted. If the reading leaves a question
 // open, only the reading is kept and the notice says so. It does not rebase.
@@ -203,7 +187,7 @@ export async function readByHandAction(f: FormData) {
     const r = readByHandAndApprove(w, i, reading, who, now(), shown);
     approvedNow = r.approved; changedNow = r.changed;
     return r.next;
-  }, { on: "hand", keep: "hand", done: "Details saved. Check them, then approve.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : changedNow ? { text: CHANGED, on: RECHECK } : { text: "Details saved. One more thing needs an answer before it can be approved." } });
+  }, { on: "hand", keep: "hand", done: "Details saved. Check them, then approve.", after: (w, item) => !both ? {} : approvedNow ? { ...approved(w, item, before), on: "approve" } : stopNote("hand", changedNow) });
 }
 export async function confirmLotAction(f: FormData) { return run(f, (w, i, who) => confirmLot(w, i, who, now()), { on: "lot", done: "Lot confirmed." }); }
 const note = (f: FormData) => need(f, "note", "Write a note or reason.");
@@ -463,12 +447,7 @@ export async function logCallAction(f: FormData) {
   const growerId = str(f, "grower"), kept = str(f, "note").slice(0, MAX_TEXT);
   try {
     // An empty form says everything missing at once, in the order the fields sit on the page, and focuses the first.
-    const all: Missing[] = [
-      ...(!CONTACTS.some(c => c.id === growerId) ? [{ field: "grower", what: "who called" }] : []),
-      ...(!str(f, "note") ? [{ field: "note", what: "the call note" }] : []),
-      ...(needsName(f.get("who"), await rememberedName()) ? [{ field: "who", what: "your name" }] : [])
-    ];
-    const many = manyMissing(all);
+    const many = callRefusal(growerId, str(f, "note"), needsName(f.get("who"), await rememberedName()));
     if (many) throw many;
     await asNamed(f, async who => {
       if (!CONTACTS.some(c => c.id === growerId)) throw new FieldError("Choose who called.", "grower");
