@@ -103,7 +103,7 @@ test("composed approves never rebase: on a stale version, act with the default o
 });
 
 test("a stored version that moved refuses the second of two tabs", async () => {
-  process.env.HARVEST_DB = join(mkdtempSync(join(tmpdir(), "hr-t25-")), "t25b.db");
+  // hub.ts reads HARVEST_DB once at import, so this reuses the first test's temp store.
   const { act, current } = await import("../app/lib/hub.ts");
   const s = await current();
   await act(s.version, w => w);
@@ -146,4 +146,12 @@ test("Review says one honest thing per state", () => {
   assert.deepEqual(stopNote("hand", false), { text: WAITING_HAND });
   assert.equal(WAITING_REPLY, "Answers applied. One more detail needs an answer.");
   assert.equal(CHANGED, "You changed the details, so check the change below, then approve.");
+});
+
+test("the actions pass the shown hash through to the composed approves, and the row offers Dismiss only for a dismiss row", () => {
+  const actions = readFileSync(new URL("../app/actions.ts", import.meta.url), "utf8"), page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(actions, /readByHandAndApprove\(.*, shown\)/);
+  assert.match(actions, /replyAndApprove\(.*, shown\)/);
+  assert.match(page, /action === "dismiss" \? \(\s*<form action=\{dismissNoChangeAction\}/);
+  assert.match(page, /action === "review" && ready \? \(\s*<span className="act"><a [^>]*href=\{`\/review\?item=/, "Review it is a link, never a form");
 });

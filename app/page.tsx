@@ -277,10 +277,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} /><input type="hidden" name="cs" value={commitKey(w.ledger)} />
                         <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet(on("approve"))} />
                       </form>
-                    ) : (
+                    ) : action === "dismiss" ? (
                       <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
                         <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} className={primary()} known={known} on={on("dismiss")} bad={bad} quiet={quiet(on("dismiss"))} />
                       </form>
+                    ) : (
+                      <span className="act"><a className="button" href={`/review?item=${i.id}`}>Open<span className="sr-only"> {grower(i.source.growerId)}'s message</span></a></span>
                     )}
                   </div>
                 );
