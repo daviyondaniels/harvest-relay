@@ -23,6 +23,8 @@ export function dayRecord(w: Workbench, version: number, exportedAt: string) {
     resolutions: w.resolutions, outbox: w.outbox,
     commitments: w.ledger.commitments ?? null, conflicts: conflicts(w.ledger),
     stages: Object.fromEntries(s.orders.map(o => [o.id, stageOf(w.ledger, o.id)])),
-    measures: measures(w)
+    measures: measures(w),
+    // The authored time of a seeded grower message is not a real arrival time, so the minutes are demo timing, not a result.
+    measuresNote: "minutesToBuyerNotice is demo timing: it runs from the authored time of a demo grower message to the recorded time of the message to the buyer. It does not measure a coordinator's work."
   };
 }

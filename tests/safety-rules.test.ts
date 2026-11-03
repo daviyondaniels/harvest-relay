@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { seedWorkbench } from "../src/seed.ts";
+import { deliverInjection, seedWorkbench } from "../src/seed.ts";
 import { confirmPlan, markAllStage } from "../src/commitments.ts";
 import { FieldError } from "../app/lib/errors.ts";
 import { callMissing, callRefusal, handFields } from "../app/lib/hand.ts";
@@ -15,12 +15,14 @@ import { answerRecorded, answerRecordedAndApprove, previewAnswers, previewHand, 
 // Behaviour tests for the safety rules, run on the seed. Each rule used to be guarded by a check of the source text;
 // these run the rule itself.
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z", ME = "Hub coordinator";
-const seed = () => seedWorkbench(JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8")), NOW);
+const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8"));
+const seed = () => seedWorkbench(readings(), NOW);
+const withInjection = async () => deliverInjection(await seed(), readings(), NOW);
 const by = (w: Workbench, id: string) => w.items.find(i => i.source.id === id)!;
 const actionOf = (w: Workbench, id: string) => rowAction(w, by(w, id), overview(w).previews);
 
 test("Overview row action: tomato reviews, forecast notes, the injection dismisses, questions open Review", async () => {
-  const w = await seed();
+  const w = await withInjection();
   assert.equal(actionOf(w, "msg-tomato"), "review", "it leaves a buyer short");
   assert.equal(actionOf(w, "msg-forecast"), "note");
   assert.equal(actionOf(w, "msg-injection"), "dismiss");

@@ -179,7 +179,6 @@ export const reallyShort = (blocking: string[], gapIds: Set<string>) => blocking
 export const CONFIRM_WITHOUT = (growerName: string, product?: string, before?: Quantity, after?: Quantity) =>
   `Confirm without ${growerName}'s ${product ? `${product.toLowerCase()} ` : ""}update${before && after ? ` (${moveLine(before, after)})` : ""}`;
 export const SHIP_SHORT = "Ship these orders short";
-export const firstMessageLine = (d: string) => `First message to a short buyer: ${d} after their order went short`;
 export const CHECK_IT = (n: number) => n === 1 ? "Check it" : "Check the first one";
 // "Open the 1 update" for one, "Open all 3 updates" for more.
 export const openAllLabel = (n: number) => n === 1 ? "Open the 1 update" : `Open all ${n} updates`;

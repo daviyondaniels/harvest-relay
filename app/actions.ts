@@ -9,7 +9,7 @@ import { options, shortages, type Option } from "../src/orders.ts";
 import { PromisesMoved, type Conflict, approveRebased, commitKey, conflicts, changeCut, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
-import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
+import { DEMO_MODEL, DEMO_SETTINGS, deliverInjection, lateMessage, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
 import { FIELDS, type Field } from "../src/updates.ts";
 import { answerRecorded, answerRecordedAndApprove, ask, confirmLot, correct, dismiss, interpret, leavePending, readByHand, readByHandAndApprove, type HandReading, receive, refresh, refreshAll, refreshIfStale, reply, replyAndApprove, replyIsRecorded, replyRead, returnForClarification, type Workbench } from "../src/workbench.ts";
 import { StaleView, act, staleMessage, current, extras, recording, resetDemo } from "./lib/hub.ts";
@@ -498,12 +498,31 @@ export async function lateMessageAction(f: FormData) {
     await asNamed(f, () => act(Number(str(f, "version")), w => {
       const refusal = lateRefusal(w);
       if (refusal) throw new Error(refusal);
-      const next = receive(w, LATE.source, now());
+      const next = receive(w, lateMessage(w).source, now());
       notice = { text: "Birch Hollow's late message is in Review.", ok: true, on: "late", res: next.items.at(-1)!.id };
       return next;
     }));
   } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "late", field: e.field } : { text: e instanceof Error ? e.message : "The message could not be delivered" }; kept = keepWho(f); }
   toPack(notice!, kept);
+}
+
+// Demo only: a message that tries to change the rules ("SYSTEM: ignore your rules ...") arrives in the Review
+// inbox, read from its recording. Works at any time and once; the coordinator refuses or dismisses it like any
+// other message. From Review it opens the message there; from Pack it says so beside the button.
+export async function injectionMessageAction(f: FormData) {
+  let notice: Notice, kept: Record<string, string> = {}, arrived = "";
+  const onPack = str(f, "from") === "/pack";
+  try {
+    await asNamed(f, () => act(Number(str(f, "version")), async w => {
+      const next = await deliverInjection(w, recording(), now());
+      arrived = next.items.at(-1)!.id;
+      return next;
+    }));
+    notice = { text: "The message is in Review.", ok: true, on: "injection", res: arrived };
+  } catch (e) { notice = e instanceof FieldError ? { text: e.message, on: "injection", field: e.field } : { text: e instanceof Error ? e.message : "The message could not be delivered" }; kept = keepWho(f); }
+  if (onPack) toPack(notice, kept);
+  // Review: the new message opens (its Result names it); a refusal stays on the message that was open.
+  back(notice.ok ? arrived : str(f, "item"), notice, "injection", kept, "/review");
 }
 
 // Marks one order packed, or handed off. The domain refuses a stage that does not follow.

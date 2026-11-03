@@ -3,9 +3,9 @@ import { CUT_FIRST, commitKey, conflicts, planOf, stageOf, stageable } from "../
 import { shortages } from "../../src/orders.ts";
 import { lockGate, orderSheets, pickLists } from "../../src/pack.ts";
 import { orderStatus } from "../../src/resolve.ts";
-import { canReceiveLate } from "../../src/seed.ts";
+import { canReceiveInjection, canReceiveLate } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
-import { confirmAction, lateMessageAction, stageAction, stageAllAction } from "../actions.ts";
+import { confirmAction, injectionMessageAction, lateMessageAction, stageAction, stageAllAction } from "../actions.ts";
 import { HUB_NAME, ORDER_STATUS, STAGE, buyer, day, grower, promiseText, time, weight } from "../lib/format.ts";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current } from "../lib/hub.ts";
@@ -39,7 +39,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   // A refused confirm is shown beside the Ship short box when it is on the page, else at the top.
   const known = !!await rememberedName();
   // A missing name is shown beside the name field of the form that was refused (confirm, late message, or one order's stage).
-  const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || ((shown.on === "stage" || shown.on === "stageall") && !!shown.res))
+  const noName: Bad = shown && !shown.ok && shown.field === "who" && (shown.on === "lock" || shown.on === "late" || shown.on === "injection" || ((shown.on === "stage" || shown.on === "stageall") && !!shown.res))
     ? { on: shown.on === "stage" ? `stage-${shown.res}` : shown.on === "stageall" ? `stageall-${shown.res}` : shown.on, field: "who", text: shown.text } : undefined;
   const bad: Bad = noName ?? (shown && !shown.ok && blocking.length > 0 && shown.text !== CUT_FIRST ? { on: "lock", field: "shipShort", text: shown.text } : undefined);
   const fresh = newSinceConfirm(w), arrived = fresh.length;
@@ -98,7 +98,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
   return (
     <div className="pack">
       <section className="panel no-print" aria-labelledby="pack">
-        {shown && <Result key={String(params.sig)} text={shown.ok ? shown.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : shown.ok && c ? (shown.on === "late" && shown.res ? "late-link" : shown.on === "stage" && shown.res ? `sheet-${shown.res}` : "sheets") : "pack"} />}
+        {shown && <Result key={String(params.sig)} text={shown.ok ? shown.text : undefined} focus={bad ? fieldId(bad.on, bad.field) : shown.ok && c ? ((shown.on === "late" || shown.on === "injection") && shown.res ? "late-link" : shown.on === "stage" && shown.res ? `sheet-${shown.res}` : "sheets") : "pack"} />}
         {shown && !shown.ok && !bad && <p className="error" role="alert">{shown.text}</p>}
         <div className="section-head row">
           <h1 id="pack" tabIndex={-1}>Pack</h1>
@@ -106,7 +106,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
           {c && !stale && <span className="chip ready">Confirmed</span>}
           {stale && <span className="chip wait">Changed since confirmed</span>}
         </div>
-        {shown?.ok && shown.on === "late" && shown.res && <p><a id="late-link" href={`/review?item=${encodeURIComponent(shown.res)}`}>Open the late message in Review</a></p>}
+        {shown?.ok && (shown.on === "late" || shown.on === "injection") && shown.res && <p><a id="late-link" href={`/review?item=${encodeURIComponent(shown.res)}`}>{shown.on === "late" ? "Open the late message in Review" : "Open the message in Review"}</a></p>}
         <Conflicts w={w} version={version} known={known} page="/pack" params={params} level={2} />
         <ChangeCuts w={w} version={version} known={known} page="/pack" params={params} />
         {c && (
@@ -138,14 +138,19 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
 
       {c && params.print === "1" && <AutoPrint />}
       {c && <Sheets w={w} version={version} toldSince={toldSince} known={known} bad={bad} />}
-      {c && canReceiveLate(w) && (
-        <details className="demo-tools no-print" open={bad?.on === "late"}>
+      {c && (canReceiveLate(w) || canReceiveInjection(w)) && (
+        <details className="demo-tools no-print" open={bad?.on === "late" || bad?.on === "injection"}>
           <summary>Demo tools</summary>
           <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
-            <form action={lateMessageAction} className="form">
+            {canReceiveLate(w) && <form action={lateMessageAction} className="form">
               <input type="hidden" name="version" value={version} />
               <div><NamedSubmit label={<>Late grower message (demo)<span className="sr-only"> from Birch Hollow Gardens</span></>} known={known} on="late" bad={bad} /></div>
-            </form>
+            </form>}
+            {canReceiveInjection(w) && <form action={injectionMessageAction} className="form">
+              <input type="hidden" name="version" value={version} />
+              <input type="hidden" name="from" value="/pack" />
+              <div><NamedSubmit label="A message that tries to change the rules (demo)" known={known} on="injection" bad={bad} quiet={canReceiveLate(w)} /></div>
+            </form>}
           </div>
         </details>
       )}

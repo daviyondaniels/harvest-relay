@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { DEMO_MODEL, DEMO_SETTINGS, SEED, type Recording } from "../src/seed.ts";
+import { DEMO_MODEL, DEMO_SETTINGS, RECORDED, type Recording } from "../src/seed.ts";
 import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTransport, type Transport } from "../src/interpret.ts";
 import { demoSnapshot } from "../src/demo.ts";
 import { createLedger } from "../src/updates.ts";
@@ -11,7 +11,7 @@ import { createLedger } from "../src/updates.ts";
 // Each reading is taken against the starting hub, as the demo replays it. Nothing is
 // written unless every call produced a usable reading.
 const { values } = parseArgs({ options: { "max-calls": { type: "string" } } });
-const needed = SEED.length + SEED.filter(m => m.reply).length, maxCalls = Number(values["max-calls"]);
+const needed = RECORDED.length + RECORDED.filter(m => m.reply).length, maxCalls = Number(values["max-calls"]);
 if (maxCalls !== needed) throw new Error(`Recording needs exactly ${needed} calls; pass --max-calls ${needed}`);
 const key = process.env.MODEL_API_KEY;
 if (!key) throw new Error("MODEL_API_KEY not loaded; use node --env-file");
@@ -25,7 +25,7 @@ const keep = (id: string): Transport => async (request, signal) => {
   return body;
 };
 const opts = (id: string) => ({ enabled: true, model: DEMO_MODEL, ...DEMO_SETTINGS, budget, transport: keep(id) });
-for (const m of SEED) {
+for (const m of RECORDED) {
   const r = await interpretSource(ledger, m.source, opts(m.source.id));
   summary.push(`${m.source.id}: ${r.status}${r.status === "proposed" ? ` ${r.proposal.interpretation.operation}, questions: ${r.questions.map(q => q.field).join(", ") || "none"}` : ` (${r.reason})`}`);
   if (!m.reply) continue;

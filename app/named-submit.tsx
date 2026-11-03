@@ -19,7 +19,7 @@ type Named = { known: boolean; on?: string; bad?: Bad; purpose?: string; quiet?:
 const PURPOSE: [RegExp, string][] = [
   [/approve|note-forecast/, "this approval"], [/^lock/, "confirming today's plan"], [/^stage/, "this packing step"], [/^call/, "logging this call"], [/^cut-/, "settling this cut"],
   [/hold|dismiss/, "this decision"], [/reply|buyer/, "recording this reply"], [/^ask/, "recording this question"], [/^correct/, "this correction"],
-  [/^hand/, "this reading"], [/refresh/, "checking this again"], [/send|draft|confirm|edit|discard|redraft/, "this message"], [/^late|^script/, "this demo step"]
+  [/^hand/, "this reading"], [/refresh/, "checking this again"], [/send|draft|confirm|edit|discard|redraft/, "this message"], [/^late|^injection|^script/, "this demo step"]
 ];
 const purposeOf = (on: string) => PURPOSE.find(([re]) => re.test(on))?.[1] ?? "this change";
 export function NameField({ known, on = "named", bad, purpose, quiet }: Named) {

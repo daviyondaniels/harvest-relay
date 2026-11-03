@@ -176,6 +176,7 @@ label.named { max-width: 28em; }
 .overview { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 .main-col { grid-column: 1 / -1; display: grid; gap: 24px; align-content: start; }
 .hero { display: grid; gap: 16px; align-content: start; padding: 12px 4px 0; }
+.hero .pitch { margin: 0; font-size: 1rem; color: var(--ink); max-width: 60ch; }
 .hero-sub { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--ink-soft); }
 .stats { display: flex; flex-wrap: wrap; gap: 12px; }
 .stat { display: inline-flex; align-items: center; gap: 12px; background: var(--surface); border-radius: var(--r-s); padding: 8px 16px 8px 8px; box-shadow: var(--shadow); }

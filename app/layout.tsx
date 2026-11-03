@@ -7,13 +7,14 @@ import { ClearErrors } from "./clear-errors.tsx";
 import { Header, TabBar } from "./nav.tsx";
 import type { Theme } from "./theme.tsx";
 import { Who } from "./who.tsx";
+import { PITCH } from "./lib/pitch.ts";
 import "./globals.css";
 
 const type = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" });
 
 export const metadata: Metadata = {
   title: { template: "%s · Harvest Relay", default: "Harvest Relay" },
-  description: "Turn changing grower updates into reviewed supply changes and order impact for a small food hub."
+  description: PITCH
 };
 
 export default async function Layout({ children }: { children: ReactNode }) {

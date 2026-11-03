@@ -78,7 +78,7 @@ test("Overview: the ready-to-confirm heading, one name field after a refusal, an
   assert.match(page, /<h2 id="ready" tabIndex=\{-1\}>Ready to confirm<\/h2>/);
   assert.match(page, /if \(bad\?\.field === "who"\) return on !== bad\.on;/);
   assert.doesNotMatch(page, /quiet\(\)/);
-  for (const t of ["Short orders found today", "Orders sent short", "firstMessageLine("]) assert.ok(page.includes(t), t);
-  assert.doesNotMatch(page, /Measured in this demo session/);
+  for (const t of ["Short orders found today", "Shipped short, buyer not told", "PITCH"]) assert.ok(page.includes(t), t);
+  assert.doesNotMatch(page, /Measured in this demo session|First message to a short buyer|firstMessageLine|Orders sent short/);
   assert.match(css, /\.result \{[^}]*background: var\(--surface\); border: 1px solid var\(--forest\)/, "the result banner is visible");
 });

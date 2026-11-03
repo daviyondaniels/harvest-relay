@@ -4,8 +4,8 @@ import { commitKey, conflicts, planOf } from "../../src/commitments.ts";
 import type { Quantity } from "../../src/quantity.ts";
 import { FIELDS, type Field, type Span } from "../../src/updates.ts";
 import { BY_HAND, madeShort, needingRefresh, previewAnswers, previewHand, previewRecordedAnswers, replyIsRecorded, suggestAnswers, suggestReading, type HandReading, type Decision, type InboxItem, type Preview } from "../../src/workbench.ts";
-import { SEED } from "../../src/seed.ts";
-import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
+import { SEED, canReceiveInjection } from "../../src/seed.ts";
+import { approveAction, askAction, correctAction, dismissAction, dismissNoChangeAction, injectionMessageAction, liveAllowance, liveReadAction, liveReplyAction, pendingAction, readByHandAction, refreshAction, refreshAllAction, replyAction, returnAction, scriptedReplyAction } from "../actions.ts";
 import { FIELD, HISTORY_RECHECK, OPERATION, OPERATION_CHOICE, buyer, changeLine, forecastTag, day, evidence, grower, quantity, status, time, updateName, weight } from "../lib/format.ts";
 import { value as parseValue } from "../lib/values.ts";
 import { PreviewGate } from "../preview-gate.tsx";
@@ -85,6 +85,7 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
   const stale = needingRefresh(w).length;
   // A missing name on "Refresh all stale items" is shown beside that form, and the folded queue opens to it.
   const allBad: Bad = notice && !notice.ok && notice.on === "refreshAll" && notice.field === "who" && stale > 0 ? { on: "refreshAll", field: "who", text: notice.text } : undefined;
+  const injBad: Bad = notice && !notice.ok && notice.on === "injection" && notice.field ? { on: "injection", field: notice.field, text: notice.text } : undefined;
   return (
     <div className="workspace item-first">
       {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<><Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} /><ChangeCuts w={w} version={version} known={known} page="/review" id={it.id} params={params} only={{ lotId: w.ledger.events.find(e => e.id === it.eventId)?.lotId ?? "none" }} /></>} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
@@ -103,6 +104,14 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
             <div className="queue-list">{done.map(i => <QueueLink key={i.id} i={i} p={previews.get(i.id)} current={i.id === it?.id} noted={isNoted(w, i)} />)}</div>
           </details>}
         </QueueFold>
+        {canReceiveInjection(w) && <details className="demo-tools" open={!!injBad}>
+          <summary>Demo tools</summary>
+          <div className="demo" role="group" aria-label="Demo"><span className="demo-tag">Demo</span>
+            <form action={injectionMessageAction} className="form"><input type="hidden" name="version" value={version} /><input type="hidden" name="item" value={it?.id ?? ""} />
+              <NamedSubmit label="A message that tries to change the rules (demo)" known={known} on="injection" bad={injBad} />
+            </form>
+          </div>
+        </details>}
       </nav>
     </div>
   );
@@ -167,7 +176,7 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
   const from = grower(it.source.growerId);
   // A problem with a field of a form still on the page (a missing name included) is shown
   // beside that field; anything else at the top of the message.
-  const forms = closed ? [] : ["hold", ...(!i || i.operation === "unresolved" ? ["dismiss"] : []), ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
+  const forms = closed ? ["injection"] : ["injection", "hold", ...(!i || i.operation === "unresolved" ? ["dismiss"] : []), ...(hasScript ? ["script"] : []), ...(live > 0 ? ["read"] : []),
     ...(i ? ["ask", "reply", "correct"] : ["hand"]), ...(it.proposal ? [p.needsRefresh ? "refresh" : "approve"] : [])];
   const bad: Bad = notice && !notice.ok && notice.field && forms.includes(notice.on ?? "") ? { on: notice.on!, field: notice.field, text: notice.text } : undefined;
   const top = notice && !notice.ok && !bad && !queueFocus ? notice : undefined;

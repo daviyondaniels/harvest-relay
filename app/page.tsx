@@ -10,10 +10,11 @@ import { Basket, Calendar, Crate, Gap, Message } from "./icons.tsx";
 import { HUB_NAME, ORDER_STATUS, buyer, changeLine, day, forecastTag, grower, quantity, status, time, weight } from "./lib/format.ts";
 import { Problem, fieldId, type Bad } from "./lib/field-error.tsx";
 import { current } from "./lib/hub.ts";
+import { PITCH } from "./lib/pitch.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, rowShorts, substituteLine, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, rowAction, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, instructionLike, leaveSentence, leavesShort, newSinceConfirm, rowShorts, substituteLine, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, rowAction, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { Result } from "./result.tsx";
@@ -47,7 +48,7 @@ function Gauge({ covered }: { covered: number }) {
         <path d="M20 120a100 100 0 0 1 200 0" stroke={covered >= 1 ? "var(--forest)" : "var(--sun)"} strokeWidth="22" fill="none" strokeLinecap="round" strokeDasharray={`${on} ${len}`} />
       </svg>
       <p className="value">{Math.round(covered * 100)}%</p>
-      <p className="label">of ordered weight covered</p>
+      <p className="label">of ordered weight covered by the plan today</p>
     </div>
   );
 }
@@ -93,7 +94,7 @@ function SupplyCard({ rows, unit }: { rows: ProductRow[]; unit: Unit }) {
 }
 
 // Only what measures() observes; no estimates. Times are rounded to the nearest minute.
-function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
+function DayCard({ m }: { m: Measures }) {
   const r = m.resolvedBy;
   return (
     <section className="card day" aria-labelledby="day">
@@ -103,14 +104,7 @@ function DayCard({ m, names }: { m: Measures; names: Map<string, string> }) {
         <span className="stat"><b>{r.grower}</b><span>Asks to growers that added supply</span></span>
         <span className="stat"><b>{r.substitute}</b><span>Substitutes agreed</span></span>
         <span className="stat"><b>{r.notice}</b><span>Buyers told they'd be short</span></span>
-        <span className="stat"><b>{r.shipShort}</b><span>Orders sent short</span></span>
-      </div>
-      <div>
-        <h3>Messages to buyers</h3>
-        {m.minutesToBuyerNotice.length
-          ? <ul className="minutes">{m.minutesToBuyerNotice.map(x => <li key={x.orderId}>{firstMessageLine(duration(x.minutes))} ({names.get(x.orderId) ?? x.orderId})</li>)}</ul>
-          : <p className="muted">No message sent to a buyer yet</p>}
-        <p className="fine-print">From the grower message that made the order short to the first message sent to its buyer: a substitute offer or a shortfall notice.</p>
+        <span className="stat"><b>{r.shipShort}</b><span>Shipped short, buyer not told</span></span>
       </div>
     </section>
   );
@@ -175,6 +169,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <section className="hero" aria-labelledby="hub">
         {reset && result}
         <h1 id="hub" tabIndex={-1}>{HUB_NAME}</h1>
+        <p className="pitch">{PITCH}</p>
         <p className="hero-sub"><span>{delivery ? `Delivery ${day(delivery)}` : "No delivery scheduled"}</span><span>{s.orders.length} buyer orders from {new Set(s.lots.map(l => l.growerId)).size} growers</span><a href="/export">Download the day record</a></p>
         <div className="stats">
           <span className="stat"><span className="icon"><Crate /></span><b>{weight(rows.reduce((n, r) => n + r.supply, 0), unit)}</b><span>confirmed supply</span></span>
@@ -320,7 +315,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <details className="day-details">
         <summary>Day details</summary>
         <SupplyCard rows={rows} unit={unit} />
-        <DayCard m={measures(w)} names={names} />
+        <DayCard m={measures(w)} />
         <div className="day-grid">
           <section className="card side" aria-labelledby="coverage">
             <div className="card-head"><h2 id="coverage">Order coverage</h2></div>

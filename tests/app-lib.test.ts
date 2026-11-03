@@ -151,7 +151,7 @@ test("Task 10: dismissable is a read message that names no lot or no amount; an 
 });
 
 import { readFileSync } from "node:fs";
-import { seedWorkbench } from "../src/seed.ts";
+import { deliverInjection, seedWorkbench } from "../src/seed.ts";
 import { ATTENTION_ROWS, approvalResult, byAttention, shortMap, stageCounts, updateKind } from "../app/lib/view.ts";
 import { preview, approve } from "../src/workbench.ts";
 import { confirmPlan, markStage, stageable } from "../src/commitments.ts";
@@ -159,7 +159,7 @@ const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.js
 const NOW = "2026-10-28T14:00:00.000Z";
 
 test("Task 10: against the seed, zucchini and cucumber are not dismissable; the instruction-like message is, because it names no amount", async () => {
-  const w = await seedWorkbench(readings(), NOW), by = (id: string) => w.items.find(i => i.source.id === id)!;
+  const w = await deliverInjection(await seedWorkbench(readings(), NOW), readings(), NOW), by = (id: string) => w.items.find(i => i.source.id === id)!;
   assert.equal(dismissable(by("msg-zucchini")), false, "Birch zucchini: a real update with open questions");
   assert.equal(dismissable(by("msg-cucumber")), false);
   assert.equal(dismissable(by("msg-tomato")), false);

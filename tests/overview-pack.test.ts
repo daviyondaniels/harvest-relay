@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { seedWorkbench } from "../src/seed.ts";
+import { deliverInjection, seedWorkbench } from "../src/seed.ts";
 import { BUYERS } from "../src/demo.ts";
 import { BY_HAND, approve, preview, type InboxItem } from "../src/workbench.ts";
 import { confirmPlan, conflicts } from "../src/commitments.ts";
@@ -12,6 +12,7 @@ const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.js
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z";
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const seed = () => seedWorkbench(readings(), NOW);
+const withInjection = async () => deliverInjection(await seed(), readings(), NOW);
 const by = (w: Awaited<ReturnType<typeof seed>>, id: string) => w.items.find(i => i.source.id === id)!;
 const buyerOf = (w: Awaited<ReturnType<typeof seed>>) => (orderId: string) => BUYERS[w.ledger.snapshot.orders.find(o => o.id === orderId)!.buyerId];
 
@@ -40,7 +41,7 @@ test("one-tap Approve only when no buyer is left short; the forecast update stay
 test("rows are ordered cut, short, not checked yet, ready, answers, dismiss; a late unread message sits above routine approvals", async () => {
   const rows = ["dismiss", "asks", "ready", "unchecked", "short", "cut", "ready"].map((kind, n) => ({ kind: kind as "cut", n }));
   assert.deepEqual(byAttention(rows).map(r => `${r.kind}${r.n}`), ["cut5", "short4", "unchecked3", "ready2", "ready6", "asks1", "dismiss0"]);
-  const w = await seed(), t = by(w, "msg-tomato"), kind = (i: InboxItem) => updateKind(i, preview(w, i.id));
+  const w = await withInjection(), t = by(w, "msg-tomato"), kind = (i: InboxItem) => updateKind(i, preview(w, i.id));
   assert.equal(kind({ ...t, proposal: undefined }), "unchecked", "unread");
   assert.equal(kind({ ...t, interpretedBy: BY_HAND }), "unchecked", "read by hand");
   assert.equal(kind(t), "ready");
@@ -68,7 +69,7 @@ test("the stale confirmed card leads with the same sentence as Pack, naming who 
 });
 
 test("the instruction-like message is labelled by the reading plus a word test; a real update with a question is not", async () => {
-  const w = await seed();
+  const w = await withInjection();
   assert.equal(INSTRUCTION_LABEL, "Looks like an instruction, not a harvest update");
   assert.equal(instructionLike(by(w, "msg-injection")), true);
   for (const id of ["msg-tomato", "msg-zucchini", "msg-cucumber", "msg-forecast"]) assert.equal(instructionLike(by(w, id)), false, id);

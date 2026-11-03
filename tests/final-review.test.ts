@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { scenario, surplus } from "../evaluation/scenario.ts";
-import { seedWorkbench } from "../src/seed.ts";
+import { deliverInjection, seedWorkbench } from "../src/seed.ts";
 import { PromisesMoved, approveRebased, commitKey, confirmPlan, conflicts, markAllStage, markStage, stageable } from "../src/commitments.ts";
 import { shortages } from "../src/orders.ts";
 import { createLedger } from "../src/updates.ts";
@@ -12,7 +12,8 @@ import { noChangeDismissable } from "../app/lib/view.ts";
 // The final whole-branch review: rebased actions act only on what the page showed, and the server works
 // out for itself what a form used to claim.
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z", ME = "Hub coordinator";
-const seed = () => seedWorkbench(JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8")), NOW);
+const readings = () => JSON.parse(readFileSync(new URL("../data/seed-readings.json", import.meta.url), "utf8"));
+const seed = () => seedWorkbench(readings(), NOW);
 const bySource = (w: Workbench, id: string) => w.items.find(i => i.source.id === id)!;
 const HAND = (lotId: string, amount: number, operation: "replace-total" | "add-quantity", quote: string) =>
   ({ operation, lotId, quantity: { amount, unit: "lb" as const }, grade: "standard", deliveryOn: "2026-10-30", quote });
@@ -71,7 +72,7 @@ test("Stage all marks only the orders the page counted", async () => {
 });
 
 test("No change, dismiss is offered by the server only for what the Overview or Review offers it for", async () => {
-  const w = await seed(), tomato = bySource(w, "msg-tomato"), junk = bySource(w, "msg-injection");
+  const w = await deliverInjection(await seed(), readings(), NOW), tomato = bySource(w, "msg-tomato"), junk = bySource(w, "msg-injection");
   assert.equal(noChangeDismissable(tomato), false, "a real update naming a lot and an amount");
   assert.equal(noChangeDismissable(bySource(w, "msg-cucumber")), false, "a real update with a question open on case size");
   assert.equal(noChangeDismissable(junk), true, "names no amount");

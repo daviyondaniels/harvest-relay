@@ -34,7 +34,7 @@ export const FORM_FIELDS: Record<string, readonly string[]> = {
   // Orders: a card's forms are named by the card (`<card>-<on>` on the page)
   draft: ["body"], edit: ["body"], send: [], confirm: [], discard: ["reason"], redraft: [], call: ["note", "grower"],
   // Pack and the cut
-  lock: [], late: [], stage: [], stageall: [], cut: [], reset: []
+  lock: [], late: [], injection: [], stage: [], stageall: [], cut: [], reset: []
 };
 // A message about a reply's or correction's value, which one of the several details it is about.
 const DETAIL: [RegExp, string[]][] = [

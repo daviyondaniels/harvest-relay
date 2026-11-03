@@ -15,9 +15,10 @@ test("the demo hub's only shortfall is cucumber, with no zucchini yet", () => {
   assert.deepEqual({ orderId: unfilled[0].orderId, amount: unfilled[0].amount, unit: unfilled[0].unit }, { orderId: "order-c", amount: 20, unit: "lb" });
 });
 
-test("the demo seeds five uninterpreted messages in pounds and cases", async () => {
+test("the demo seeds four uninterpreted messages in pounds and cases", async () => {
   const w = await seedWorkbench(undefined);
-  assert.equal(w.items.length, 5);
+  assert.equal(w.items.length, 4);
+  assert.ok(!w.items.some(i => i.source.id === "msg-injection"), "the rule-changing message is delivered by Demo tools, not seeded");
   assert.ok(w.items.every(i => !i.proposal));
   assert.ok(SEED.every(m => /lb|cases/.test(m.source.text)));
 });

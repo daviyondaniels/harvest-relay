@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { seedWorkbench } from "../src/seed.ts";
 import { confirmPlan } from "../src/commitments.ts";
-import { SETTLE_FIRST, firstMessageLine, arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
+import { SETTLE_FIRST, arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
 
 // Task 18: Overview, Pack and layout.
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -64,7 +64,6 @@ test("the day details say it in plain words", () => {
   assert.equal(duration(106), "1 h 46 min");
   assert.equal(duration(45.4), "45 min");
   assert.equal(duration(120), "2 h");
-  assert.equal(firstMessageLine("45 min"), "First message to a short buyer: 45 min after their order went short");
   assert.doesNotMatch(page, /Measured in this demo session|Shortages caught|Orders shipped short/);
   assert.doesNotMatch(page, /Time to first message to the buyer/);
 });
