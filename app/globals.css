@@ -647,3 +647,6 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
   .attention .item .chips:last-child { grid-column: 1 / -1; }
   .attention .item .text > span:not(.change):not(.bad):not(.sr-only) { -webkit-line-clamp: 2; }
 }
+
+/* Cut card: with a buyer chosen the split boxes are hidden, so Settle sits right under the choices. Works without script. */
+.conflict:has(input[name=choice][value=split]:not(:checked)) fieldset.split { display: none; }

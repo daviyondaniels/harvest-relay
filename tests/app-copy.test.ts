@@ -574,7 +574,7 @@ test("Task 6: the gate wording, Ship short checkbox, mark all, demo group and pr
   assert.match(source("app/lib/view.ts"), /Sheets printed from the plan confirmed at \$\{time\(at\)\} are wrong for:/, "dated by the confirm, not the page load");
   for (const t of ["Mark all packed", "Mark all handed off", "arrivedLead(arrived)", "staleSentence(w, cutOpen)", "Confirmed by {c.confirmed.by}", "STALE_HEADING"]) assert.ok(pack.includes(t), t);
   assert.match(pack, /<details className="demo-tools no-print"[\s\S]*<summary>Demo tools<\/summary>[\s\S]*Late grower message \(demo\)/, "demo controls sit in one closed fold at the foot");
-  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
+  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} outOfDate=\{stale\} \/>/);
   const print = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
   assert.doesNotMatch(print, /\.sheets \.card-head/, "the buyer name's header is not hidden in print");
   assert.match(print, /\.sheets > \.card-head, \.sheets > h3 \{ display: none; \}/, "only the page's own heading is hidden");

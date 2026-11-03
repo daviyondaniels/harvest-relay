@@ -6,6 +6,7 @@ import { leftToPlace, leftToPlaceSaid } from "./lib/cut.ts";
 // the Split radio: typing in a box selects Split, picking a buyer clears the boxes (so nothing typed is left beside a
 // choice that would ignore it), and a line says how much of the total is still to place; a screen reader hears it only
 // once all is placed or it overshoots, not on every digit. A blank box counts as 0.
+// While a buyer is chosen the split fieldset is hidden by CSS (globals.css), which keeps Settle near the heading and works without script.
 // The server still refuses amounts posted with any other choice. Everything here also works as a plain form without script.
 type Radio = { id: string; label: string };
 type Row = { id: string; label: string; max: number; initial: string };
@@ -27,11 +28,11 @@ export function CutChoice({ on, excess, excessText, unit, radios, split, splitLa
       <p id={`${on}-total`} className="small muted">The amounts must add up to {excessText}. A blank box counts as 0.</p>
       {rows.map(r => (
         <label key={r.id}>{r.label}
-          <input type="number" inputMode="numeric" min={0} max={r.max} step={1} name={`cut-${r.id}`} value={vals[r.id] ?? ""} onChange={e => { setVals({ ...vals, [r.id]: e.target.value }); setChoice("split"); }} /></label>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" name={`cut-${r.id}`} value={vals[r.id] ?? ""} onChange={e => { setVals({ ...vals, [r.id]: e.target.value }); setChoice("split"); }} /></label>
       ))}
       <p className="small">{line}</p>
       <p className="sr-only" role="status">{leftToPlaceSaid(line)}</p>
-      {choice !== "split" && aside && <p className="small muted">The amounts are set aside. Choose Split it to bring them back.</p>}
     </fieldset>}
+    {split && choice !== "split" && aside && <p className="small muted">The amounts are set aside. Choose Split it to bring them back.</p>}
   </>;
 }

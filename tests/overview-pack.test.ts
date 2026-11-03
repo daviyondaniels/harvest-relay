@@ -64,7 +64,7 @@ test("the stale confirmed card leads with the same sentence as Pack, naming who 
   assert.match(page, /stale && canConfirm && <form action=\{confirmAction\}>[\s\S]*?className="primary"/, "Confirm again is the primary button when stale");
   assert.match(page, /className=\{stale \|\| fresh\.length > 0 \? undefined : "primary"\}/, "Mark all is secondary when stale or a message is unchecked");
   assert.match(pack, /\{stale && confirmForm\}/, "Pack offers Confirm again only when stale");
-  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} \/>/);
+  assert.match(pack, /<PrintButton primary=\{!stale && arrived === 0\} outOfDate=\{stale\} \/>/);
 });
 
 test("the instruction-like message is labelled by the reading plus a word test; a real update with a question is not", async () => {

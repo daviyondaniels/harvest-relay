@@ -104,8 +104,9 @@ test("the result says exactly who now gets what, for the suggested buyer, the ot
 });
 
 test("a split that misses the total says so in the lot's unit; a huge number is called too large", () => {
-  assert.equal(splitTotalMessage(6, 10, "lb"), "You entered 6 lb; the cuts must total 10 lb.");
-  assert.equal(splitTotalMessage(3, 5, "each"), "You entered 3 each; the cuts must total 5 each.");
+  assert.equal(splitTotalMessage(6, 10, "lb"), "You entered 6 lb; the cuts must total 10 lb. Place 4 lb more.");
+  assert.equal(splitTotalMessage(12, 10, "lb"), "You entered 12 lb; the cuts must total 10 lb. Take off 2 lb.");
+  assert.equal(splitTotalMessage(3, 5, "each"), "You entered 3 each; the cuts must total 5 each. Place 2 each more.");
   assert.equal(splitProblem("split", ["12345678901", "0"]), TOO_LARGE);
 });
 

@@ -52,9 +52,9 @@ export function leftToPlace(excess: number, amounts: string[], unit: "g" | "lb" 
 // What a screen reader hears from the live line: only when the amounts are all placed or overshoot, not on every digit.
 export const leftToPlaceSaid = (line: string): string => /^All |too many$/.test(line) ? line : "";
 
-// A split that misses the total says what it came to, in the order's own unit.
+// A split that misses the total says what it came to and what to do, in the lot's own unit.
 export const splitTotalMessage = (sum: number, excess: number, unit: "g" | "lb" | "each"): string =>
-  `You entered ${weight(sum, unit)}; the cuts must total ${weight(excess, unit)}.`;
+  `You entered ${weight(sum, unit)}; the cuts must total ${weight(excess, unit)}. ${sum < excess ? `Place ${weight(excess - sum, unit)} more.` : `Take off ${weight(sum - excess, unit)}.`}`;
 
 export const staleSheetLine = (at: string): string => `Changed since the plan was confirmed at ${at}. Confirm again before packing.`;
 // The orders and the lots whose lines differ from the confirm: an order sheet or a pick list is stale when it holds one.

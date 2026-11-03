@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 
 // Prints the current sheets; the print styles in globals.css leave only the sheets on paper.
-export function PrintButton({ primary = true }: { primary?: boolean }) {
+export function PrintButton({ primary = true, outOfDate = false }: { primary?: boolean; outOfDate?: boolean }) {
+  const label = outOfDate ? "Print anyway (out of date)" : "Print sheets";
   return primary
-    ? <button type="button" className="primary" onClick={() => window.print()}>Print sheets</button>
-    : <button type="button" onClick={() => window.print()}>Print sheets</button>;
+    ? <button type="button" className="primary" onClick={() => window.print()}>{label}</button>
+    : <button type="button" onClick={() => window.print()}>{label}</button>;
 }
 
 // Opens the print dialog once when the page is reached from "Print sheets" on the Overview
