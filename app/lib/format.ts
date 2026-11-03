@@ -69,6 +69,19 @@ export const ORDER_STATUS: Record<OrderStatus, Status> = {
   covered: { label: "Covered", tone: "ready" }, short: { label: "Short", tone: "block" }, resolving: { label: "Asked, waiting for the grower", tone: "wait" },
   "buyer-told": { label: "Buyer told", tone: "quiet" }, "substitute-agreed": { label: "Substitute agreed", tone: "done" }
 };
+// The list label for an order waiting on an answer follows who is being waited on: the grower for asks, the buyer for
+// offers, and a plain "answer" when both are out.
+export function resolvingLabel(openKinds: string[]): string {
+  const asks = openKinds.includes("ask-grower"), offers = openKinds.includes("offer-substitute");
+  return asks && offers ? "Waiting for an answer" : offers ? "Offered, waiting for the buyer" : ORDER_STATUS.resolving.label;
+}
+// The planner returns one allocation per permission, so a lot can come back in pieces (30 lb then 10 lb of the same
+// zucchini). They are one lot and one kind to a coordinator: show them as one line.
+export function mergeLines<A extends { lotId: string; kind: string; amount: number }>(lines: A[]): A[] {
+  const out: A[] = [];
+  for (const a of lines) { const same = out.find(x => x.lotId === a.lotId && x.kind === a.kind); if (same) same.amount += a.amount; else out.push({ ...a }); }
+  return out;
+}
 // The one chip an order shows: how short it is (and what is being done), or, once covered, how far it has got.
 export function orderChip(st: OrderStatus, stage: keyof typeof STAGE, short: number, unit: "g" | "lb" | "each"): Status {
   if (st === "covered" || st === "substitute-agreed") return { label: st === "covered" ? STAGE[stage].label : `${STAGE[stage].label}, substitute agreed`, tone: STAGE[stage].tone };

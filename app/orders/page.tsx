@@ -8,12 +8,12 @@ import { options, permissionSource, recommend, type Option } from "../../src/ord
 import { planOf, stageOf } from "../../src/commitments.ts";
 import { normalize } from "../../src/quantity.ts";
 import { PendingCover } from "../pending-cover.tsx";
-import { canSend, draftWaiting, factsFor, noNote, openFor, orderStatus, toConfirm, toldBuyer, type Resolution } from "../../src/resolve.ts";
+import { canSend, draftWaiting, factsFor, isOpen, noNote, openFor, orderStatus, toConfirm, toldBuyer, type Resolution } from "../../src/resolve.ts";
 import { REQUEST_REPLIES, recordedDraft } from "../../src/seed.ts";
 import type { Workbench } from "../../src/workbench.ts";
 import type { Order } from "../../src/planner.ts";
 import { buyerReplyAction, confirmDraftAction, discardDraftAction, editDraftAction, liveAllowance, museDraftAction, requestedCallAction, scriptedRequestReplyAction, sendAction, sendNowAction, startResolutionAction, supplyReplyAction } from "../actions.ts";
-import { NOT_PROMISED, ORDER_STATUS, buyer, orderChip, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
+import { NOT_PROMISED, ORDER_STATUS, buyer, mergeLines, orderChip, resolvingLabel, day, grower, promiseText, quantity, time, weight } from "../lib/format.ts";
 import { current, extras } from "../lib/hub.ts";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { rememberedName } from "../lib/name.ts";
@@ -116,7 +116,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
       <nav className="queue" aria-label="Buyer orders">
         <QueueFold count={orders.length} noun="orders" open={false}>
           <h2>Orders</h2>
-          {orders.map(x => { const st = ORDER_STATUS[statuses.get(x.id)!]; return (
+          {orders.map(x => { const status = statuses.get(x.id)!, st = status === "resolving" ? { ...ORDER_STATUS.resolving, label: resolvingLabel(w.resolutions.filter(r => r.orderId === x.id && r.status === "sent" && isOpen(w, r)).map(r => r.option.kind)) } : ORDER_STATUS[status]; return (
             <a key={x.id} href={`/orders?order=${x.id}`} aria-current={x.id === o?.id ? "true" : undefined}>
               <span className="row"><b>{buyer(x.buyerId)}</b></span>
               <span className="muted small">{quantity(x.quantity)} {x.product}, {day(x.deliveryOn)}</span>
@@ -132,7 +132,9 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
 async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }: { w: Workbench; cuts: ReactNode; orderId: string; version: number; notice?: Notice; sig: string; live: number; me?: string; typed: (form: "send" | "buyer" | "supply" | "call", name: string) => string | undefined }) {
   const o = w.ledger.snapshot.orders.find(x => x.id === orderId)!;
   const plan = planOf(w.ledger), lots = new Map(w.ledger.snapshot.lots.map(l => [l.id, l]));
-  const mine = plan.allocations.filter(a => a.orderId === orderId), unit = normalize(o.quantity).unit;
+  // The planner splits a lot by permission (30 lb, then 10 lb after a second accepted offer); the page shows one line per lot and kind.
+  // After the demo late drop Riverbend stays 30 lb short: all 40 lb of zucchini is theirs and no other lot or grower is left. That is the true supply.
+  const mine = mergeLines(plan.allocations.filter(a => a.orderId === orderId)), unit = normalize(o.quantity).unit;
   const direct = mine.filter(a => a.kind === "requested").reduce((n, a) => n + a.amount, 0);
   const subs = mine.filter(a => a.kind === "approved-substitution"), gap = plan.unfilled.find(u => u.orderId === orderId)?.amount ?? 0;
   const stage = stageOf(w.ledger, orderId), st = orderChip(orderStatus(w, orderId), stage.stage, gap, unit), promised = promiseText(stage, mine.reduce((n, a) => n + a.amount, 0), w.resolutions.some(r => r.orderId === orderId && r.status === "accepted" && r.option.kind === "offer-substitute") || !!toldBuyer(w, orderId));
@@ -157,7 +159,8 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
   // Once the buyer has been told about the whole shortfall there is no second notice to offer, and while a message waits
   // to be sent its Send (in Messages) is the only one: the Next step points at it instead of offering another.
   const told = toldBuyer(w, orderId), draft = draftWaiting(w, orderId), visible = offered.filter(x => !(told && x.opt.kind === "notify-short"));
-  const pick = recommend(w, orderId, CONTACTS), picked = !waiting.length && !draft && pick && pick.kind !== "review-reply" ? visible.find(x => sameOption(x.opt, pick)) : undefined;
+  // Once told, nothing is recommended: a second offer or ask is never one click away. The options stay under Other options, each stopping at a draft.
+  const rec = recommend(w, orderId, CONTACTS), pick = told && rec?.kind !== "review-reply" ? undefined : rec, picked = !waiting.length && !draft && pick && pick.kind !== "review-reply" ? visible.find(x => sameOption(x.opt, pick)) : undefined;
   const names: Record<string, string> = { ...Object.fromEntries(CONTACTS.map(c => [c.id, c.name])), [o.buyerId]: buyer(o.buyerId) };
   const known = !!me, optBadOf = (index: number) => optBad?.on === `opt-${index}-draft` ? optBad : undefined;
   const card = (x: { opt: Option; index: number }) => <OptionCard key={x.index} {...x} order={orderId} buyerName={buyer(o.buyerId)} version={version} open={openFor(w, orderId, x.opt)} known={known} bad={optBadOf(x.index)} />;
