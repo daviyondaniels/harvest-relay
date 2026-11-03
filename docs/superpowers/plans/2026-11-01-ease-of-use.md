@@ -877,3 +877,71 @@ Rules for this task:
   - the print line (helper or source);
   - copy tests.
 - [ ] Implement, run all checks, then commit.
+
+---
+
+## Round 8: the items left after audit D2
+
+Source: `reports/round7/audit-d2-split-cut.md` (7.5/10) and the round 7 final report. Rulings:
+- **The round 4 "no undo" ruling is replaced** for one case, because the user asked to work on it: a settled cut can be changed while nothing has moved on since it was settled. Every other action keeps no undo.
+- **The history stays append-only.** Changing a cut records a new event; the original decision stays in the log.
+
+### Task 27: Cut card and Pack finishing
+
+**Files:** `app/conflict.tsx`, `app/cut-choice.tsx`, `app/lib/cut.ts`, `app/actions.ts` (the `decideCutAction` refusal text only), `app/pack/page.tsx` and `app/pack/print.tsx` (the Print label only), the end of `app/globals.css` (append only), and tests.
+
+- **A missed total says what to do.**
+  - Too little: "You entered 6 lb; the cuts must total 10 lb. Place 4 lb more."
+  - Too much: "You entered 12 lb; the cuts must total 10 lb. Take off 2 lb."
+  - Make this a pure helper in `app/lib/cut.ts`, using the lot's unit.
+- **No accidental changes to amounts.** The split boxes become `type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"`, so the wheel and the arrow keys can't change them. Server validation is unchanged.
+- **Settle sits closer to the heading.**
+  - While a buyer radio (not Split it) is checked, the split fieldset is hidden with CSS (`.cut:has(input[name=choice][value=split]:not(:checked)) fieldset.split { display: none; }` or equivalent). This works without JavaScript.
+  - The "set aside" note stays visible: move it out of the fieldset.
+  - Measure Settle's distance from the card heading at 195 px and at 390 px, before and after.
+  - Typing still selects Split. Hidden boxes can't be typed in, which is fine.
+- **Print when the plan is out of date.** While the sheets are out of date, the Print button reads "Print anyway (out of date)". Otherwise it stays "Print sheets".
+
+- [ ] Tests:
+  - the total helper (both directions);
+  - the input type and pattern;
+  - the CSS rule;
+  - the Print label.
+- [ ] Check in a browser: Settle's distance, typing in the boxes, the set-aside note.
+- [ ] Commit.
+
+### Task 28: Change a settled cut
+
+**Files:** `src/commitments.ts`, `src/workbench.ts` (the history line only), `app/actions.ts` (a new action), `app/pack/page.tsx` and/or `app/orders/page.tsx` (where the change is offered), `app/lib/*`, and tests.
+
+Don't touch `app/conflict.tsx`, `app/cut-choice.tsx` or `app/lib/cut.ts`; Task 27 owns them. The result text may reuse `cutOutcome` by import.
+
+- **Domain.**
+  - Add `CommitEvent` kind `"cut-changed"`: `{ kind; by; at; lotId; cuts }`, where `cuts` are the amounts handed back.
+  - `decideCut` also records `removed: Promised[]` on its `"cut"` event: the exact promise lines it reduced, with kind. Restoring uses this, so the promises come back to exactly what they were.
+  - Add `changeCut(w, lotId, cutAt, by, at)`. `cutAt` is the `at` of the cut event the page showed, so a stale page is refused. It restores the removed amounts and appends `"cut-changed"`; the conflict then reopens with whatever excess the current supply gives.
+  - Refuse, with plain messages, when:
+    - that cut is not the latest cut on that lot;
+    - the plan was confirmed since that cut;
+    - any order in that cut has a stage mark since the cut;
+    - the event has no `removed`;
+    - the name is invalid.
+  - Add `changeableCuts(l)` → the cuts that can be changed now, with lot, orders, amounts, by and at.
+  - State is unchanged on throw.
+  - `commitKey` changes, because promises change, so the `cs` checks refuse stale pages elsewhere.
+- **Measures.** Anything that reports cut decisions must not count a changed cut as final. Search `log` readers. The history line reads "{by} changed the cut on {product} from {grower}".
+- **Action.** `changeCutAction`:
+  - named;
+  - goes through `act` with `rebase: true` plus a `cs` check, as `stageAction` does;
+  - its result: "The cut is back to decide: {Grower}' {product}, {excess} {unit} over. Choose again." with focus on the reopened cut card.
+- **UI.**
+  - Where a settled cut's result shows, and on Pack while it is changeable, show "Change this cut" as a secondary button (not primary).
+  - Its label for assistive tech names the lot.
+  - Offer it nowhere once the cut can't be changed.
+- [ ] Tests (behaviour, seeded; use the two-buyer cut from `tests/task26.test.ts`):
+  - settle, change, settle another way, and the ledger is right;
+  - each refusal;
+  - promises restored exactly, substitutes included if reachable;
+  - stale `cutAt` refused;
+  - the history line.
+- [ ] Commit.
