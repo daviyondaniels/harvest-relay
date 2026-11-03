@@ -14,9 +14,11 @@ export const TOO_LARGE = "That number is too large. Enter the pounds each buyer 
 // The problem with the split amounts as posted, or undefined when they can be used. `choice` is what the radio group
 // said: amounts typed beside any other choice are refused rather than dropped, and a negative number or a decimal each
 // get their own reason. The sum is checked later by the domain, which knows the excess.
-export function splitProblem(choice: string, amounts: string[]): string | undefined {
+// shown: the amounts the card filled in from a suggested split. Beside another choice, a box still holding exactly
+// that suggestion was not typed, so it is ignored (without script the hidden boxes still post it); anything else is refused.
+export function splitProblem(choice: string, amounts: string[], shown: string[] = []): string | undefined {
   const typed = amounts.map(a => a.trim());
-  if (choice !== "split") return typed.some(a => a !== "") ? SPLIT_WITH_OTHER : undefined;
+  if (choice !== "split") return typed.some((a, i) => a !== "" && a !== (shown[i] ?? "").trim()) ? SPLIT_WITH_OTHER : undefined;
   for (const a of typed) {
     if (a === "" || /^\d{1,9}$/.test(a)) continue;
     if (/^-\d+(\.\d+)?$/.test(a)) return NEGATIVE_POUNDS;

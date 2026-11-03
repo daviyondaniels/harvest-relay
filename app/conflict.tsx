@@ -47,10 +47,12 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
   const sole = c.promises.length === 1 && alone;
   const one = (k: string) => typeof kept?.[k] === "string" ? kept[k] as string : undefined;
   const picked = one("choice") && (one("choice") === "split" || c.promises.some(p => p.orderId === one("choice") && p.amount >= c.excess)) ? one("choice") : undefined;
-  const typed = (orderId: string) => { const v = one(`cut-${orderId}`); return v && /^-?\d{1,9}(\.\d{1,9})?$/.test(v) ? v : undefined; };
+  const typed = (orderId: string) => one(`cut-${orderId}`)?.slice(0, 20) || undefined;
+  // A refusal that kept amounts shows the boxes beside its message, whatever is chosen (the CSS hides them otherwise).
+  const keptAmounts = c.promises.some(p => typed(p.orderId) !== undefined);
   const initial = picked ?? (sole ? c.promises[0].orderId : single ?? (split || !alone ? "split" : undefined));
   return (
-    <section className="panel conflict" aria-labelledby={`${on}-head`}>
+    <section className="panel conflict" aria-labelledby={`${on}-head`} {...(keptAmounts ? { "data-kept": "" } : {})}>
       <H id={`${on}-head`} tabIndex={-1}>{possessive(who)} {c.product} dropped {excess}. You promised more than is left.</H>
       <ul>
         {c.promises.map(p => { const cut = cutOf(p.orderId); return <li key={p.orderId}>{name(p.orderId)}: promised {weight(p.amount, c.unit)}{cut !== undefined && <> → can now get {weight(p.amount - cut, c.unit)}</>}</li>; })}
@@ -62,6 +64,7 @@ export function ConflictPanel({ w, version, known, conflict: c, headingLevel, pa
         <input type="hidden" name="excess" value={c.excess} />
         <input type="hidden" name="page" value={page} />
         <input type="hidden" name="ctx" value={id ?? ""} />
+        {split && c.promises.map(p => <input key={p.orderId} type="hidden" name={`shown-${p.orderId}`} value={String(cutOf(p.orderId) ?? 0)} />)}
         <fieldset id={fieldId(on, "cut")} tabIndex={-1} {...(bad?.field === "cut" ? { "aria-describedby": `${fieldId(on, "cut")}-error` } : {})}>
           <legend>Who takes the cut?</legend>
           {!c.suggestion && <p className="muted small">Every order on this lot is packed or handed off. Choose who takes the cut.</p>}

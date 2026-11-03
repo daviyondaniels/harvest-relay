@@ -561,7 +561,7 @@ export async function decideCutAction(f: FormData) {
       if (!c) throw new Error("Supply changed since this was shown. Look at the current numbers and choose again.");
       unitOf = c.unit;
       // Amounts typed beside another choice are refused, never dropped; a blank box is 0.
-      const problem = splitProblem(choice, ids.map(orderId => str(f, `cut-${orderId}`)));
+      const problem = splitProblem(choice, ids.map(orderId => str(f, `cut-${orderId}`)), ids.map(orderId => str(f, `shown-${orderId}`)));
       if (problem) throw new FieldError(problem, "cut");
       const amount = (orderId: string) => Number(str(f, `cut-${orderId}`).trim() || "0");
       const cuts = choice === "split" ? ids.map(orderId => ({ orderId, amount: amount(orderId) })) : ids.includes(choice) ? [{ orderId: choice, amount: excess }] : undefined;
@@ -579,8 +579,9 @@ export async function decideCutAction(f: FormData) {
     if (e instanceof Error && /^Supply changed since this was shown/.test(e.message)) notice.text = "Supply changed since this was shown. Look at the current numbers and choose again.";
     notice.field ??= "cut";
     // A refusal keeps what was chosen and typed, and a split that misses the total says what it came to.
-    const typed = [...f.keys()].filter(k => /^cut-/.test(k) && /^-?\d{1,9}(\.\d{1,9})?$/.test(str(f, k).trim()));
-    kept = { choice, ...Object.fromEntries(typed.map(k => [k, str(f, k)])), ...keepWho(f) };
+    // Any short text is kept, so a refused "abc" is still there to see and fix.
+    const typed = [...f.keys()].filter(k => /^cut-[\w-]{1,60}$/.test(k) && str(f, k) !== "");
+    kept = { choice, ...Object.fromEntries(typed.map(k => [k, str(f, k).slice(0, 20)])), ...keepWho(f) };
     const sum = typed.reduce((n, k) => n + (/^\d{1,9}$/.test(str(f, k).trim()) ? Number(str(f, k).trim()) : 0), 0);
     if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = splitTotalMessage(sum, excess, unitOf);
   }
