@@ -6,7 +6,7 @@ import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTran
 import { BUYERS, CONTACTS } from "../src/demo.ts";
 import { draftMessage, templateDraft, type Draft } from "../src/draft.ts";
 import { options, shortages, type Option } from "../src/orders.ts";
-import { PromisesMoved, type Conflict, approveRebased, commitKey, conflicts, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
+import { PromisesMoved, type Conflict, approveRebased, commitKey, conflicts, changeCut, confirmPlan, decideCut, lockGate, markAllStage, markStage } from "../src/commitments.ts";
 import { hubDay } from "../src/hub.ts";
 import { canSend, confirmDraft, discardDraft, editDraft, factsFor, logCall, quoteFor, receiveRequestedCall, recordBuyerReply, recordSupplyReply, redraft, sendMessage, startResolution, toldBuyer, type Resolution } from "../src/resolve.ts";
 import { DEMO_MODEL, DEMO_SETTINGS, LATE, lateRefusal, recordedDraft, replay, scriptedReply, scriptedRequestReply } from "../src/seed.ts";
@@ -18,7 +18,7 @@ import { NAME_NEEDED, NAME_PROBLEM, checkName, needsName, runAs } from "./lib/na
 import { FieldError, fieldOf, manyMissing, type Where } from "./lib/errors.ts";
 import { callRefusal, handFields } from "./lib/hand.ts";
 import { stopNote } from "./lib/state.ts";
-import { buyer, grower, weight } from "./lib/format.ts";
+import { buyer, grower, possessive, weight } from "./lib/format.ts";
 import { RECHECK, cutPage, returnPage, signNotice, type Notice } from "./lib/notice.ts";
 import { keepTyped, keepWho, type KeptForm } from "./lib/kept.ts";
 import { answerLine, buyerChanges, sentLine } from "./lib/result.ts";
@@ -585,6 +585,28 @@ export async function decideCutAction(f: FormData) {
     const sum = typed.reduce((n, k) => n + (/^\d{1,9}$/.test(str(f, k).trim()) ? Number(str(f, k).trim()) : 0), 0);
     if (choice === "split" && e instanceof Error && /^The cuts must total exactly/.test(e.message)) notice.text = splitTotalMessage(sum, excess, unitOf);
   }
+  revalidatePath("/", "layout");
+  const q = ctxKey && ctx ? { [ctxKey]: ctx } : {};
+  redirect(`${page}?${new URLSearchParams({ ...q, ...kept, ...signNotice(notice!, { page, id: ctx || undefined }) })}`);
+}
+
+// Hands a settled cut back so it can be decided again. cutAt names the cut the page showed and cs the promises it
+// showed, so a page from before another change is refused. Comes back to the page it was sent from, with the
+// reopened cut card on it.
+export async function changeCutAction(f: FormData) {
+  const lot = str(f, "lot"), { page, key: ctxKey } = cutPage(str(f, "page")), ctx = str(f, "ctx").slice(0, 200);
+  let notice: Notice, kept: Record<string, string> = {};
+  try {
+    await asNamed(f, who => act(Number(str(f, "version")), w => {
+      promisesAsShown(f, w);
+      let next: Workbench;
+      try { next = changeCut(w, lot, str(f, "cutAt"), who, now()); } catch (e) { throw byBuyer(w, e); }
+      const c = conflicts(next.ledger).find(x => x.lotId === lot), l = next.ledger.snapshot.lots.find(x => x.id === lot);
+      const said = c ? `The cut is back to decide: ${possessive(grower(l?.growerId ?? ""))} ${c.product}, ${weight(c.excess, c.unit)} over. Choose again.` : "The cut is undone. Nothing is over now, so there is nothing to decide.";
+      notice = { text: said, ok: true, on: "cut", res: lot };
+      return next;
+    }, { rebase: true }));
+  } catch (e) { notice = await failed(e, "cut", lot); kept = keepWho(f); }
   revalidatePath("/", "layout");
   const q = ctxKey && ctx ? { [ctxKey]: ctx } : {};
   redirect(`${page}?${new URLSearchParams({ ...q, ...kept, ...signNotice(notice!, { page, id: ctx || undefined }) })}`);

@@ -13,7 +13,8 @@ import { shortages } from "./orders.ts";
 export type Stage = "planned" | "promised" | "packed" | "handed-off";
 export type CommitEvent =
   | { kind: "confirmed"; by: string; at: string; promised: Promised[]; shipShort: string[] }
-  | { kind: "cut"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[]; suggested: boolean }
+  | { kind: "cut"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[]; suggested: boolean; removed?: Promised[] }
+  | { kind: "cut-changed"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[] }
   | { kind: "stage"; by: string; at: string; orderId: string; stage: "packed" | "handed-off" };
 export type Commitments = {
   promised: Promised[]; // current promises; on any lot they never total more than the lot, except while a conflict is open
@@ -135,13 +136,53 @@ export function decideCut(w: Workbench, lotId: string, cuts: Cut[], excess: numb
   for (const x of kept) if (x.amount > (c.promises.find(p => p.orderId === x.orderId)?.amount ?? 0)) throw new Error("A cut is more than that order's promise on this lot");
   const same = (a: Cut[], b: Cut[]) => JSON.stringify([...a].sort((x, y) => cmp(x.orderId, y.orderId))) === JSON.stringify([...b].sort((x, y) => cmp(x.orderId, y.orderId)));
   const suggested = !!c.suggestion && same(kept, c.suggestion);
-  const next = structuredClone(w), m = next.ledger.commitments!;
+  const next = structuredClone(w), m = next.ledger.commitments!, removed: Promised[] = [];
   for (const x of kept) {
     let left = x.amount;
-    for (const p of m.promised) if (p.lotId === lotId && p.orderId === x.orderId && left > 0) { const t = Math.min(p.amount, left); p.amount -= t; left -= t; }
+    for (const p of m.promised) if (p.lotId === lotId && p.orderId === x.orderId && left > 0) { const t = Math.min(p.amount, left); p.amount -= t; left -= t; removed.push({ ...p, amount: t }); }
   }
   m.promised = m.promised.filter(p => p.amount > 0);
-  m.log.push({ kind: "cut", by: who, at: when, lotId, cuts: structuredClone(kept), suggested });
+  m.log.push({ kind: "cut", by: who, at: when, lotId, cuts: structuredClone(kept), suggested, removed });
+  return next;
+}
+
+// Why the cut at place `i` in the log cannot be changed, or undefined when it can. Order IDs in the
+// text are turned into buyer names by the action.
+function unchangeable(l: Ledger, i: number): string | undefined {
+  const log = l.commitments!.log, e = log[i] as Extract<CommitEvent, { kind: "cut" }>, after = log.slice(i + 1);
+  if (after.some(x => (x.kind === "cut" || x.kind === "cut-changed") && x.lotId === e.lotId)) return "This cut can't be changed: it is not the latest cut on this lot.";
+  if (after.some(x => x.kind === "confirmed")) return "This cut can't be changed: the plan was confirmed again since.";
+  const ids = new Set(e.cuts.map(x => x.orderId)), marked = after.find(x => x.kind === "stage" && ids.has(x.orderId));
+  if (marked?.kind === "stage") return `This cut can't be changed: ${marked.orderId} has been ${marked.stage === "packed" ? "packed" : "handed off"} since.`;
+  if (!e.removed) return "This cut can't be changed: it was settled before changes were recorded.";
+  return undefined;
+}
+// The cuts that can be changed now: the latest cut on each lot, with no confirm or stage mark since.
+export type ChangeableCut = { lotId: string; product: string; at: string; by: string; orders: string[]; cuts: { orderId: string; amount: number }[]; unit: BaseUnit };
+export function changeableCuts(l: Ledger): ChangeableCut[] {
+  const log = l.commitments?.log ?? [], out: ChangeableCut[] = [];
+  log.forEach((e, i) => {
+    if (e.kind !== "cut" || unchangeable(l, i)) return;
+    const lot = l.snapshot.lots.find(x => x.id === e.lotId);
+    if (lot) out.push({ lotId: e.lotId, product: lot.product, at: e.at, by: e.by, orders: e.cuts.map(x => x.orderId), cuts: structuredClone(e.cuts), unit: normalize(lot.quantity).unit });
+  });
+  return out;
+}
+// Hands a settled cut back so it can be decided again. cutAt is the `at` of the cut the page showed, so a page from
+// before another change is refused. The promises it reduced come back exactly; the conflict reopens with whatever
+// excess the lot's supply now gives. The log keeps both events.
+export function changeCut(w: Workbench, lotId: string, cutAt: string, by: string, at: string): Workbench {
+  const who = text(by, NAME_MAX, "Actor name"), when = stamp(at), log = w.ledger.commitments?.log ?? [];
+  const i = log.findIndex(e => e.kind === "cut" && e.lotId === lotId && e.at === cutAt);
+  if (i < 0) throw new Error("This cut can't be changed: it was changed or replaced since this page was shown.");
+  const why = unchangeable(w.ledger, i);
+  if (why) throw new Error(why);
+  const e = log[i] as Extract<CommitEvent, { kind: "cut" }>, next = structuredClone(w), m = next.ledger.commitments!;
+  for (const r of e.removed!) {
+    const same = m.promised.find(p => p.orderId === r.orderId && p.lotId === r.lotId && p.kind === r.kind);
+    if (same) same.amount += r.amount; else m.promised.push({ ...r });
+  }
+  m.log.push({ kind: "cut-changed", by: who, at: when, lotId, cuts: structuredClone(e.cuts) });
   return next;
 }
 

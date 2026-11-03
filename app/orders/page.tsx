@@ -23,6 +23,7 @@ import { QueueFold } from "../queue-fold.tsx";
 import { NameField, NamedSubmit } from "../named-submit.tsx";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
+import { ChangeCuts } from "../change-cut.tsx";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Orders" };
@@ -111,7 +112,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   const o = orders.find(x => x.id === wanted) ?? orders.find(x => statuses.get(x.id) === "short" || statuses.get(x.id) === "resolving") ?? orders[0];
   return (
     <div className="workspace item-first">
-      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} />} live={await liveAllowance()} me={me} typed={typed} /> : <p className="muted">No orders yet.</p>}
+      {o ? <Order w={w} orderId={o.id} version={version} notice={notice} sig={String(params.sig)} cuts={<><Conflicts w={w} version={version} known={!!me} page="/orders" id={wanted} params={params} level={2} /><ChangeCuts w={w} version={version} known={!!me} page="/orders" id={wanted} only={{ orderId: o.id }} /></>} live={await liveAllowance()} me={me} typed={typed} /> : <p className="muted">No orders yet.</p>}
       <nav className="queue" aria-label="Buyer orders">
         <QueueFold count={orders.length} noun="orders" open={false}>
           <h2>Orders</h2>

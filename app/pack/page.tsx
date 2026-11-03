@@ -14,6 +14,7 @@ import { changedSheets, staleSheetLine } from "../lib/cut.ts";
 import { readNotice } from "../lib/notice.ts";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
+import { ChangeCuts } from "../change-cut.tsx";
 import { NamedSubmit } from "../named-submit.tsx";
 import { rememberedName } from "../lib/name.ts";
 import { PendingCover } from "../pending-cover.tsx";
@@ -107,6 +108,7 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
         </div>
         {shown?.ok && shown.on === "late" && shown.res && <p><a id="late-link" href={`/review?item=${encodeURIComponent(shown.res)}`}>Open the late message in Review</a></p>}
         <Conflicts w={w} version={version} known={known} page="/pack" params={params} level={2} />
+        <ChangeCuts w={w} version={version} known={known} page="/pack" />
         {c && (
           <div className="locked" role="group" aria-label="Plan confirmed">
             {stale && <div className="warnbox"><h3>{STALE_HEADING}</h3><p>{staleSentence(w, cutOpen)} Each changed line on a sheet says what it was.</p></div>}

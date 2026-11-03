@@ -85,12 +85,14 @@ test("an open conflict blocks packing and confirming, even with Ship short", () 
   assert.equal(JSON.stringify(w), before);
 });
 
+// The cut event also records the exact promise lines it reduced (used to change a cut); these tests look at the rest.
+const noRemoved = (e: unknown) => { const { removed: _r, ...rest } = e as Record<string, unknown>; return rest; };
 test("deciding the suggested cut rewrites the promise and logs it as suggested", () => {
   const w = drop(confirmed(), 70), before = JSON.stringify(w), d = decideCut(w, "lot-b", [{ orderId: "order-b", amount: 40 }], 40, ME, T(71));
   assert.equal(JSON.stringify(w), before, "input unchanged");
   assert.deepEqual(conflicts(d.ledger), []);
   assert.equal(d.ledger.commitments!.promised.find(p => p.orderId === "order-b" && p.lotId === "lot-b")!.amount, 10);
-  assert.deepEqual(d.ledger.commitments!.log.at(-1), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-b", amount: 40 }], suggested: true });
+  assert.deepEqual(noRemoved(d.ledger.commitments!.log.at(-1)), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-b", amount: 40 }], suggested: true });
   assert.equal(d.ledger.version, w.ledger.version);
   assert.equal(total(d, "order-a"), 120);
   assert.equal(short(d, "order-b"), 40);
@@ -99,12 +101,12 @@ test("deciding the suggested cut rewrites the promise and logs it as suggested",
 
 test("the coordinator can give the cut to another order on the lot", () => {
   const d = decideCut(drop(confirmed(), 70), "lot-b", [{ orderId: "order-a", amount: 40 }], 40, ME, T(71));
-  assert.deepEqual(d.ledger.commitments!.log.at(-1), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-a", amount: 40 }], suggested: false });
+  assert.deepEqual(noRemoved(d.ledger.commitments!.log.at(-1)), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-a", amount: 40 }], suggested: false });
   assert.equal(total(d, "order-b"), 80);
   assert.equal(short(d, "order-a"), 40);
   assert.deepEqual(conflicts(d.ledger), []);
   const split = decideCut(drop(confirmed(), 70), "lot-b", [{ orderId: "order-a", amount: 15 }, { orderId: "order-b", amount: 25 }], 40, ME, T(71));
-  assert.deepEqual(split.ledger.commitments!.log.at(-1), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-a", amount: 15 }, { orderId: "order-b", amount: 25 }], suggested: false });
+  assert.deepEqual(noRemoved(split.ledger.commitments!.log.at(-1)), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-a", amount: 15 }, { orderId: "order-b", amount: 25 }], suggested: false });
 });
 
 test("a cut that does not total the excess, exceeds a promise, or names a stale excess is refused and changes nothing", () => {
@@ -168,7 +170,7 @@ test("only packed orders on the lot: no suggestion, and the coordinator must cho
   assert.deepEqual(k.promises.map(p => p.stage), ["packed", "packed"]);
   assert.equal(planOf(w.ledger).allocations.filter(a => a.lotId === "lot-b").reduce((n, a) => n + a.amount, 0), 70, "the plan verifies and hands out exactly what is left of the lot");
   const d = decideCut(w, "lot-b", [{ orderId: "order-b", amount: 40 }], 40, ME, T(71));
-  assert.deepEqual(d.ledger.commitments!.log.at(-1), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-b", amount: 40 }], suggested: false });
+  assert.deepEqual(noRemoved(d.ledger.commitments!.log.at(-1)), { kind: "cut", by: ME, at: T(71), lotId: "lot-b", cuts: [{ orderId: "order-b", amount: 40 }], suggested: false });
   // With a packed and a promised order, only the promised one is suggested.
   const mixed = drop(markStage(confirmed(), "order-b", "packed", ME, T(51)), 70);
   assert.deepEqual(conflicts(mixed.ledger)[0].suggestion, [{ orderId: "order-a", amount: 40 }]);

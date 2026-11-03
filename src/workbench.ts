@@ -417,6 +417,7 @@ export function latestChange(w: Workbench, names: { grower: (id: string) => stri
   for (const r of w.resolutions) for (const d of r.decisions) found.push({ at: d.at, line: `${d.actor} ${RESOLVED[d.kind] ?? d.kind} ${buyerOf(r.orderId)}'s order` });
   for (const e of w.ledger.commitments?.log ?? []) {
     if (e.kind === "confirmed") found.push({ at: e.at, line: `${e.by} confirmed the plan` });
+    else if (e.kind === "cut-changed") { const lot = w.ledger.snapshot.lots.find(x => x.id === e.lotId); found.push({ at: e.at, line: `${e.by} changed the cut on ${lot?.product ?? e.lotId} from ${lot ? names.grower(lot.growerId) : "the grower"}` }); }
     else if (e.kind === "cut") found.push({ at: e.at, line: `${e.by} decided who takes the cut` });
     else found.push({ at: e.at, line: `${e.by} marked ${buyerOf(e.orderId)}'s order ${e.stage === "packed" ? "packed" : "handed off"}` });
   }

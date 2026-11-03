@@ -11,6 +11,7 @@ import { value as parseValue } from "../lib/values.ts";
 import { PreviewGate } from "../preview-gate.tsx";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
+import { ChangeCuts } from "../change-cut.tsx";
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current, recording } from "../lib/hub.ts";
 import { RECHECK, readNotice, type Notice } from "../lib/notice.ts";
@@ -86,7 +87,7 @@ export default async function Review({ searchParams }: { searchParams: Promise<P
   const allBad: Bad = notice && !notice.ok && notice.on === "refreshAll" && notice.field === "who" && stale > 0 ? { on: "refreshAll", field: "who", text: notice.text } : undefined;
   return (
     <div className="workspace item-first">
-      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} />} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
+      {it ? <Item it={it} p={previews.get(it.id)!} version={version} notice={notice} cuts={<><Conflicts w={w} version={version} known={known} page="/review" id={it.id} params={params} level={2} lotId={w.ledger.events.find(e => e.id === it.eventId)?.lotId} /><ChangeCuts w={w} version={version} known={known} page="/review" id={it.id} only={{ lotId: w.ledger.events.find(e => e.id === it.eventId)?.lotId ?? "none" }} /></>} sig={String(params.sig)} params={params} known={known} queueFocus={allBad ? fieldId("refreshAll", "who") : undefined} live={live} hasScript={!!rec?.raw[SEED.find(s => s.source.id === it.source.id)?.reply?.id ?? ""] && it.replies.length === 0 && !!SEED.find(s => s.source.id === it.source.id)?.reply} w={w} />
         : <p className="muted">No messages yet.</p>}
       <nav className="queue" id="queue" aria-label="Incoming messages">
         <QueueFold count={todo.length} noun="messages" open={!!allBad}>
