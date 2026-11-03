@@ -610,3 +610,40 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 }
 /* A button inside a card wraps its words instead of running past the card's edge (Orders "Tell {buyer}"). */
 .option-card button, .option-card .button, .resolution button, .resolution .button { white-space: normal; max-width: 100%; text-align: center; justify-content: center; }
+
+/* Task 24, phone density: the Overview was about 2,500 px tall at 390 px. Rows lose their icon column and
+   take 8 px padding; targets stay 44 px tall (the min-heights above are not touched). Tab labels are 14 px. */
+@media (max-width: 600px) {
+  .hero { gap: 8px; padding-top: 4px; }
+  .hero-sub { gap: 0 16px; }
+  .needs { padding: 12px; }
+  .needs .card-head { gap: 0 12px; margin-bottom: 8px; }
+  .attention { gap: 4px; }
+  .attention > a, .attention .item, .attention .short-order { grid-template-columns: minmax(0, 1fr); gap: 4px 8px; padding: 8px; }
+  .attention .icon { display: none; }
+  .attention .item .chips, .attention > a .chips, .attention .short-order .chips { grid-column: 1; }
+  .attention .short-order > .button, .attention .short-order > a.plain { grid-column: 1; }
+  .attention .item .act { grid-column: 1; gap: 4px; }
+  .leave { margin-top: 8px; padding: 8px 12px; }
+  .leave a { min-height: 44px; }
+  table.buyers tr { padding: 4px 12px; margin-bottom: 4px; }
+  .card.orders { padding: 12px; }
+  table.buyers tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  table.buyers td { padding: 0; }
+  table.buyers tr { padding: 4px 12px; margin-bottom: 4px; }
+  .attention .text span:not(.sr-only), .attention .text b, .hero-sub, .leave, .warnbox p { line-height: 1.35; }
+  .card-head { margin-bottom: 8px; }
+  .tabbar a { font-size: 0.875rem; letter-spacing: -0.02em; padding-left: 0; padding-right: 0; }
+  .tabbar a[aria-current="page"] { font-weight: 600; letter-spacing: -0.04em; }
+  /* Stat chips: no icon, number and label on one line where they fit; still the 2 x 2 grid. */
+  .hero .stat .icon { display: none; }
+  .hero .stat { padding: 4px 8px; gap: 4px 8px; min-height: 44px; align-content: center; }
+  .hero .stat b { font-size: 1.05rem; }
+  /* A row's status chip and its action share one line. */
+  .attention .item { grid-template-columns: auto minmax(0, 1fr); }
+  .attention .item .text { grid-column: 1 / -1; }
+  .attention .item .chips { grid-column: 1; align-self: center; }
+  .attention .item .act { grid-column: 2; justify-content: flex-end; align-self: center; }
+  .attention .item .chips:last-child { grid-column: 1 / -1; }
+  .attention .item .text > span:not(.change):not(.bad):not(.sr-only) { -webkit-line-clamp: 2; }
+}

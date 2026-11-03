@@ -13,7 +13,7 @@ import { current } from "./lib/hub.ts";
 import { queueOrder } from "./lib/queue.ts";
 import { rememberedName } from "./lib/name.ts";
 import { readNotice } from "./lib/notice.ts";
-import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, rowShorts, substituteLine, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
+import { ATTENTION_ROWS, CHECK_IT, INSTRUCTION_LABEL, LEAVE_PROMPT, STALE_HEADING, firstMessageLine, leaveVisible, arrivedLead, becomesShort, byAttention, confirmLead, cutReason, duration, instructionLike, leaveSentence, leavesShort, newSinceConfirm, rowShorts, substituteLine, openAllLabel, overview, questionCounts, readyToApprove, resolveHint, rowAction, reviewCoverLink, stageCounts, staleSentence, staleSinceConfirm, unsettledLine, updateKind, waitingCover, type ProductRow } from "./lib/view.ts";
 import { pendingCover } from "../src/orders.ts";
 import { NamedSubmit } from "./named-submit.tsx";
 import { Result } from "./result.tsx";
@@ -244,7 +244,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 const i = x.i, p = x.p, fresher = isNew.has(i.id);
                 const newChip = fresher && <span className="chip wait">New since you confirmed</span>;
                 const ready = (x.kind === "ready" || x.kind === "unchecked") && readyToApprove(i, p) ? p : undefined;
-                if (!ready && (x.kind === "asks" || x.kind === "unchecked")) return (
+                const action = rowAction(w, i, previews);
+                if (action === "open") return (
                   <a key={i.id} href={`/review?item=${i.id}`}>
                     <span className="icon"><Message /></span>
                     <span className="text"><b>{grower(i.source.growerId)}</b><span>{i.source.text}</span></span>
@@ -270,16 +271,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       {!ready && instructionLike(i) && <span className="flag-note">{INSTRUCTION_LABEL}</span>}
                     </span>
                     <span className="chips"><span className={`chip ${x.st.tone}`}>{x.st.label}</span>{newChip}</span>
-                    {ready && shorts.length > 0 ? (
+                    {action === "review" && ready ? (
                       <span className="act"><a className={`button ${primary() ?? ""}`.trim()} href={`/review?item=${i.id}`}>Review it<span className="sr-only"> before approving {grower(i.source.growerId)}'s update{said.length > 0 ? ", it leaves a buyer short" : ""}</span></a></span>
-                    ) : ready ? (
+                    ) : (action === "approve" || action === "note") && ready ? (
                       <form action={approveAction} className="act">{hidden(i.id)}<input type="hidden" name="hash" value={ready.reviewHash} /><input type="hidden" name="cs" value={commitKey(w.ledger)} />
                         <NamedSubmit label={<>{forecast ? "Note this forecast" : "Approve"}<span className="sr-only"> {grower(i.source.growerId)}'s update</span></>} className={primary()} known={known} on={on("approve")} bad={bad} quiet={quiet(on("approve"))} />
                       </form>
-                    ) : (
+                    ) : action === "dismiss" ? (
                       <form action={dismissNoChangeAction} className="act">{hidden(i.id)}
                         <NamedSubmit label={<>Dismiss<span className="sr-only"> {grower(i.source.growerId)}'s message, no supply change</span></>} className={primary()} known={known} on={on("dismiss")} bad={bad} quiet={quiet(on("dismiss"))} />
                       </form>
+                    ) : (
+                      <span className="act"><a className="button" href={`/review?item=${i.id}`}>Open<span className="sr-only"> {grower(i.source.growerId)}'s message</span></a></span>
                     )}
                   </div>
                 );

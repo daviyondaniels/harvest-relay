@@ -11,6 +11,9 @@ export const APPLY_THEN = "Then approve the change it makes, on the next step.";
 export const HISTORY_RECHECK = "Checked again against current supply";
 export const HUB_NAME = "Riverside Food Hub";
 
+// "Birch Hollow Gardens'" and "Riverbend's": a name that ends in s takes only the apostrophe.
+export const possessive = (name: string): string => `${name}${name.endsWith("s") ? "'" : "'s"}`;
+
 // Display helpers shared by the dashboard and the review workspace.
 export function weight(amount: number, unit: "g" | "lb" | "each"): string {
   if (unit === "each" || unit === "lb") return `${amount} ${unit}`;
@@ -37,8 +40,7 @@ export const OPERATION: Record<Operation, string> = {
 // An earlier update named in plain words, for the hand form's "being corrected" list:
 // "Birch Hollow Gardens' zucchini update (4 cases of 10 lb)". The amount is what that update set the lot to.
 export function updateName(growerId: string, product: string, after: Quantity): string {
-  const g = grower(growerId);
-  return `${g}${g.endsWith("s") ? "'" : "'s"} ${product.toLowerCase()} update (${quantity(after)})`;
+  return `${possessive(grower(growerId))} ${product.toLowerCase()} update (${quantity(after)})`;
 }
 export const OPERATION_CHOICE = { "replace-total": "A new total", "add-quantity": "Added to what they have", correction: "A correction", forecast: "A forecast, not confirmed" } as const;
 // "120 lb → 60 lb (down 60 lb)": the lot before and after, and by how much.

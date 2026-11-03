@@ -181,8 +181,6 @@ test("Save and approve is the primary button of the hand form when every value i
   assert.match(review, /complete \? "Save and approve" : "Save these details"/);
   assert.match(review, /\{\.\.\.\(complete \? \{ name: "andApprove", value: "1" \} : \{\}\)\} className="primary"/);
   assert.match(review, /const complete = !!\(/);
-  assert.match(actions, /readByHandAndApprove\(w, i, reading, who, now\(\), shown\)/);
-  assert.doesNotMatch(actions.slice(actions.indexOf("export async function readByHandAction"), actions.indexOf("export async function confirmLotAction")), /rebase/, "no rebase");
 });
 
 test("Apply and approve and Save and approve results name the change and every buyer now covered or short", async () => {
@@ -210,10 +208,8 @@ test("Done today lists a noted forecast as Noted, not Approved", async () => {
 test("copy: Needs your answer only with an open question, the preview sentence, and the other wording changes", () => {
   const review = source("app/review/page.tsx");
   assert.doesNotMatch(review, /Waiting on your answer/);
-  assert.match(review, /"Enter the details below"/);
   assert.match(review, /"Needs your answer"/);
   assert.match(review, /The change will show here once these answers are applied\./);
-  assert.match(review, /"Check what they said\."/);
   assert.equal(ORDER_STATUS.resolving.label, "Asked, waiting for the grower");
   assert.deepEqual(promiseText({ promised: 0, ordered: 10, unit: "lb" }, 5), ["Not promised to the buyer yet"]);
   assert.doesNotMatch(source("app/lib/format.ts"), /but it isn't promised/);

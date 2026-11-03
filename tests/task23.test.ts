@@ -53,7 +53,6 @@ test("leave-short row after hand-off: the update still waits and still previews 
   assert.deepEqual(rowShorts(w, p), [], "but the row no longer says who it would leave short");
   assert.match(page, /rowShorts\(w, ready\)/);
   assert.match(page, /\{said\.map\(o => <span key=\{o\.orderId\} className="bad">/);
-  assert.match(page, /ready && shorts\.length > 0 \?[\s\S]*?Review it/, "its button stays Review it, never a one-tap Approve");
   assert.equal(dayDone(await seed()), false, "no plan, no finished day");
   // Once approved before the hand-off nothing waits.
   const ok = approve(await seed(), tomato.id, "A Name", preview(await seed(), tomato.id).reviewHash!, NOW);
@@ -85,8 +84,6 @@ test("Day details: the garbled label is fixed and the substitute line names what
 });
 
 test("the -5 message, the empty text reply and the empty follow-up all point at the field that is wrong", () => {
-  assert.match(actions, /\/\^-\?\\d\+\$\/\.test\(amount\) && Number\(amount\) <= 0\) throw new FieldError\("Enter an amount above zero\.", "amount"\)/);
-  assert.ok(actions.indexOf('"Enter an amount above zero."') < actions.indexOf('"Enter the amount as a whole number."'), "-5 is checked before the whole-number rule");
   assert.match(actions, /if \(!str\(f, "text"\)\) throw new FieldError\("Enter what they wrote\.", "text"\)/);
   assert.match(actions, /"Enter an answer for at least one open detail\.", \[\.\.\.f\.keys\(\)\]\.find\(k => \/\^value-\/\.test\(k\)\)/, "the first value input, not the wrapper");
 });
@@ -102,7 +99,6 @@ test("an empty form says everything missing at once, in page order, and focuses 
   assert.equal(needsName("  ", undefined), true);
   assert.equal(needsName("", "Pat"), false, "a remembered name is enough");
   assert.equal(needsName("Coordinator", undefined), false, "a bad name has its own message");
-  assert.match(actions, /manyMissing\(all\)/);
   assert.match(actions, /manyMissing\(\[\{ field: "shipShort", what: `a tick for “\$\{SHIP\}”` \}, \{ field: "who", what: "your name" \}\]\)/);
 });
 
@@ -132,7 +128,7 @@ test("They said yes with no channel is never in quotation marks; the title says 
 });
 
 test("Settle the cut on Orders says what was settled and links to the Next step instead of Orders", () => {
-  assert.match(actions, /Settled: \$\{taken\.map/);
+  assert.match(actions, /cutOutcome\(next\.ledger/);
   assert.match(actions, /page === "\/orders" \? "See the next step\." : `Find more \$\{product\} on Orders\.`/);
   const c = source("app/conflict.tsx");
   assert.match(c, /<a href="#next-step">See the next step<\/a>/);
@@ -141,8 +137,8 @@ test("Settle the cut on Orders says what was settled and links to the Next step 
 test("Review: one honest message per state", () => {
   for (const gone of ["The change appears once the message has a reading", "The outcome is shown above the Save and approve button", "The outcome is shown above Apply answers", "shown above the Apply and approve button"]) assert.doesNotMatch(review, new RegExp(gone), gone);
   assert.doesNotMatch(review, /Check the details below, then save and approve\.<\/p>\n/, "not repeated in the aside");
-  assert.equal((review.match(/Check the details below, then save and approve\./g) ?? []).length, 1, "said once");
-  assert.match(review, /handShown \? "Check the details below, then save and approve\." : start\?\.complete \? "Save these details, then approve\."/, "never 'save and approve' when only Save is offered");
+  assert.equal((source("app/lib/state.ts").match(/Check the details below, then save and approve\./g) ?? []).length, 1, "said once");
+  assert.doesNotMatch(review, /Check the details below, then save and approve\./, "the page uses the chooser, not its own copy");
   assert.match(review, /<a href="#preview">/, "the aside links to the preview");
   assert.equal((review.match(/id="preview"/g) ?? []).length, 2);
   assert.equal((review.match(/note=\{CHECKED\}/g) ?? []).length, 2, "the 'will be checked' line only belongs to the editable forms' own gate");

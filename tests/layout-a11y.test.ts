@@ -120,7 +120,7 @@ test("split the cut: the form does its own checking and shows the app's message 
   const conflict = source("app/conflict.tsx");
   assert.match(conflict, /<form action=\{decideCutAction\} className="form" noValidate>/);
   assert.match(conflict, /<Problem bad=\{bad\} on=\{on\} name="cut" \/>/);
-  assert.match(source("app/actions.ts"), /Enter whole numbers of pounds for the split\./);
+  assert.match(source("app/lib/cut.ts"), /Enter whole pounds\./);
 });
 
 test("the change line wraps; no .nowrap on it", () => {

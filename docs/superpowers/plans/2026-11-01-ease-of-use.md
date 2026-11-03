@@ -774,3 +774,106 @@ The target is met: every criterion is at 4.5 or above, and the overall score is 
   - status lines (helper);
   - copy tests.
 - [ ] Implement, run all checks, then commit.
+
+---
+
+## Round 7: the remaining gaps
+
+These are the gaps left after the final review (see the ledger). The target is already met, so this round closes the gaps rather than raising scores.
+
+- **Split-the-cut has never been audited.** It can be reached in the demo with no data change:
+  1. Approve Alder Creek Farm's tomato update (120 → 60 lb). Lot-b is then promised to Northside (60 lb) and Riverbend (20 lb).
+  2. Confirm with "Ship these orders short".
+  3. Use Demo tools → Late grower message (lot-b 80 → 70 lb). This opens a cut on a lot with two promised buyers.
+
+  Audit D runs this path on the current build before any fix.
+- **The Overview on a phone is about 2,500 px tall at 390 px.** Tab labels are 13 px.
+- **Several safety rules are guarded only by source-regex tests:**
+  - one-tap Approve eligibility;
+  - no rebase on composed approves;
+  - the -5 and empty-form messages;
+  - the Review state messages.
+
+### Task 24: Phone density
+
+**Files:** `app/page.tsx`, `app/globals.css`, `app/lib/view.ts` (only if needed), and tests.
+
+- **Overview height on a phone.** With the seed and nothing done yet, the Overview at 390 px is at most 1,800 px tall (from about 2,514).
+  - The buyer table becomes the two-line rows already used for phones.
+  - Day details stays folded.
+  - Attention rows use tighter phone padding (8 px, not 16).
+  - The hero's stat chips stay in the 2 × 2 grid.
+
+  Measure at 390 and 320 px, before and after.
+- **Tab labels** are 14 px at 320 px and above, and still fit one row with no truncation. At ≤ 300 px the bar stays icon-only, as ruled.
+- Nothing may push a target under 44 px. There must be no sideways scroll at 195, 320, 390 or 1280 px.
+
+- [ ] Tests: copy and CSS-size tests. Report the measured heights.
+- [ ] Implement, run all checks, then commit.
+
+### Task 25: Behaviour tests for the safety rules
+
+**Files:** `tests/*`, and small pure helpers extracted into `app/lib/view.ts` or `src/` where a rule now lives only inside a page or an action. Make no behaviour change.
+
+Replace the source-regex checks that guard safety rules with behaviour tests:
+- **The Overview row action.** Extract `rowAction(w, item, previews)` → "approve" | "review" | "note" | "dismiss" | "open". Test it with the seed:
+  - tomato: review, because it leaves a buyer short;
+  - forecast: note;
+  - the injection message: dismiss;
+  - after hand-off, never "approve" if the update would leave anyone short.
+- **Composed approves bind to the shown hash.** Test that `readByHandAndApprove`, `replyAndApprove` and `answerRecordedAndApprove`:
+  - approve only when `shown` equals the produced hash;
+  - never rebase: on a stale version, `act` with the default options throws. Test this through `act` in `app/lib/hub.ts` if it is importable, or by asserting the helpers take no rebase path.
+- **Messages.**
+  - -5 is refused with "Enter an amount above zero.";
+  - an empty Log a call names every missing field.
+
+  Extract the validation helpers if they live in `app/actions.ts`, which can't be imported under `node:test`.
+- **The Review state message.** Extract the helper that chooses between "Check the details below…", "Enter the details below", the recheck message and the waiting note. Test each state.
+- **Keep or delete the old checks.** Keep the regex checks only for copy wording. Delete those that duplicate a new behaviour test.
+
+- [ ] `npm test` exits 0. Report which regex tests were replaced.
+- [ ] Commit.
+
+### Task 26: Split the cut, from audit D
+
+Source: `reports/round7/audit-d-split-cut.md` (6.5/10). The numbers were correct throughout. The problems are in input, wording and print.
+
+**Files:** `app/conflict.tsx`, `app/actions.ts` (`decideCutAction` and its result only), `app/pack/page.tsx` (checklist link and print marker only), `app/pack/print.tsx`, `src/commitments.ts` (only if the result helper needs it), `app/lib/*`, and tests.
+
+Rules for this task:
+- Don't touch `app/page.tsx`. Task 24 owns it.
+- In `app/globals.css`, only append new rules at the end.
+
+- **No silently dropped split.**
+  - Typing in a split box selects "Split it" (client).
+  - The server refuses a split amount posted with any other choice: "You typed split amounts. Choose Split it, or clear the amounts." It keeps the typed values and focuses the fieldset.
+  - Tie the boxes to the Split radio: nest them in their own fieldset with legend "Split it: pounds each buyer gets less". Use `aria-describedby` to point at the total line.
+  - The suggested buyer may stay pre-selected.
+- **Say the total and what's left.**
+  - The split label says "The amounts must add up to {excess} {unit}."
+  - A live line says "{left} {unit} left to place" (`aria-live="polite"`, client), and "All {excess} {unit} placed." when done.
+  - A blank box counts as 0, and the label says so.
+- **Errors.**
+  - A negative number gets "Enter 0 or more pounds."
+  - A decimal gets "Enter whole pounds."
+- **The result names the outcome.** After any settle, the result says who now gets what and who is short, using the same `buyerChanges`/approval-result helpers, for example: "Northside Grocery Co-op now gets 116 of 120 lb (4 short). Riverbend School Kitchen now gets 14 of 80 lb (66 short). Confirm today's plan again so the sheets match."
+  - Link to Pack for the re-confirm.
+  - Don't say "Find more tomato on Orders." when on Orders. Link to the order's Next step instead (Task 23 already handled this elsewhere; reuse that).
+- **Printed sheets.**
+  - When the plan is stale, every printed sheet that changed carries a print-visible line: "Changed since the plan was confirmed at {time}. Confirm again before packing."
+  - The screen warning box stays as it is.
+- **Wording.**
+  - The heading uses a plain possessive ("Birch Hollow Gardens' tomato"; add a `possessive()` helper for names ending in s).
+  - The heading doesn't repeat the amount twice.
+  - "takes the cut" becomes "gets {n} {unit} less".
+- **The Pack checklist's "Settle the cut"** links to the cut card on the same page (`#cut-…`) when it is there. Otherwise it links to the cut's page.
+
+- [ ] Tests:
+  - the server refusal of split amounts with another choice (pure validation helper);
+  - the negative and decimal messages;
+  - the result wording (helper);
+  - `possessive()`;
+  - the print line (helper or source);
+  - copy tests.
+- [ ] Implement, run all checks, then commit.

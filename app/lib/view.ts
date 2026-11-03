@@ -60,6 +60,17 @@ const ATTENTION: AttentionKind[] = ["cut", "short", "unchecked", "ready", "asks"
 export const ATTENTION_ROWS = 8;
 export const updateKind = (i: InboxItem, p: Preview | undefined): "unchecked" | "ready" | "asks" | "dismiss" =>
   !i.proposal || (i.interpretedBy === BY_HAND && !dismissable(i)) ? "unchecked" : readyToApprove(i, p) ? "ready" : dismissable(i) ? "dismiss" : "asks";
+// The one button an update row on the Overview offers. "approve" and "note" post the shown review hash; "review" is a link
+// (the update would leave an order short, so it is read first, and once the day is done the row still links, never a one-tap
+// Approve); "dismiss" is the one-tap no-change dismiss; "open" links to Review (unread, read by hand and not ready, or with questions).
+export type RowAction = "approve" | "review" | "note" | "dismiss" | "open";
+export function rowAction(w: Workbench, item: InboxItem, previews: Map<string, Preview>): RowAction {
+  const p = previews.get(item.id), kind = updateKind(item, p);
+  const ready = (kind === "ready" || kind === "unchecked") && readyToApprove(item, p) ? p : undefined;
+  if (!ready) return kind === "asks" || kind === "unchecked" ? "open" : "dismiss";
+  if (becomesShort(ready).length > 0) return "review";
+  return ready.change.effect === "forecast" ? "note" : "approve";
+}
 // Stable: rows of one kind keep the order they came in.
 export const byAttention = <T extends { kind: AttentionKind }>(xs: T[]): T[] => ATTENTION.flatMap(k => xs.filter(x => x.kind === k));
 // A message read as naming no lot or no amount, whose words give orders instead of a harvest figure.

@@ -33,7 +33,6 @@ test("one-tap Approve only when no buyer is left short; the forecast update stay
   assert.equal(ok("msg-tomato"), false, "ready, but it leaves Riverbend short: Review it");
   assert.equal(ok("msg-forecast"), true);
   const page = source("app/page.tsx");
-  assert.match(page, /ready && shorts\.length > 0 \?[\s\S]*?Review it/, "the row shows a Review it link instead of Approve");
   assert.match(page, /LEAVE_PROMPT/);
   assert.equal(LEAVE_PROMPT, "Review it before confirming.");
 });

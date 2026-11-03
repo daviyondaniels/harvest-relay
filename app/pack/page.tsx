@@ -10,6 +10,7 @@ import { HUB_NAME, ORDER_STATUS, STAGE, buyer, day, grower, promiseText, time, w
 import { Problem, fieldId, invalid, type Bad } from "../lib/field-error.tsx";
 import { current } from "../lib/hub.ts";
 import { PickFold, PrintButton } from "./print.tsx";
+import { changedSheets, staleSheetLine } from "../lib/cut.ts";
 import { readNotice } from "../lib/notice.ts";
 import { Result } from "../result.tsx";
 import { Conflicts } from "../conflict.tsx";
@@ -63,13 +64,15 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
       </div>
     </form>
   );
+  // The cut card sits on this page, so the checklist jumps to it; with no card to show it goes to the cut's page.
+  const cutLink = (lot?: string) => lot && cutOpen ? `#cut-${lot}-head` : `/orders#cut-${lot}-head`;
   const checklist = (
   <ul className="gate">
     {blocking.map(id => { const o = orders.find(x => x.id === id)!, g = gaps.get(id), st = ORDER_STATUS[orderStatus(w, id)]; return !g ? (
       <li key={id} className="warn">
         <span className="mark" aria-hidden="true">!</span>
         <span><b>{buyer(o.buyerId)}</b> <span className={`chip ${st.tone}`}>{st.label}</span> Covered now, on a lot with a cut to settle.</span>
-        <a className="button" href={`/orders#cut-${cuts.find(x => x.promises.some(p => p.orderId === id))?.lotId}-head`}>Settle the cut</a>
+        <a className="button" href={cutLink(cuts.find(x => x.promises.some(p => p.orderId === id))?.lotId)}>Settle the cut</a>
       </li>
     ) : (
       <li key={id} className="fail">
@@ -151,7 +154,9 @@ export default async function Pack({ searchParams }: { searchParams: Promise<Rec
 // Each sheet is one printed page: the hub, the delivery day, then what to pack with a box to
 // tick. Names only; no internal IDs.
 function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: number; toldSince: Set<string>; known: boolean; bad: Bad }) {
-  const l = w.ledger, c = l.commitments!, picks = pickLists(l), sheets = orderSheets(l), plan = planOf(l), stamp = `Confirmed by ${c.confirmed.by} at ${time(c.confirmed.at)}.`;
+  const l = w.ledger, c = l.commitments!, picks = pickLists(l), sheets = orderSheets(l), plan = planOf(l), stamp = `Confirmed by ${c.confirmed.by} at ${time(c.confirmed.at)}.`, changed = changedSheets(l);
+  // A sheet whose lines changed says so on paper too: the warning box above is not printed.
+  const staleLine = <p className="flag stale-sheet">{staleSheetLine(time(c.confirmed.at))}</p>;
   return (
     <section className="sheets" aria-labelledby="sheets">
       <div className="card-head">
@@ -174,6 +179,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
         {sheets.map(s => { const st = stageOf(l, s.orderId), notes = promiseText(st, plan.allocations.filter(a => a.orderId === s.orderId).reduce((n, a) => n + a.amount, 0)); return (
           <article key={s.orderId} className="card sheet">
             <p className="sheet-hub small">{HUB_NAME}, delivery {day(s.deliveryOn)}. {stamp}</p>
+            {changed.orders.has(s.orderId) && staleLine}
             <div className="card-head"><h4 id={`sheet-${s.orderId}`} tabIndex={-1}>{buyer(s.buyerId)}</h4><span className={`chip ${STAGE[s.stage].tone}`}>{STAGE[s.stage].label}</span></div>
             <p>Ordered <b>{weight(s.ordered, s.unit)} {s.product}</b></p>
             {s.undecided && <p className="flag">Cut not decided yet</p>}
@@ -208,6 +214,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
         {picks.map(p => (
           <article key={p.growerId} className="card sheet">
             <p className="sheet-hub small">{HUB_NAME}, pick list, delivery {[...new Set(p.lines.map(x => day(x.deliveryOn)))].join(", ")}. {stamp}</p>
+            {p.lines.some(x => changed.lots.has(x.lotId)) && staleLine}
             <h4>{grower(p.growerId)}</h4>
             {p.lines.map(l => (
               <div key={l.lotId}>
