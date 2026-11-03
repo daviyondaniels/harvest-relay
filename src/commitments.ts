@@ -13,7 +13,7 @@ import { shortages } from "./orders.ts";
 export type Stage = "planned" | "promised" | "packed" | "handed-off";
 export type CommitEvent =
   | { kind: "confirmed"; by: string; at: string; promised: Promised[]; shipShort: string[] }
-  | { kind: "cut"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[]; suggested: boolean; removed?: Promised[] }
+  | { kind: "cut"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[]; suggested: boolean; removed?: (Promised & { index?: number })[] }
   | { kind: "cut-changed"; by: string; at: string; lotId: string; cuts: { orderId: string; amount: number }[] }
   | { kind: "stage"; by: string; at: string; orderId: string; stage: "packed" | "handed-off" };
 export type Commitments = {
@@ -136,10 +136,11 @@ export function decideCut(w: Workbench, lotId: string, cuts: Cut[], excess: numb
   for (const x of kept) if (x.amount > (c.promises.find(p => p.orderId === x.orderId)?.amount ?? 0)) throw new Error("A cut is more than that order's promise on this lot");
   const same = (a: Cut[], b: Cut[]) => JSON.stringify([...a].sort((x, y) => cmp(x.orderId, y.orderId))) === JSON.stringify([...b].sort((x, y) => cmp(x.orderId, y.orderId)));
   const suggested = !!c.suggestion && same(kept, c.suggestion);
-  const next = structuredClone(w), m = next.ledger.commitments!, removed: Promised[] = [];
+  const next = structuredClone(w), m = next.ledger.commitments!, removed: (Promised & { index?: number })[] = [];
   for (const x of kept) {
     let left = x.amount;
-    for (const p of m.promised) if (p.lotId === lotId && p.orderId === x.orderId && left > 0) { const t = Math.min(p.amount, left); p.amount -= t; left -= t; removed.push({ ...p, amount: t }); }
+    // index: where a line the cut took in full sat, so changing the cut puts it back in the same place.
+    m.promised.forEach((p, index) => { if (p.lotId === lotId && p.orderId === x.orderId && left > 0) { const t = Math.min(p.amount, left); p.amount -= t; left -= t; removed.push({ ...p, amount: t, ...(p.amount === 0 ? { index } : {}) }); } });
   }
   m.promised = m.promised.filter(p => p.amount > 0);
   m.log.push({ kind: "cut", by: who, at: when, lotId, cuts: structuredClone(kept), suggested, removed });
@@ -153,7 +154,7 @@ function unchangeable(l: Ledger, i: number): string | undefined {
   if (after.some(x => (x.kind === "cut" || x.kind === "cut-changed") && x.lotId === e.lotId)) return "This cut can't be changed: it is not the latest cut on this lot.";
   if (after.some(x => x.kind === "confirmed")) return "This cut can't be changed: the plan was confirmed again since.";
   const ids = new Set(e.cuts.map(x => x.orderId)), marked = after.find(x => x.kind === "stage" && ids.has(x.orderId));
-  if (marked?.kind === "stage") return `This cut can't be changed: ${marked.orderId} has been ${marked.stage === "packed" ? "packed" : "handed off"} since.`;
+  if (marked?.kind === "stage") return `This cut can't be changed: the order for ${marked.orderId} has been ${marked.stage === "packed" ? "packed" : "handed off"} since.`;
   if (!e.removed) return "This cut can't be changed: it was settled before changes were recorded.";
   return undefined;
 }
@@ -178,9 +179,10 @@ export function changeCut(w: Workbench, lotId: string, cutAt: string, by: string
   const why = unchangeable(w.ledger, i);
   if (why) throw new Error(why);
   const e = log[i] as Extract<CommitEvent, { kind: "cut" }>, next = structuredClone(w), m = next.ledger.commitments!;
-  for (const r of e.removed!) {
-    const same = m.promised.find(p => p.orderId === r.orderId && p.lotId === r.lotId && p.kind === r.kind);
-    if (same) same.amount += r.amount; else m.promised.push({ ...r });
+  // Lines the cut took in full go back where they sat (lowest place first, so each place still holds); the rest add to their line.
+  for (const { index, ...r } of [...e.removed!].sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity))) {
+    const same = index === undefined ? m.promised.find(p => p.orderId === r.orderId && p.lotId === r.lotId && p.kind === r.kind) : undefined;
+    if (same) same.amount += r.amount; else m.promised.splice(Math.min(index ?? m.promised.length, m.promised.length), 0, { ...r });
   }
   m.log.push({ kind: "cut-changed", by: who, at: when, lotId, cuts: structuredClone(e.cuts) });
   return next;

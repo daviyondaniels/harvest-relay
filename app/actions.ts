@@ -606,7 +606,11 @@ export async function changeCutAction(f: FormData) {
       notice = { text: said, ok: true, on: "cut", res: lot };
       return next;
     }, { rebase: true }));
-  } catch (e) { notice = await failed(e, "cut", lot); kept = keepWho(f); }
+  } catch (e) {
+    notice = await failed(e, "cut", lot); kept = keepWho(f);
+    // A refused name is shown beside the name field of this cut's own form; any other refusal stays a message on the page.
+    if (notice.field === "who") notice.on = `change-${lot}`;
+  }
   revalidatePath("/", "layout");
   const q = ctxKey && ctx ? { [ctxKey]: ctx } : {};
   redirect(`${page}?${new URLSearchParams({ ...q, ...kept, ...signNotice(notice!, { page, id: ctx || undefined }) })}`);

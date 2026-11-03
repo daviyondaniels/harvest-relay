@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { LATE, seedWorkbench } from "../src/seed.ts";
 import { numberSpan } from "../app/lib/quote.ts";
 import { approve, latestChange, preview, previewHand, readByHandAndApprove, receive, suggestReading } from "../src/workbench.ts";
-import { changeCut, changeableCuts, commitKey, confirmPlan, conflicts, decideCut, markStage } from "../src/commitments.ts";
+import { changeCut, changeableCuts, commitKey, confirmPlan, conflicts, decideCut, markStage, stageOf } from "../src/commitments.ts";
 import { shortages } from "../src/orders.ts";
 import { dayRecord } from "../app/lib/record.ts";
 
@@ -68,4 +68,61 @@ test("refusals: bad name, confirmed since, packed since, no record; the state is
 test("the history line names the product and the grower", async () => {
   const w0 = await open(), c = conflicts(w0.ledger)[0], back = changeCut(settle(w0, c.promises[0].orderId), c.lotId, T3, ME, T4);
   assert.match(latestChange(back)!, /^A Name changed the cut on .+ from .+ at /);
+});
+
+// Fix round: restore order, supply moving, a sibling order packed, wording, the name field.
+const lot = (w: W, id: string) => w.ledger.snapshot.lots.find(l => l.id === id)!;
+
+test("settle then change puts promised back exactly, in order, including a substitute line", async () => {
+  const w0 = await open(), c = conflicts(w0.ledger)[0], [a, b] = c.promises.map(p => p.orderId).sort();
+  // The review's case: one order holds a requested and a substitute line on this lot, ahead of the others.
+  const first0 = w0.ledger.commitments!.promised.find(p => p.lotId === c.lotId && p.orderId === a)!;
+  w0.ledger.commitments!.promised.unshift({ ...first0, amount: 1, kind: "approved-substitution" });
+  w0.ledger.commitments!.promised.splice(2, 0, { ...first0, orderId: b, amount: 1, kind: "approved-substitution" });
+  const before = structuredClone(w0.ledger.commitments!.promised);
+  const cc = conflicts(w0.ledger)[0];
+  for (const target of [a, b]) {
+    const set = decideCut(w0, cc.lotId, [{ orderId: target, amount: cc.excess }], cc.excess, ME, T3);
+    assert.deepEqual(changeCut(set, cc.lotId, T3, ME, T4).ledger.commitments!.promised, before);
+  }
+  // A line the cut takes in full (whole amount) also returns to its place.
+  const whole = decideCut(w0, cc.lotId, [{ orderId: a, amount: cc.excess }], cc.excess, ME, T3);
+  assert.deepEqual(changeCut(whole, cc.lotId, T3, ME, T4).ledger.commitments!.promised, before);
+});
+
+test("supply moved between settle and change leaves a valid state", async () => {
+  const w0 = await open(), c = conflicts(w0.ledger)[0], first = settle(w0, c.promises[0].orderId);
+  const grown = structuredClone(first);
+  lot(grown, c.lotId).quantity = { ...lot(grown, c.lotId).quantity, amount: lot(grown, c.lotId).quantity.amount + 1000 };
+  const g = changeCut(grown, c.lotId, T3, ME, T4);
+  assert.equal(conflicts(g.ledger).length, 0, "enough supply: nothing reopens");
+  const shrunk = structuredClone(first);
+  lot(shrunk, c.lotId).quantity = { ...lot(shrunk, c.lotId).quantity, amount: Math.max(1, Math.floor(lot(shrunk, c.lotId).quantity.amount / 2)) };
+  const s = changeCut(shrunk, c.lotId, T3, ME, T4), again = conflicts(s.ledger)[0];
+  assert.ok(again && again.excess > c.excess, "a smaller lot reopens a bigger cut");
+  const done = decideCut(s, again.lotId, [{ orderId: again.promises[0].orderId, amount: again.excess }].filter(() => again.promises[0].amount >= again.excess), again.excess, ME, T5);
+  assert.equal(conflicts(done.ledger).length, 0);
+});
+
+test("another order on the same lot being packed does not block, and it stays packed", async () => {
+  const w0 = await open(), c = conflicts(w0.ledger)[0], [a, b] = c.promises.map(p => p.orderId).sort();
+  const first = settle(w0, a);
+  const withB = markStage(first, b, "packed", ME, T4);
+  const back = changeCut(withB, c.lotId, T3, ME, T5);
+  assert.equal(stageOf(back.ledger, b).stage, "packed");
+});
+
+test("the packed-since refusal reads right with the buyer's name", async () => {
+  const w0 = await open(), c = conflicts(w0.ledger)[0], a = c.promises[0].orderId, packed = markStage(settle(w0, a), a, "packed", ME, T4);
+  let m = "";
+  try { changeCut(packed, c.lotId, T3, ME, T4); } catch (e) { m = (e as Error).message; }
+  const named = m.replace(/\border-[\w-]+/g, id => packed.ledger.snapshot.orders.find(o => o.id === id) ? "Buyer Name" : id);
+  assert.match(named, /the order for Buyer Name has been packed since/);
+});
+
+test("ChangeCuts passes the refused name to its field, and the action files it under that form", () => {
+  const ui = readFileSync(new URL("../app/change-cut.tsx", import.meta.url), "utf8"), act = readFileSync(new URL("../app/actions.ts", import.meta.url), "utf8");
+  assert.match(ui, /on=\{`change-\$\{c.lotId\}`\} bad=\{bad\}/);
+  assert.match(ui, /focus=\{fieldId\(mine\.on!, "who"\)\}/);
+  assert.match(act, /notice\.field === "who"\) notice\.on = `change-\$\{lot\}`/);
 });
