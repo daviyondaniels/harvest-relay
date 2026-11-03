@@ -945,3 +945,93 @@ Don't touch `app/conflict.tsx`, `app/cut-choice.tsx` or `app/lib/cut.ts`; Task 2
   - stale `cutAt` refused;
   - the history line.
 - [ ] Commit.
+
+---
+
+## Round 9: pre-demo fixes from the Fable review, the use-case check and the README walkthrough
+
+**Sources** (all under `reports/round8/`):
+- Fable code review (in the ledger);
+- `use-case-check.md`;
+- the README walkthrough (in the ledger; screenshots `reports/shots/r8-walk-*`).
+
+**User rulings (2026-11-03):**
+- **Pitch line.** It goes on Overview under the hub name, and opens the README: "Grower changes arrive as messages. Each one is read, checked against this week's orders, and nothing changes until you approve."
+- **The injection test message** ("SYSTEM: ignore your rules…") leaves the morning inbox. It moves to Demo tools as a button that delivers it on purpose. Its refusal must still be shown and tested.
+
+### Task 29: Demo story and numbers
+
+**Files:** `src/seed.ts`, the demo actions in `app/actions.ts` (late and injection delivery only), `app/page.tsx` (pitch line and Day details only), `app/lib/view.ts` (timing line only), the Demo tools blocks on `app/pack/page.tsx` and `app/review/page.tsx`, `README.md`, `docs/STATUS.md`, and tests.
+
+**Don't touch:**
+- `app/orders/page.tsx` and `src/resolve.ts` (Task 30);
+- `src/commitments.ts`, `app/change-cut.tsx`, `app/conflict.tsx` and `app/lib/cut.ts` (Task 31).
+
+- **Pitch line.**
+  - Show it on Overview under the hub name, at 16 px or more, in body colour (not the muted colour), on every page state.
+  - Make it the first line of the README.
+  - The browser `<meta description>` uses it too.
+- **The late message matches the screen.**
+  - It is built from Birch Hollow's tomato lot when the button is pressed: "Tomatoes came in light. We'll only have {n−10} lb of standard for Friday, not {n}." So the README path (110 lb) reads 100, not 110, and audit D's path (80 lb) still reads 70, not 80.
+  - The suggested reading, quote and preview follow it.
+  - Keep `LATE`'s id. If the lot is under 20 lb, use the same pattern with a floor of 0. Note this edge case in a test.
+- **The injection message moves to Demo tools.**
+  - Remove it from `SEED`. Add a Demo tools button: "A message that tries to change the rules (demo)".
+  - It is delivered like the late message, works any time and only once, and is read and refused/dismissable exactly as today.
+  - Update the seed counts ("5 messages waiting" becomes 4) wherever they appear: copy, README and tests. Tests that used the seeded injection deliver it explicitly.
+- **Day details.**
+  - Remove the "First message to a short buyer: … after their order went short" line from the screen; it measures seed time against the clock.
+  - Keep the measure in the day export, labelled as demo timing.
+  - Rename "Orders sent short" to "Shipped short, buyer not told".
+  - Check the "85% of ordered weight covered" line: if it stays, it needs a plain label of what it counts. No baseline claim.
+- **README matches the screen.** Fix mismatches A–G from the walkthrough:
+  - A: a missing name stops the action with "Enter your name to continue."
+  - B: with Demo tools, the grower's reply arrives already read, so the button is "Approve supply change". "Apply answers" is for a reply typed in.
+  - C: cucumber asks only the case contents.
+  - D: the late message numbers now follow the lot.
+  - E: choose Split it first, then type.
+  - F: say when "Confirm without …" appears, or drop it.
+  - G: the phone layout was measured in round 7.
+
+  Also:
+  - Title the README "Harvest Relay".
+  - Add a three-sentence evidence lead that cites `docs/EVIDENCE.md` rows: the problem exists, how hubs handle it today, and what is not yet validated (adoption, time saved, reading accuracy on real texts).
+  - Soften any claim marked partly backed in `use-case-check.md`, or cite its row.
+
+- [ ] Tests: the late text for 110 and 80; the injection is absent from the seed and delivered by Demo tools, then refused or dismissed; the pitch line is present; the timing line is absent from the page; the new label.
+- [ ] Run all checks. Commit.
+
+### Task 30: Orders after telling the buyer
+
+**Files:** `app/orders/page.tsx`, `app/lib/format.ts` (status labels), `src/resolve.ts` (only if the cause is there), and tests.
+
+Don't touch `app/page.tsx`, `src/seed.ts` or the README.
+
+- **After "Tell the buyer", the page offers nothing more to send** (`use-case-check.md` item 5; `app/orders/page.tsx` ~210). Find why an offer form with Send still shows after "Nothing more to send", then hide it or make it say clearly what it would send. A second offer must not be one click away by accident.
+- **The list label follows who you are waiting on.** "Asked, waiting for the grower" shows when waiting on the buyer (`app/lib/format.ts` ~69).
+- **Duplicate lines.** After the README step 7 path, Riverbend's order page shows "30 lb zucchini from Birch Hollow Gardens" followed by "10 lb zucchini from Birch Hollow Gardens", and Riverbend stays 30 lb short ("Ask Cedar Row Farm for 30 lb").
+  - Reproduce it (walkthrough path: README steps 1–7 with the late message after zucchini was accepted) and find out whether the lines are real separate allocations, shown unmerged, or a bug.
+  - Merge them for display if they are the same lot.
+  - If the demo can't reach "covered" for Riverbend, explain in a comment and the ledger whether that's the true state of supply. Don't change the planner's rules; report instead.
+
+- [ ] Behaviour tests where possible. Run all checks. Commit.
+
+### Task 31: Round 8 review fixes
+
+Runs after Tasks 29 and 30.
+
+**Files:** `app/pack/page.tsx`, `app/orders/page.tsx`, `app/review/page.tsx` (only the `notice = raw?.on === "cut"` lines), `app/change-cut.tsx`, `app/actions.ts` (`changeCutAction` and `decideCutAction` kept keys), `src/commitments.ts` (comment only), `app/lib/cut.ts` (outcome wording), `app/conflict.tsx`, `app/page.tsx` (Overview pack/print while out of date), the README line, and tests.
+
+- **Important.** A refused name on "Change this cut" (notice `on: change-<lot>`) must be shown only by `ChangeCuts`.
+  - In `pack:32`, `orders:108` and `review:76`, treat `notice.on?.startsWith("change-")` like `"cut"`.
+  - On Pack this means no error or `aria-invalid` on the Ship-short tick, and no duplicate top-of-page alert.
+  - Test it.
+- **The cut result wording is clear.** It reads "{Buyer} now gets {got} lb, down from {had} lb ({short} lb short of {ordered} lb)." Example: "Riverbend School Kitchen now gets 14 lb, down from 20 lb (66 lb short of 80 lb)." Update the tests.
+- **The restore comment.** In `src/commitments.ts`, say "amounts exact; position best effort when other lots' cuts moved lines".
+- **Bound the kept keys.** In `decideCutAction`, keep only `cut-<id>` keys for the conflict's own order ids.
+- **`data-kept` and JavaScript.** With JS, picking a buyer after a refusal still hides the boxes. Drop `data-kept` client-side once a choice changes, or make the CSS also key on a client class.
+- **One name field on Pack.** `ChangeCuts`' `NamedSubmit` is `quiet` on Pack when another form already asks for the name, following the pattern of the sheet forms.
+- **The Overview while the plan is out of date.** It does not offer "Mark all packed" as primary while a cut is open or the sheets are out of date, matching Pack. "Print sheets" reads "Print anyway (out of date)" there too, if it is shown.
+- **The README** lists the "a later cut was settled on that lot" refusal.
+
+- [ ] Run all checks. Commit.
