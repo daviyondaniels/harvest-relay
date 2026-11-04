@@ -1,6 +1,6 @@
 # Submission and three-minute demonstration
 
-Status: a replacement local video is complete at approximately 2:43, with one continuous browser capture, an actual-event cursor, synthetic narration and no captions. Public repository and a video no longer than three minutes are owner-confirmed mandatory requirements. Video upload and the actual entry remain outstanding. Check the authenticated submission form for remaining fields before release.
+Status: a story-driven local video is complete at approximately 2:55, with one continuous browser capture, a standard-size actual-event cursor, synthetic narration and no captions. Public repository and a video no longer than three minutes are owner-confirmed mandatory requirements. Video upload and the actual entry remain outstanding. Check the authenticated submission form for remaining fields before release.
 
 ## Narrative and shot plan (target 2:50, ten-second buffer)
 
