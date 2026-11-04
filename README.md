@@ -40,6 +40,10 @@ Existing orders support quantity changes through Orders → Adjust order quantit
 
 See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). These are preparation materials; public repository visibility, a finished video and external judge access still require release verification.
 
+## Recovery
+
+Use `npm run recovery -- backup SOURCE_DB NEW_DIRECTORY`, `verify BACKUP_DIRECTORY`, or `restore BACKUP_DIRECTORY NEW_DIRECTORY`. Backups include committed SQLite WAL data, checksums and both workspace types. Restore always writes a new directory; it never overwrites the running database. See [the recovery and deployment runbook](docs/implementation/recovery-and-deployment.md) for the tested procedure and limits.
+
 ## What works
 
 - Confirmed supply and existing demand, supplied delivery date, product/grade requirements and explicit substitution permissions.

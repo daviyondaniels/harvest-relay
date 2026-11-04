@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "next dev -H 127.0.0.1 -p 3600",
     "build": "next build",
-    "start": "next start -H 127.0.0.1 -p 3600"
+    "start": "next start -H 127.0.0.1 -p 3600",
+    "recovery": "node scripts/recovery.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

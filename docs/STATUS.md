@@ -173,3 +173,10 @@ On `fix/submission-audit`, following the audit fixes in 7d6701a. The implementat
 - Operator protocol and a 2:50 video shot plan prepared. Neither operator sessions nor a finished video are claimed.
 
 Verification: 497 tests pass; root typecheck passes. Production build and isolated browser verification are recorded in the audit workspace. Browser checks cover named approval, quantity impact/commit/history, refusal after another tab changes demand, phone layout, separate visitor state and reset isolation. The original Tailscale server is not updated by these local changes. CI run results, external access, public repository and final video remain release gates.
+
+
+## November 3 recovery follow-up
+
+The prior implementation's 497-test commit passed fresh-source installation/build and both Linux/Windows CI. The follow-up adds a SQLite snapshot/verify/restore CLI and five behavioral regressions (502 total). Restore is new-directory-only and preserves stored versions and absolute visitor expiry. A local two-workspace restore drill passed. See `docs/implementation/recovery-and-deployment.md` for deployment observations and operational limits.
+
+A heuristic screen of all 103 locally available commits and 655 text blobs found no matches for the selected credential patterns or tracked environment/database/private-key filenames. Three binary blobs were skipped. This is not a comprehensive secret scan or ownership/license approval. Repository visibility remains private.
