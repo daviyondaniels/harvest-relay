@@ -93,3 +93,7 @@ All included scenario records are authored synthetic examples. Do not add real c
 The project owner confirmed that a public repository and a video of at most three minutes are mandatory. Before submission: resolve the final acceptance checklist, review rights and secrets before publishing source, disclose inherited code and recorded versus live inference, verify judge access, and rehearse the exact frozen revision shown in the video. No publication or submission is performed by running this app.
 
 `data/demo-extras.json` is optional and intentionally excluded from Git. Without it, outgoing drafts use templates and later demo replies need hand review; the tracked morning recordings still exercise Meta interpretation and clarification. A reviewer name is self-declared provenance, not authentication. This single-coordinator demo must not be exposed publicly as a production service without access isolation and usage controls.
+
+## License
+
+Harvest Relay project source is licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for attribution. Plus Jakarta Sans retains its separate [SIL Open Font License](app/fonts/OFL.txt). Meta models and hosted API services are not distributed or relicensed by the source license.

@@ -180,3 +180,12 @@ Verification: 497 tests pass; root typecheck passes. Production build and isolat
 The prior implementation's 497-test commit passed fresh-source installation/build and both Linux/Windows CI. The follow-up adds a SQLite snapshot/verify/restore CLI and five behavioral regressions (502 total). Restore is new-directory-only and preserves stored versions and absolute visitor expiry. A local two-workspace restore drill passed. See `docs/implementation/recovery-and-deployment.md` for deployment observations and operational limits.
 
 A heuristic screen of all 103 locally available commits and 655 text blobs found no matches for the selected credential patterns or tracked environment/database/private-key filenames. Three binary blobs were skipped. This is not a comprehensive secret scan or ownership/license approval. Repository visibility remains private.
+
+
+## November 3 deployment and source license
+
+After explicit owner approval, the existing HTTPS demo endpoint was routed to the tested isolated-demo build at f3ec92e. The old backend and private database were retained; stored private state exactly matched its verified backup after cutover. Other proxy entries were unchanged. The new database uses owner-only permissions, secure visitor cookies and disabled paid inference. This remains tailnet access, not verified public judge access.
+
+Live HTTPS checks passed: start/guide, named supply approval, plan confirmation, demand preview/commit/history, quantity-only stale-sheet blocking, reconfirmation restoring eligibility, packing and JSON day export. The downloaded export matched stored version 6 and the synthetic 130 lb order's packed stage. These actions were test decisions in an isolated synthetic workspace, not deliveries or customer validation.
+
+Apache-2.0 was explicitly approved for project source. The root license, attribution notice, README and package metadata reflect it; Plus Jakarta Sans retains SIL. Repository visibility is unchanged. Both operating-system CI jobs passed for the recovery implementation. Video production and independent operator/model evidence remain outstanding.

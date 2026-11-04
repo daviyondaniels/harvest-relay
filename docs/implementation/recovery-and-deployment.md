@@ -37,3 +37,10 @@ The inspected host used Node 24.13.1, `/home/ayliea/dev/harvest-relay-demo`, and
 Supervision/start-on-reboot, off-host backup retention, host failure recovery, customer accounts/roles, organization isolation, monitoring and outbound delivery are separate production work. A successful demo cutover must not be described as solving these. Public source still needs an owner rights/license decision; the heuristic history screen alone does not establish publication rights.
 
 Reference: [Node SQLite backup API](https://nodejs.org/api/sqlite.html#sqlitebackupsource-db-path-options).
+
+
+## Verified demonstration cutover
+
+The owner approved the November 3 cutover after staging. The existing port-3600 HTTPS proxy now routes to the isolated backend on loopback port 3603. Only that target changed. The user service `harvest-relay-demo-f3ec92e` runs the tested commit with a protected persistent database and no model credential. The old backend on loopback 3600 remains running for rollback; its private state matched the verified pre-cutover backup. An operator can revert the same proxy target to loopback 3600 if necessary.
+
+Through HTTPS, a synthetic named approval, confirmation, 120 → 130 lb demand change, stale-sheet block, reconfirmation, packing and day-record download all passed. Source licensing is Apache-2.0 by owner approval; visibility and outside-tailnet access are separate decisions. The service is transient user supervision; restart-on-reboot and off-host recovery are not claimed.
