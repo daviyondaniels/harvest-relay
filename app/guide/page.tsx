@@ -15,7 +15,7 @@ export default async function Guide() {
     { title: "Confirm a plan you can explain", done: progress.confirmed, href: "/pack", action: "Check and confirm the plan", detail: "Read unresolved shortages and unsettled updates. Confirm the plan to create promises. Shipping short requires a separate explicit decision. Print sheets or export the day record; confirmation is not delivery." },
     { title: "Test a late change before packing", done: progress.late, href: late ? link("msg-late-tomato") : "/pack", action: late ? "Review the late message" : "Open packing demo tools", detail: "Before marking orders packed, open Demo tools on Pack and receive the late grower message. Read and approve it by hand if no recording is available. Decide who takes the cut, check changed sheets and confirm again. Affected orders cannot be packed on the stale plan." }
   ];
-  return <>
+  return <div className="demo-guide">
     <section className="panel" aria-labelledby="guide-title"><p className="eyebrow">A coordinator's review loop</p><h1 id="guide-title">Try a harvest change from message to packing</h1>
       <p>Harvest Relay turns uncertain grower messages into reviewable changes. Muse Spark proposes a reading; evidence checks, allocation rules and your decisions determine what reaches the plan.</p>
       <p className="muted">Synthetic data. No messages are delivered. Reviewer names label decisions and do not authenticate people.</p>
@@ -30,5 +30,5 @@ export default async function Guide() {
       <p>Optional: <a href="/orders?order=order-a">adjust an order quantity</a> and preview the effects before confirming. This adds an audit record and can require plan reconfirmation.</p>
       <p><a href="/export">Export my day record</a>. Use the menu to reset this demo's decisions.</p>
     </section>
-  </>;
+  </div>;
 }
