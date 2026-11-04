@@ -658,3 +658,7 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 @media (max-width: 600px) {
   .review-jump { display: inline-flex; align-items: center; min-height: 44px; color: var(--link); }
 }
+
+.guide-steps { padding-left: 1.5rem; }
+.guide-steps > li { padding: .5rem 0 1rem .5rem; }
+.guide-steps h3 .chip { font-size: .75rem; vertical-align: middle; }

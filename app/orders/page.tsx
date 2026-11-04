@@ -196,6 +196,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
       <p className="lot">
         <b>Wants</b><span>{quantity(o.quantity)} {o.product}</span><span>{o.acceptedGrades.join(" or ")}</span><span>{day(o.deliveryOn)}</span>
       </p>
+      <p className="small"><a href={`/orders/adjust?order=${encodeURIComponent(orderId)}`}>Adjust order quantity</a></p>
       <table className="reading"><tbody>
         <tr><td>Gets {o.product}</td><td><b>{weight(direct, unit)}</b>{notPromised && <span className="muted small"><br />{NOT_PROMISED}</span>}{mine.filter(a => a.kind === "requested").map(a => <span key={a.lotId} className="muted small"><br />{weight(a.amount, unit)} from {grower(lots.get(a.lotId)!.growerId)}</span>)}</td></tr>
         {subs.length > 0 && <tr><td>Gets by substitute</td><td>{subs.map(a => <span key={a.lotId}>{weight(a.amount, unit)} {lots.get(a.lotId)!.product} from {grower(lots.get(a.lotId)!.growerId)}<br /></span>)}</td></tr>}

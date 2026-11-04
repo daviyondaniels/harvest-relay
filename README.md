@@ -19,6 +19,27 @@ npm run demo
 
 `npm run demo` runs authored synthetic inputs with hand-authored update proposals. It performs no model inference or network requests. The coordinator web app (`npm run build && npm run start`, on 127.0.0.1:3600) is local only: there is no deployment, customer connector, authenticated multi-user service or message delivery yet. Live model calls are off unless the server sets an allowance.
 
+## Isolated judge demo
+
+Build once, then set `HARVEST_PUBLIC_DEMO=1`, `HARVEST_LIVE_CALLS=0` and `HARVEST_DB=data/demo.db` in the server environment before `npm run start`. PowerShell example:
+
+```powershell
+$env:HARVEST_PUBLIC_DEMO='1'
+$env:HARVEST_LIVE_CALLS='0'
+$env:HARVEST_DB='data/demo.db'
+npm run start
+```
+
+Open `/start`; each new visitor starts an independent synthetic workspace and lands on `/guide`. Reads, changes, reset and export use that workspace. Public demo mode refuses live model calls even if a server allowance is configured. It replays the included `data/seed-readings.json`; optional `data/demo-extras.json` is not needed to build or run. Missing recordings leave messages for manual review.
+
+Visitor cookies are random HttpOnly bearer capabilities, not account authentication. Workspaces expire after 12 hours without extension, have a 1 MiB state limit and a maximum of 100 active sessions per database. Expired rows are reclaimed on creation. Starting another demo consumes another slot until expiry. Reset affects the current workspace. Do not put customer data in this mode. For HTTPS hosting set `HARVEST_SECURE_COOKIES=1`; provide persistent local storage and a single application host. Public traffic limits and TLS belong at the hosting boundary. This app does not supply organization accounts or distributed storage.
+
+The current font and SIL license are bundled in `app/fonts/`; production builds no longer fetch Google Fonts. CI is configured to verify Linux and Windows installation, tests, typecheck and build with live calls off. It does not deploy.
+
+Existing orders support quantity changes through Orders → Adjust order quantity. Preview all affected buyers, then confirm with a name and reason. Changes cannot reduce demand below promises, edit packed orders, or bypass an open request. Quantity-only changes invalidate affected confirmed sheets even if allocated supply stays the same. History is in the adjustment screen and day export.
+
+See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). These are preparation materials; public repository visibility, a finished video and external judge access still require release verification.
+
 ## What works
 
 - Confirmed supply and existing demand, supplied delivery date, product/grade requirements and explicit substitution permissions.

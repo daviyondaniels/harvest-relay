@@ -160,3 +160,16 @@ Wording and flow changes on branch `ux/ease-of-use` (checked against HEAD 80ae11
 
 **Not verified**
 - The layout at 320 to 1280 px, 44 px targets at phone width (including the "set name" link), focus movement and printed pages have not been checked in a browser for this pass.
+
+
+## November 3 submission-readiness implementation
+
+On `fix/submission-audit`, following the audit fixes in 7d6701a. The implementation and remaining gates are in `docs/implementation/2026-11-03-road-to-nine.md`.
+
+- Explicit isolated synthetic demo mode (`HARVEST_PUBLIC_DEMO=1`): request-bound HttpOnly capability, separate expiring SQLite rows, compare-and-swap writes, visitor-scoped reset/export, bounded capacity and state size, and public paid-call refusal. Default private shared mode remains supported. This does not provide authenticated customer organizations.
+- Existing-order quantity preview/confirmation with named reason, impact for all affected buyers, stale-preview refusal and exported history. No reductions below promises, packed-order edits or bypass of open requests. Confirmation now records demand as well as allocated lines, including a migration baseline before edits to older confirmed workspaces.
+- State-derived `/guide` and `/start`, menu/overview entry points, recorded Muse Spark disclosure. Initial coverage cannot be counted as resolving the not-yet-approved tomato reduction.
+- Bundled Plus Jakarta Sans with SIL license, and pinned read-only CI configured for Linux and Windows. No new runtime dependency or deployment workflow.
+- Operator protocol and a 2:50 video shot plan prepared. Neither operator sessions nor a finished video are claimed.
+
+Verification: 497 tests pass; root typecheck passes. Production build and isolated browser verification are recorded in the audit workspace. Browser checks cover named approval, quantity impact/commit/history, refusal after another tab changes demand, phone layout, separate visitor state and reset isolation. The original Tailscale server is not updated by these local changes. CI run results, external access, public repository and final video remain release gates.

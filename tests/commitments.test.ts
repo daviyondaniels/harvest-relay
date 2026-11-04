@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { propose } from "../evaluation/scenario.ts";
-import { CONFIRM_FIRST, changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markAllStage, markStage, planOf, stageOf, stageable } from "../src/commitments.ts";
+import { CONFIRM_FIRST, orderQuantities, changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markAllStage, markStage, planOf, stageOf, stageable } from "../src/commitments.ts";
 import { changedBuyers, lockGate, orderSheets, pickLists } from "../src/pack.ts";
 import { acceptSubstitute, addLot } from "../src/orders.ts";
 import { proposeAllocations, snapshotHash } from "../src/planner.ts";
@@ -81,7 +81,7 @@ test("confirming promises every allocation and records who and when", () => {
   const w = resolved(), before = JSON.stringify(w), c = confirmPlan(w, ME, T(50), { shipShort: false }), m = c.ledger.commitments!;
   assert.equal(JSON.stringify(w), before, "input unchanged");
   assert.deepEqual(m.promised, planOf(w.ledger).allocations.map(a => ({ orderId: a.orderId, lotId: a.lotId, amount: a.amount, unit: a.unit, kind: a.kind })));
-  assert.deepEqual(m.confirmed, { by: ME, at: T(50), promised: m.promised });
+  assert.deepEqual(m.confirmed, { by: ME, at: T(50), promised: m.promised, orderQuantities: orderQuantities(w.ledger) });
   assert.deepEqual(m.log, [{ kind: "confirmed", by: ME, at: T(50), promised: m.promised, shipShort: [] }]);
   assert.equal(c.ledger.version, w.ledger.version, "promises do not move the ledger version");
   assert.equal(snapshotHash(c.ledger.snapshot), snapshotHash(w.ledger.snapshot));

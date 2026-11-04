@@ -1,6 +1,6 @@
 import { digest, proposeAllocations, verifyPlan, type Plan, type Promised } from "./planner.ts";
 import { NAME_MAX } from "./hub.ts";
-import { normalize, type BaseUnit } from "./quantity.ts";
+import { normalize, type BaseUnit, type Normalized } from "./quantity.ts";
 import { orderStatus, unresolved } from "./resolve.ts";
 import type { Ledger } from "./updates.ts";
 import { refreshAndApprove, stamp, text, type Workbench } from "./workbench.ts";
@@ -18,7 +18,7 @@ export type CommitEvent =
   | { kind: "stage"; by: string; at: string; orderId: string; stage: "packed" | "handed-off" };
 export type Commitments = {
   promised: Promised[]; // current promises; on any lot they never total more than the lot, except while a conflict is open
-  confirmed: { by: string; at: string; promised: Promised[] }; // the latest confirm, the baseline for changed lines
+  confirmed: { by: string; at: string; promised: Promised[]; orderQuantities?: Record<string, Normalized> }; // the latest confirm, the baseline for changed lines
   shippedShort: { orderId: string; amount: number; unit: BaseUnit; buyerTold: false }[];
   log: CommitEvent[];
 };
@@ -119,7 +119,7 @@ export function confirmPlan(w: Workbench, by: string, at: string, opts: { shipSh
   const kept = next.ledger.commitments?.shippedShort ?? [];
   const allShort = [...kept, ...shippedShort.filter(s => !kept.some(k => k.orderId === s.orderId))];
   next.ledger.commitments = {
-    promised, confirmed: { by: who, at: when, promised: structuredClone(promised) }, shippedShort: allShort,
+    promised, confirmed: { by: who, at: when, promised: structuredClone(promised), orderQuantities: orderQuantities(w.ledger) }, shippedShort: allShort,
     log: [...log, { kind: "confirmed", by: who, at: when, promised: structuredClone(promised), shipShort: shippedShort.map(s => s.orderId) }]
   };
   return next;
@@ -210,7 +210,7 @@ export function markStage(w: Workbench, orderId: string, stage: "packed" | "hand
     if (now !== "packed") throw new Error("Only a packed order can be handed off");
   } else throw new Error("Unknown stage");
   if (conflicts(w.ledger).some(c => c.promises.some(p => p.orderId === orderId))) throw new Error(CUT_FIRST);
-  if (changedSinceConfirm(w.ledger).some(line => line.orderId === orderId)) throw new Error(CONFIRM_FIRST);
+  if (changedSinceConfirm(w.ledger).some(line => line.orderId === orderId) || changedOrderQuantities(w.ledger).includes(orderId)) throw new Error(CONFIRM_FIRST);
   const next = structuredClone(w);
   next.ledger.commitments!.log.push({ kind: "stage", by: who, at: when, orderId, stage });
   return next;
@@ -270,4 +270,15 @@ export function approveRebased(w: Workbench, id: string, reviewer: string, revie
   const next = refreshAndApprove(w, id, reviewer, reviewHash, at);
   if (seen !== commitKey(w.ledger) && madeWorse(w, next)) throw new PromisesMoved("The promises changed");
   return next;
+}
+
+// Demand belongs to the confirmed sheet too: allocations may stay the same when an order grows.
+export const orderQuantities = (l: Ledger): Record<string, Normalized> => Object.fromEntries(l.snapshot.orders.map(o => [o.id, normalize(o.quantity)]));
+export function changedOrderQuantities(l: Ledger): string[] {
+  const baseline = l.commitments?.confirmed.orderQuantities;
+  if (!baseline) return []; // Older records acquire a baseline before the first order edit.
+  return l.snapshot.orders.filter(o => {
+    const before = baseline[o.id], now = normalize(o.quantity);
+    return !before || before.amount !== now.amount || before.unit !== now.unit;
+  }).map(o => o.id);
 }

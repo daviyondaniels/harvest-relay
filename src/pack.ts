@@ -1,4 +1,4 @@
-import { cmp, conflicts, planOf, stageOf, changedSinceConfirm, type Stage } from "./commitments.ts";
+import { cmp, changedOrderQuantities, conflicts, planOf, stageOf, changedSinceConfirm, type Stage } from "./commitments.ts";
 export { lockGate } from "./commitments.ts";
 import type { Allocation } from "./planner.ts";
 import { normalize, type BaseUnit } from "./quantity.ts";
@@ -52,5 +52,5 @@ export function orderSheets(l: Ledger): OrderSheet[] {
 // The buyers whose sheet lines differ from the latest confirm, so a sheet printed earlier is out of date for them.
 export function changedBuyers(l: Ledger): string[] {
   const owner = new Map(l.snapshot.orders.map(o => [o.id, o.buyerId]));
-  return [...new Set(changedSinceConfirm(l).map(c => owner.get(c.orderId)).filter((b): b is string => !!b))].sort(cmp);
+  return [...new Set([...changedSinceConfirm(l).map(c => c.orderId), ...changedOrderQuantities(l)].map(id => owner.get(id)).filter((b): b is string => !!b))].sort(cmp);
 }

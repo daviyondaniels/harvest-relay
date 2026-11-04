@@ -22,6 +22,8 @@ const TABS = [["/", "Overview", "Overview", Home], ["/review", "Review", "Review
 // The skip link lands on the work: the message on Review, the order on Orders, else the page.
 const SKIP: Record<string, string> = { "/review": "#item", "/orders": "#order" };
 function pageName(path: string): string {
+  if (path === "/guide") return "Demo guide";
+  if (path === "/start") return "Try the demo";
   if (path.startsWith("/events")) return "Recorded change";
   return PAGES.find(([href]) => href === "/" ? path === "/" : path.startsWith(href))?.[1] ?? "Harvest Relay";
 }
@@ -62,6 +64,7 @@ export function Header({ theme, who, name }: { theme: Theme; who: ReactNode; nam
           <button type="button" className="link" onClick={() => { setOpen(false); askName(); }}>Change name</button>
         </div>}
         <nav className="menu-nav" aria-label="Main menu">{links}</nav>
+        <p><a href="/guide">Demo guide</a></p>
         <p className="fine-print">Demo data: the growers, buyers and messages are made up.</p>
         <ThemeToggle initial={theme} />
         <div className="menu-apart">

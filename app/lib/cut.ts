@@ -1,4 +1,4 @@
-import { changedSinceConfirm, stageOf } from "../../src/commitments.ts";
+import { changedOrderQuantities, changedSinceConfirm, stageOf } from "../../src/commitments.ts";
 import type { Ledger } from "../../src/updates.ts";
 import { buyer, weight } from "./format.ts";
 export { possessive } from "./format.ts";
@@ -62,5 +62,5 @@ export const staleSheetLine = (at: string): string => `Changed since the plan wa
 // The orders and the lots whose lines differ from the confirm: an order sheet or a pick list is stale when it holds one.
 export function changedSheets(l: Ledger): { orders: Set<string>; lots: Set<string> } {
   const c = changedSinceConfirm(l);
-  return { orders: new Set(c.map(x => x.orderId)), lots: new Set(c.map(x => x.lotId)) };
+  return { orders: new Set([...c.map(x => x.orderId), ...changedOrderQuantities(l)]), lots: new Set(c.map(x => x.lotId)) };
 }
