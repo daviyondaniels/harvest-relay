@@ -196,6 +196,7 @@ async function Order({ w, orderId, version, notice, sig, cuts, live, me, typed }
       <p className="lot">
         <b>Wants</b><span>{quantity(o.quantity)} {o.product}</span><span>{o.acceptedGrades.join(" or ")}</span><span>{day(o.deliveryOn)}</span>
       </p>
+      <p className="small"><a href={`/orders/adjust?order=${encodeURIComponent(orderId)}`}>Adjust order quantity</a></p>
       <table className="reading"><tbody>
         <tr><td>Gets {o.product}</td><td><b>{weight(direct, unit)}</b>{notPromised && <span className="muted small"><br />{NOT_PROMISED}</span>}{mine.filter(a => a.kind === "requested").map(a => <span key={a.lotId} className="muted small"><br />{weight(a.amount, unit)} from {grower(lots.get(a.lotId)!.growerId)}</span>)}</td></tr>
         {subs.length > 0 && <tr><td>Gets by substitute</td><td>{subs.map(a => <span key={a.lotId}>{weight(a.amount, unit)} {lots.get(a.lotId)!.product} from {grower(lots.get(a.lotId)!.growerId)}<br /></span>)}</td></tr>}
@@ -291,8 +292,8 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
         : <>
           <label>Message<span className="sr-only"> ({line})</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
           <Problem bad={bad} on={on} name="body" />
-          <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></>} className="primary" known={known} on={on} bad={bad} />
-            <span className="fine-print">You can edit the words first.</span></div>
+          <div className="row"><NamedSubmit label={<>Record message<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></>} className="primary" known={known} on={on} bad={bad} />
+            <span className="fine-print">Demo only: nothing is delivered. You can edit the words first.</span></div>
         </>}
     </form>
   );
@@ -411,8 +412,8 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
         {fieldError("redraft")}
         <form action={sendAction} className="form"><Hidden {...h} />
           <div className="row">
-            <NamedSubmit label={<>Send<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
-            <span className="fine-print">{sendable ? "" : "Confirm the words above first."}</span>
+            <NamedSubmit label={<>Record message<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
+            <span className="fine-print">{sendable ? "Demo only: nothing is delivered." : "Confirm the words above first. Nothing is delivered."}</span>
           </div>
         </form>
         {fieldError("send")}

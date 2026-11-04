@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { confirmPlan } from "../src/commitments.ts";
 import { INJECTION, LATE, RECORDED, SEED, canReceiveInjection, deliverInjection, injectionRefusal, lateMessage, lateText, seedWorkbench } from "../src/seed.ts";
 import { dismiss, preview, previewHand, receive, suggestReading, type Workbench } from "../src/workbench.ts";
@@ -10,7 +10,7 @@ import { dismissable, overview, rowAction } from "../app/lib/view.ts";
 import { dayRecord } from "../app/lib/record.ts";
 
 // Task 29: the demo story and its numbers.
-const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const readings = () => JSON.parse(source("data/seed-readings.json"));
 const NOW = "2026-10-28T14:00:00.000Z", LATER = "2026-10-28T14:05:00.000Z", ME = "A Name";
 const withLot = (w: Workbench, lb: number): Workbench => { const c = structuredClone(w); c.ledger.snapshot.lots.find(l => l.id === "lot-b")!.quantity.amount = lb; return c; };
@@ -42,7 +42,10 @@ test("the suggested reading, quote and preview follow the lot (110 lb path)", as
 });
 
 test("no recorded reading exists for the late message, so none with stale numbers is replayed", () => {
-  for (const f of ["data/seed-readings.json", "data/demo-extras.json"]) assert.ok(!source(f).includes("msg-late-tomato"), f);
+  assert.ok(!source("data/seed-readings.json").includes("msg-late-tomato"));
+  // Resolution recordings are optional; a clean clone uses hand review and template drafts.
+  const optional = "data/demo-extras.json";
+  if (existsSync(new URL(`../${optional}`, import.meta.url))) assert.ok(!source(optional).includes("msg-late-tomato"), optional);
 });
 
 test("the rule-changing message is not in the morning inbox; Demo tools deliver it once, read from its recording", async () => {

@@ -203,7 +203,7 @@ function Sheets({ w, version, toldSince, known, bad }: { w: Workbench; version: 
             {s.shippedShortUntold && (toldSince.has(s.orderId)
               ? <p className="flag told">Shipped short: buyer told after confirming</p>
               : <p className="flag">Shipped short: buyer not told</p>)}
-            {((s.stage === "promised" && st.promised > 0) || s.stage === "packed") && (
+            {stageable(w, s.stage === "packed" ? "handed-off" : "packed").includes(s.orderId) && (
               <form action={stageAction} className="no-print">
                 <input type="hidden" name="version" value={version} />
                 <input type="hidden" name="order" value={s.orderId} />

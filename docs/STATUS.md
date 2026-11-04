@@ -1,5 +1,16 @@
 # Initial harvest-to-order checkpoint — October 26, 2026
 
+## Submission audit fixes — November 3, 2026
+
+This section supersedes older statements below where they conflict. Public repository access and a video no longer than three minutes are mandatory, confirmed by the project owner. Publication, rights/license review, judge access, the final video, and submission remain release gates; this patch does not publish or deploy the app.
+
+- Changed order sheets now block packing and handoff until the plan is confirmed again. The domain applies the same checks to individual and bulk actions, while unchanged orders can continue. A settled cut and extra unconfirmed allocations are covered by regression tests. A legacy packed order with a later cut also cannot be handed off without reconfirmation.
+- Fresh-clone tests use a native filesystem path on Windows, tolerate CRLF in source checks, and do not require the optional git-ignored resolution recording file. Morning model recordings remain tracked. Without optional resolution recordings, use template drafts and review later replies by hand; no model output is fabricated.
+- The header says "Name not set" rather than implying authentication. Message buttons say "Record message" and explain that the demo delivers nothing. Review distinguishes recorded Muse Spark readings from live inference and offers a phone shortcut after the original message, reply evidence, and current lot.
+- README now describes the actual runtime dependencies and model contribution. Actual eligible-model execution, output recordings, and later model performance evaluation are documented in the historical milestones; replaying recordings does not establish a live call or real operator benefit.
+
+Validation: 482 tests pass on Windows/Node 24.20, typecheck passes, and the production build passes. In an isolated local production preview, confirm -> approve a tomato cut -> settle -> Pack hides the changed buyer's packing action; bulk packing skips that buyer; reconfirming restores the action and packing succeeds. The original private development-server instance is not changed by these local checks.
+
 Isolated local source; no external remote. Core quantity normalization, allocation heuristic, independent eligibility/conservation verifier, source-linked absolute-total quantity proposals and stale/hash review implemented. Fresh local project, not a rewrite of the cybersecurity source.
 
 Verified: npm test (8 tests, including 200 generated development cases), npm run typecheck, and npm run demo. No UI/build/server exists to test. Synthetic replay asks for case contents; after supplied clarification it proposes 10 kg zucchini against a permitted cucumber substitution, leaves a 30 kg tomato shortage and 10 kg unallocated zucchini. This is not completed fulfillment or waste prevented.
@@ -149,3 +160,37 @@ Wording and flow changes on branch `ux/ease-of-use` (checked against HEAD 80ae11
 
 **Not verified**
 - The layout at 320 to 1280 px, 44 px targets at phone width (including the "set name" link), focus movement and printed pages have not been checked in a browser for this pass.
+
+
+## November 3 submission-readiness implementation
+
+On `fix/submission-audit`, following the audit fixes in 7d6701a. The implementation and remaining gates are in `docs/implementation/2026-11-03-road-to-nine.md`.
+
+- Explicit isolated synthetic demo mode (`HARVEST_PUBLIC_DEMO=1`): request-bound HttpOnly capability, separate expiring SQLite rows, compare-and-swap writes, visitor-scoped reset/export, bounded capacity and state size, and public paid-call refusal. Default private shared mode remains supported. This does not provide authenticated customer organizations.
+- Existing-order quantity preview/confirmation with named reason, impact for all affected buyers, stale-preview refusal and exported history. No reductions below promises, packed-order edits or bypass of open requests. Confirmation now records demand as well as allocated lines, including a migration baseline before edits to older confirmed workspaces.
+- State-derived `/guide` and `/start`, menu/overview entry points, recorded Muse Spark disclosure. Initial coverage cannot be counted as resolving the not-yet-approved tomato reduction.
+- Bundled Plus Jakarta Sans with SIL license, and pinned read-only CI configured for Linux and Windows. No new runtime dependency or deployment workflow.
+- Operator protocol and a 2:50 video shot plan prepared. Neither operator sessions nor a finished video are claimed.
+
+Verification: 497 tests pass; root typecheck passes. Production build and isolated browser verification are recorded in the audit workspace. Browser checks cover named approval, quantity impact/commit/history, refusal after another tab changes demand, phone layout, separate visitor state and reset isolation. The original Tailscale server is not updated by these local changes. CI run results, external access, public repository and final video remain release gates.
+
+
+## November 3 recovery follow-up
+
+The prior implementation's 497-test commit passed fresh-source installation/build and both Linux/Windows CI. The follow-up adds a SQLite snapshot/verify/restore CLI and five behavioral regressions (502 total). Restore is new-directory-only and preserves stored versions and absolute visitor expiry. A local two-workspace restore drill passed. See `docs/implementation/recovery-and-deployment.md` for deployment observations and operational limits.
+
+A heuristic screen of all 103 locally available commits and 655 text blobs found no matches for the selected credential patterns or tracked environment/database/private-key filenames. Three binary blobs were skipped. This is not a comprehensive secret scan or ownership/license approval. Repository visibility remains private.
+
+
+## November 3 deployment and source license
+
+After explicit owner approval, the existing HTTPS demo endpoint was routed to the tested isolated-demo build at f3ec92e. The old backend and private database were retained; stored private state exactly matched its verified backup after cutover. Other proxy entries were unchanged. The new database uses owner-only permissions, secure visitor cookies and disabled paid inference. This remains tailnet access, not verified public judge access.
+
+Live HTTPS checks passed: start/guide, named supply approval, plan confirmation, demand preview/commit/history, quantity-only stale-sheet blocking, reconfirmation restoring eligibility, packing and JSON day export. The downloaded export matched stored version 6 and the synthetic 130 lb order's packed stage. These actions were test decisions in an isolated synthetic workspace, not deliveries or customer validation.
+
+Apache-2.0 was explicitly approved for project source. The root license, attribution notice, README and package metadata reflect it; Plus Jakarta Sans retains SIL. Repository visibility is unchanged. Both operating-system CI jobs passed for the recovery implementation. Video production and independent operator/model evidence remain outstanding.
+
+
+## November 3 partial-offer correction
+
+The filmed workflow exposed a template error: an order 60 lb short with 40 lb of substitute available produced an offer saying it was 40 lb short. Offer templates now ask about the offered replacement quantity without asserting the whole shortfall. Optional model drafting uses draft-v3 with the same instruction; draft checks refuse offer wording that claims a shortage, and old draft-v2 recordings no longer match. Existing recorded messages remain unchanged as history. Added regressions cover the 60/40 case and model fallback. No new live model call or new-case accuracy claim is made.

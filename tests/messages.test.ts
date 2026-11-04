@@ -17,7 +17,7 @@ test("display and template copy", () => {
   assert.equal(display(30000, "g"), "30 kg");
   assert.equal(display(15500, "g"), "15.5 kg");
   assert.equal(display(12, "each"), "12 each");
-  assert.equal(template(F), "Hi Riverbend School Kitchen, we're 30 lb short on tomato for Friday. Would zucchini work for that 30 lb? Reply yes or no.");
+  assert.equal(template(F), "Hi Riverbend School Kitchen, would zucchini work instead of 30 lb of tomato for Friday? Reply yes or no.");
 });
 
 test("accepts faithful rewordings", () => {

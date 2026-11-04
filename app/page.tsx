@@ -170,6 +170,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         {reset && result}
         <h1 id="hub" tabIndex={-1}>{HUB_NAME}</h1>
         <p className="pitch">{PITCH}</p>
+        <p className="small"><a href="/guide">New here? Follow the demo guide</a></p>
         <p className="hero-sub"><span>{delivery ? `Delivery ${day(delivery)}` : "No delivery scheduled"}</span><span>{s.orders.length} buyer orders from {new Set(s.lots.map(l => l.growerId)).size} growers</span><a href="/export">Download the day record</a></p>
         <div className="stats">
           <span className="stat"><span className="icon"><Crate /></span><b>{weight(rows.reduce((n, r) => n + r.supply, 0), unit)}</b><span>confirmed supply</span></span>

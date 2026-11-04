@@ -1,4 +1,4 @@
-import { changedSinceConfirm, planOf, stageOf } from "../../src/commitments.ts";
+import { changedOrderQuantities, changedSinceConfirm, planOf, stageOf } from "../../src/commitments.ts";
 import { CONTACTS } from "../../src/demo.ts";
 import { recommend, shortages } from "../../src/orders.ts";
 import { changedBuyers } from "../../src/pack.ts";
@@ -91,7 +91,7 @@ export function stageCounts(w: Workbench): { packed: number; handed: number; tot
 export function staleSinceConfirm(w: Workbench): boolean {
   const l = w.ledger, plan = planOf(l);
   if (!l.commitments) return false;
-  return changedSinceConfirm(l, plan).length > 0 || l.snapshot.orders.some(o => plan.allocations.filter(a => a.orderId === o.id).reduce((n, a) => n + a.amount, 0) > stageOf(l, o.id).promised);
+  return changedOrderQuantities(l).length > 0 || changedSinceConfirm(l, plan).length > 0 || l.snapshot.orders.some(o => plan.allocations.filter(a => a.orderId === o.id).reduce((n, a) => n + a.amount, 0) > stageOf(l, o.id).promised);
 }
 // While a "would leave a buyer short" warning shows, other waiting updates are said apart from it, so the
 // two lines never disagree about whether the plan is safe to confirm.

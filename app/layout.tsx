@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { Suspense, type ReactNode } from "react";
 import { rememberedName } from "./lib/name.ts";
 import { ClearErrors } from "./clear-errors.tsx";
@@ -10,7 +10,7 @@ import { Who } from "./who.tsx";
 import { PITCH } from "./lib/pitch.ts";
 import "./globals.css";
 
-const type = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" });
+const type = localFont({ src: "./fonts/PlusJakartaSans.ttf", weight: "200 800", style: "normal", display: "swap" });
 
 export const metadata: Metadata = {
   title: { template: "%s · Harvest Relay", default: "Harvest Relay" },

@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { remainingLiveCalls } from "../src/live-policy.ts";
 import type { Answer } from "../src/answers.ts";
 import { PROMPT_VERSION, createBudget, interpretReply, interpretSource, metaTransport } from "../src/interpret.ts";
 import { BUYERS, CONTACTS } from "../src/demo.ts";
@@ -239,8 +240,7 @@ function approved(w: Workbench, item: string, before: Map<string, number>): Part
 // allowance is per server process, so a restart is the only way to grant more.
 let liveUsed = 0;
 export async function liveAllowance(): Promise<number> {
-  const cap = Number(process.env.HARVEST_LIVE_CALLS ?? 0);
-  return process.env.MODEL_API_KEY && Number.isSafeInteger(cap) && cap > 0 ? Math.max(0, cap - liveUsed) : 0;
+  return remainingLiveCalls(process.env, liveUsed);
 }
 async function live() {
   if (await liveAllowance() < 1) throw new Error("Automatic reading is off or used up on this server. Enter the details yourself.");

@@ -1,3 +1,4 @@
+import type { OrderChangeRecord } from "./order-change.ts";
 import { amendFromMessage, applyAnswers, type Answer, type Correction } from "./answers.ts";
 import { snapshotHash, type Plan, type Snapshot } from "./planner.ts";
 import { normalize, type BaseUnit, type Quantity } from "./quantity.ts";
@@ -25,7 +26,7 @@ export type InboxItem = {
   lastChange?: { before: number; after: number; unit: BaseUnit }; // the change the coordinator last saw, in base units
 };
 // calls counts logged calls, so each gets a fresh call-n source ID.
-export type Workbench = { ledger: Ledger; items: InboxItem[]; resolutions: Resolution[]; outbox: OutboxMessage[]; calls: number };
+export type Workbench = { ledger: Ledger; items: InboxItem[]; resolutions: Resolution[]; outbox: OutboxMessage[]; calls: number; orderChanges?: OrderChangeRecord[] };
 
 // actor: a person's name; label: who or what read a message (a model reading's label).
 const LIMIT = { items: 500, decisions: 200, note: 500, actor: NAME_MAX, label: 160 };
@@ -421,6 +422,7 @@ export function latestChange(w: Workbench, names: { grower: (id: string) => stri
     else if (e.kind === "cut") found.push({ at: e.at, line: `${e.by} decided who takes the cut` });
     else found.push({ at: e.at, line: `${e.by} marked ${buyerOf(e.orderId)}'s order ${e.stage === "packed" ? "packed" : "handed off"}` });
   }
+  for (const e of w.orderChanges ?? []) found.push({ at: e.at, line: `${e.by} changed the quantity for ${buyerOf(e.orderId)}` });
   if (!found.length) return undefined;
   // Later entries win a tie, since each list is in the order things happened.
   const last = found.reduce((a, b) => Date.parse(b.at) >= Date.parse(a.at) ? b : a);

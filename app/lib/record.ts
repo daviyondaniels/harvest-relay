@@ -20,7 +20,7 @@ export function dayRecord(w: Workbench, version: number, exportedAt: string) {
     exportedAt, storedVersion: version, ledgerVersion: w.ledger.version,
     snapshot: s, snapshotHash: snapshotHash(s), proposedPlan: planOf(w.ledger),
     events: w.ledger.events, forecasts: w.ledger.forecasts, records: w.ledger.records, inbox: w.items,
-    resolutions: w.resolutions, outbox: w.outbox,
+    resolutions: w.resolutions, outbox: w.outbox, orderChanges: w.orderChanges ?? [],
     commitments: w.ledger.commitments ?? null, conflicts: conflicts(w.ledger),
     stages: Object.fromEntries(s.orders.map(o => [o.id, stageOf(w.ledger, o.id)])),
     measures: measures(w),

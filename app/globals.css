@@ -652,3 +652,13 @@ label.check input[type="checkbox"], label.check input[type="radio"] { width: 24p
 /* Cut card: with a buyer chosen the split boxes are hidden, so Settle sits right under the choices. Works without script. */
 /* After a refusal that kept amounts (data-kept) the boxes stay in view beside the message. */
 .conflict:not([data-kept]):has(input[name=choice][value=split]:not(:checked)) fieldset.split { display: none; }
+
+/* After reading the evidence, phone users can reach the decision without traversing every fold. */
+.review-jump { display: none; }
+@media (max-width: 600px) {
+  .review-jump { display: inline-flex; align-items: center; min-height: 44px; color: var(--link); }
+}
+
+.guide-steps { padding-left: 1.5rem; }
+.guide-steps > li { padding: .5rem 0 1rem .5rem; }
+.guide-steps h3 .chip { font-size: .75rem; vertical-align: middle; }

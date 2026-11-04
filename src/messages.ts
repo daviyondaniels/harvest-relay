@@ -31,7 +31,7 @@ export function template(f: MessageFacts): string {
     case "request": return `Hi ${name}, could you bring another ${qty} of ${f.product} for ${Day}? Reply with how much you can do. Thanks!`;
     case "offer":
       if (!f.substitute) throw new Error("An offer needs a substitute");
-      return `Hi ${name}, we're ${qty} short on ${f.product} for ${Day}. Would ${f.substitute} work for that ${qty}? Reply yes or no.`;
+      return `Hi ${name}, would ${f.substitute} work instead of ${qty} of ${f.product} for ${Day}? Reply yes or no.`;
     case "notice": return `Hi ${name}, your ${f.product} order for ${Day} will be ${qty} short. We're sorry for the change.`;
   }
 }
@@ -394,6 +394,8 @@ export function checkDraft(raw: string, f: MessageFacts, knownProducts: string[]
   const ask = (token: string, question: string) => { if (!confirm.some(c => c.token === token && c.question === question)) confirm.push({ token, question }); };
   if (raw.length > MAX) problems.push(`Longer than ${MAX} characters`);
   let text = f.to.name ? raw.split(f.to.name).join(" ") : raw;
+  // An offer amount is the proposed substitute quantity, not necessarily the whole shortfall.
+  if (f.kind === "offer" && /\b(short|shortfall|shortage|missing)\b/i.test(text)) problems.push("An offer quantity does not establish the full shortage. Ask about the substitute quantity without stating a shortfall.");
   const odd = [...new Set(text.match(PLAIN) ?? [])];
   if (odd.length) problems.push(`Uses characters outside plain text (${odd.join(" ")})`);
 

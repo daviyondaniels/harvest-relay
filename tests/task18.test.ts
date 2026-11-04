@@ -6,7 +6,7 @@ import { confirmPlan } from "../src/commitments.ts";
 import { SETTLE_FIRST, arrivedLead, confirmLead, duration, leaveSentence, openAllLabel, resolveHint, reviewCoverLink, waitingCover, LEAVE_PROMPT } from "../app/lib/view.ts";
 
 // Task 18: Overview, Pack and layout.
-const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const readings = () => JSON.parse(source("data/seed-readings.json"));
 const NOW = "2026-10-28T14:00:00.000Z";
 const css = source("app/globals.css"), page = source("app/page.tsx"), pack = source("app/pack/page.tsx");

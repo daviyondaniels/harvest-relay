@@ -7,3 +7,7 @@ next-env.d.ts
 data/*.db*
 *.tsbuildinfo
 data/demo-extras.json
+
+# Recovery bundles contain complete workspace state and must remain private.
+backups/
+restore-drill/

@@ -56,7 +56,9 @@ test("refusals: bad name, confirmed since, packed since, no record; the state is
   const w0 = await open(), c = conflicts(w0.ledger)[0], first = settle(w0, c.promises[0].orderId), snap = JSON.stringify(first);
   assert.throws(() => changeCut(first, c.lotId, T3, " ", T4), /name/i);
   assert.throws(() => changeCut(confirmPlan(first, ME, T4, { shipShort: true }), c.lotId, T3, ME, T4), /confirmed again since/);
-  const packed = markStage(first, c.promises[0].orderId, "packed", ME, T4);
+  // Legacy stored records must still lock cut edits.
+  const packed = structuredClone(first);
+  packed.ledger.commitments!.log.push({ kind: "stage", orderId: c.promises[0].orderId, stage: "packed", by: ME, at: T4 });
   assert.throws(() => changeCut(packed, c.lotId, T3, ME, T4), /has been packed since/);
   assert.equal(changeableCuts(packed.ledger).length, 0, "nothing is offered once it can't be changed");
   const old = structuredClone(first);
@@ -113,7 +115,9 @@ test("another order on the same lot being packed does not block, and it stays pa
 });
 
 test("the packed-since refusal reads right with the buyer's name", async () => {
-  const w0 = await open(), c = conflicts(w0.ledger)[0], a = c.promises[0].orderId, packed = markStage(settle(w0, a), a, "packed", ME, T4);
+  const w0 = await open(), c = conflicts(w0.ledger)[0], a = c.promises[0].orderId, packed = structuredClone(settle(w0, a));
+  // Legacy record written before changed sheets blocked packing.
+  packed.ledger.commitments!.log.push({ kind: "stage", orderId: a, stage: "packed", by: ME, at: T4 });
   let m = "";
   try { changeCut(packed, c.lotId, T3, ME, T4); } catch (e) { m = (e as Error).message; }
   const named = m.replace(/\border-[\w-]+/g, id => packed.ledger.snapshot.orders.find(o => o.id === id) ? "Buyer Name" : id);

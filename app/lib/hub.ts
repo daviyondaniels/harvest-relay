@@ -31,6 +31,12 @@ export function extras(): Extras | undefined {
 }
 
 export async function current(): Promise<Stored> {
+  if (process.env.HARVEST_PUBLIC_DEMO === "1") {
+    const { loadDemoSession } = await import("./demo-session.ts"), s = await loadDemoSession();
+    if (s && !needsReset(s.state)) return s;
+    const { redirect } = await import("next/navigation.js");
+    redirect("/start");
+  }
   const s = db().load();
   if (s && !needsReset(s.state)) return s;
   db().reset(await seedWorkbench(recording()));
@@ -47,7 +53,17 @@ export function staleMessage(w: Workbench): string {
 export async function act(expected: number, f: (w: Workbench) => Workbench | Promise<Workbench>, opts: { rebase?: boolean } = {}): Promise<void> {
   const s = await current();
   if (s.version !== expected && !opts.rebase) throw new StaleView(staleMessage(s.state));
-  db().save(s.version, await f(s.state));
+  const next = await f(s.state);
+  if (process.env.HARVEST_PUBLIC_DEMO === "1") {
+    const { saveDemoSession } = await import("./demo-session.ts");
+    await saveDemoSession(s.version, next);
+  } else db().save(s.version, next);
 }
 
-export async function resetDemo(): Promise<void> { db().reset(await seedWorkbench(recording())); }
+export async function resetDemo(): Promise<void> {
+  const seed = await seedWorkbench(recording());
+  if (process.env.HARVEST_PUBLIC_DEMO === "1") {
+    const { resetDemoSession } = await import("./demo-session.ts");
+    await resetDemoSession(seed);
+  } else db().reset(seed);
+}

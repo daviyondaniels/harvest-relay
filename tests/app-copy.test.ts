@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { OPERATION, OPERATION_CHOICE, FIELD, changeLine, forecastTag } from "../app/lib/format.ts";
 
 // The app's own words, checked where a unit test cannot render the page.
-const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("I2: the measures card says what was counted, not that each count resolved an order", () => {
   const page = source("app/page.tsx");
@@ -164,7 +164,7 @@ test("Task 18: the header menu is a disclosure that closes on Escape and returns
 
 test("Task 18: the header says who is recording, once, and the name can be changed there", () => {
   const who = source("app/who.tsx"), actions = source("app/actions.ts");
-  for (const s of [/Recording as/, /not you\?/, /Not signed in/, /set name/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
+  for (const s of [/Recording as/, /not you\?/, /Name not set/, /set name/, /aria-invalid/, /aria-describedby/, /role="alert"/]) assert.match(who, s);
   assert.match(actions, /export async function setNameAction\([^)]*\)[^{]*\{[\s\S]*?checkName\([\s\S]*?rememberName\(/);
   // Fix round 3 (N1): only the name is cut short; "not you?" is its own flex item, at least 24 px.
   const css = source("app/globals.css");
@@ -271,12 +271,13 @@ test("Task 19: the Review tab names the grower whose message is open", () => {
   assert.doesNotMatch(review, /export const metadata/);
 });
 
-test("Task 19 (R5): the model's name and reading details stay off the main path, in the history, event page and export", () => {
+test("Task 19 (R5): recorded inference is disclosed while technical reading details stay in the event and export", () => {
   const review = source("app/review/page.tsx"), orders = source("app/orders/page.tsx");
   assert.match(review, /Read automatically\. Check the highlighted words\./);
   assert.doesNotMatch(review, /\{it\.interpretedBy\}/, "the reading label is not shown above the reading");
   assert.match(orders, />Suggest other wording</);
-  for (const page of [review, orders]) assert.doesNotMatch(page.replace(/\/\/.*$/gm, ""), /Muse Spark|with Meta|Meta \(live\)|A recorded draft is available|No recorded draft/);
+  assert.match(review, /it\.interpretedBy\?\.includes\("recorded"\) \? "Recorded Muse Spark reading\./);
+  for (const page of [review, orders]) assert.doesNotMatch(page.replace(/\/\/.*$/gm, "").replace("Recorded Muse Spark reading.", "Recorded reading."), /Muse Spark|with Meta|Meta \(live\)|A recorded draft is available|No recorded draft/);
   assert.match(orders, /"Edited by you"/);
   assert.doesNotMatch(orders, /"Template"[^)]*chip|AUTHOR\[/, "no Template or model chip");
   assert.match(review, /function HistoryLine/);
@@ -334,7 +335,7 @@ test("Task 19: after an action, focus moves to the result heading or the invalid
 test("Task 19 (R15): repeated buttons carry hidden context, and the 404 page leads back to Overview", () => {
   const orders = source("app/orders/page.tsx");
   assert.match(orders, /Draft message<span className="sr-only">/);
-  assert.match(orders, /Send<span className="sr-only">/);
+  assert.match(orders, /Record message<span className="sr-only">/);
   assert.match(orders, /Record reply<span className="sr-only"> from \{to\}/);
   assert.match(source("app/page.tsx"), /Resolve\{hint && `: \$\{hint\}`\}<span className="sr-only"> \{buyer\(x\.g\.buyerId\)\}/);
   assert.match(source("app/globals.css"), /\.sr-only \{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset\(50%\);/);

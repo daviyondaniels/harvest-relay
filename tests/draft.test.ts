@@ -60,7 +60,7 @@ test("request carries only the facts, not ids or ranking", () => {
   assert.equal(r.response_format.json_schema.name, "draft");
   assert.deepEqual(JSON.parse(r.messages[1].content).day, "Friday");
   assert.equal(JSON.parse(r.messages[1].content).quantity, "30 lb");
-  assert.equal(DRAFT_PROMPT_VERSION, "draft-v2");
+  assert.equal(DRAFT_PROMPT_VERSION, "draft-v3");
 });
 
 test("templateDraft passes its own check", () => {
@@ -94,7 +94,7 @@ const FACTS: Record<MessageFacts["kind"], MessageFacts> = {
 // What a good model reply says for each kind, written by hand.
 const IDEAL: Record<MessageFacts["kind"], string> = {
   request: "Hi Hillside Farm, can you bring another 30 lb of tomato for Friday? Please tell me how much you can do.",
-  offer: "Hi Riverbend School Kitchen, your tomato order for Friday is 30 lb short. Would zucchini work instead for that 30 lb? Please reply yes or no.",
+  offer: "Hi Riverbend School Kitchen, would zucchini work instead of 30 lb of tomato for Friday? Please reply yes or no.",
   notice: "Hi Riverbend School Kitchen, your tomato order for Friday will be 30 lb short."
 };
 
@@ -115,7 +115,7 @@ test("each purpose states the same facts the template does", () => {
       assert.ok(t.includes(fact), `${kind} template lacks ${fact}`);
     }
     // The key phrase of each purpose is the template's own wording.
-    const phrase = { request: ["another", "how much"], offer: ["short", "yes or no"], notice: ["short"] }[kind];
+    const phrase = { request: ["another", "how much"], offer: ["instead of", "yes or no"], notice: ["short"] }[kind];
     for (const w of phrase) { assert.ok(p.toLowerCase().includes(w), `${kind} purpose lacks "${w}"`); assert.ok(t.toLowerCase().includes(w), `${kind} template lacks "${w}"`); }
     // Time words the checker reads as shifts stay out of what the model is told.
     assert.doesNotMatch(p, /\b(next|after|from|last|week|tomorrow)\b/i);
@@ -146,4 +146,12 @@ test("Final review: only a fallback caused by the check is said to have failed i
   assert.ok(junk.fallback);
   assert.equal(failedTheCheck(junk.fallback), false, "bad JSON is not a failed check");
   assert.equal(failedTheCheck("Model call failed: timeout"), false);
+});
+
+
+test("model shortage claims on substitute offers fall back to the factual template", async () => {
+  const result = await draftMessage(F, P, opts({ transport: replay(JSON.stringify({ text: "Hi Riverbend School Kitchen, we're 30 lb short on tomato for Friday. Would zucchini work for that 30 lb? Reply yes or no." })) }), "test");
+  assert.equal(result.author, "template");
+  assert.match(result.fallback!, /does not establish the full shortage/);
+  assert.doesNotMatch(result.text, /short/i);
 });

@@ -1,0 +1,11 @@
+Harvest Relay
+Copyright 2026 Harvest Relay contributors.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Plus Jakarta Sans is separately licensed under the SIL Open Font License 1.1.
+See app/fonts/OFL.txt and app/fonts/README.txt.
+
+Meta models, model weights and hosted API services are not distributed or
+relicensed by this source-code license. Third-party dependencies and referenced
+materials retain their applicable licenses and notices.
