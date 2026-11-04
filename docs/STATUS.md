@@ -1,5 +1,16 @@
 # Initial harvest-to-order checkpoint — October 26, 2026
 
+## Submission audit fixes — November 3, 2026
+
+This section supersedes older statements below where they conflict. Public repository access and a video no longer than three minutes are mandatory, confirmed by the project owner. Publication, rights/license review, judge access, the final video, and submission remain release gates; this patch does not publish or deploy the app.
+
+- Changed order sheets now block packing and handoff until the plan is confirmed again. The domain applies the same checks to individual and bulk actions, while unchanged orders can continue. A settled cut and extra unconfirmed allocations are covered by regression tests. A legacy packed order with a later cut also cannot be handed off without reconfirmation.
+- Fresh-clone tests use a native filesystem path on Windows, tolerate CRLF in source checks, and do not require the optional git-ignored resolution recording file. Morning model recordings remain tracked. Without optional resolution recordings, use template drafts and review later replies by hand; no model output is fabricated.
+- The header says "Name not set" rather than implying authentication. Message buttons say "Record message" and explain that the demo delivers nothing. Review distinguishes recorded Muse Spark readings from live inference and offers a phone shortcut after the original message, reply evidence, and current lot.
+- README now describes the actual runtime dependencies and model contribution. Actual eligible-model execution, output recordings, and later model performance evaluation are documented in the historical milestones; replaying recordings does not establish a live call or real operator benefit.
+
+Validation: 482 tests pass on Windows/Node 24.20, typecheck passes, and the production build passes. In an isolated local production preview, confirm -> approve a tomato cut -> settle -> Pack hides the changed buyer's packing action; bulk packing skips that buyer; reconfirming restores the action and packing succeeds. The original private development-server instance is not changed by these local checks.
+
 Isolated local source; no external remote. Core quantity normalization, allocation heuristic, independent eligibility/conservation verifier, source-linked absolute-total quantity proposals and stale/hash review implemented. Fresh local project, not a rewrite of the cybersecurity source.
 
 Verified: npm test (8 tests, including 200 generated development cases), npm run typecheck, and npm run demo. No UI/build/server exists to test. Synthetic replay asks for case contents; after supplied clarification it proposes 10 kg zucchini against a permitted cucumber substitution, leaves a 30 kg tomato shortage and 10 kg unallocated zucchini. This is not completed fulfillment or waste prevented.

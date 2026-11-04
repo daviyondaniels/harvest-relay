@@ -205,11 +205,12 @@ function Item({ it, p, version, notice, cuts, sig, params, known, queueFocus, li
         </div>
       )}
       {lot && <p className="lot"><b>Current lot</b><span>{lot.product}</span><span>{lot.grade}</span><span>{day(lot.deliveryOn)}</span><span>{quantity(lot.quantity)} confirmed</span></p>}
+      {!closed && <a className="review-jump" href={byField.size > 0 ? "#open-questions" : "#change"}>{byField.size > 0 ? "Answer the open details" : "Review the impact and decide"}</a>}
 
       {i ? <>
         <div>
           <h2>What we understood</h2>
-          <p className="muted small">{it.interpretedBy === BY_HAND ? "Entered by hand. Check the highlighted words." : "Read automatically. Check the highlighted words."}</p>
+          <p className="muted small">{it.interpretedBy === BY_HAND ? "Entered by hand. Check the highlighted words." : it.interpretedBy?.includes("recorded") ? "Recorded Muse Spark reading. Check the highlighted words." : "Read automatically. Check the highlighted words."}</p>
         </div>
         <table className="reading"><tbody>
           <tr><td>What changed</td><td><b>{OPERATION[i.operation]}</b></td></tr>

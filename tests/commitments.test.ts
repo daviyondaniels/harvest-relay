@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { propose } from "../evaluation/scenario.ts";
-import { changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markAllStage, markStage, planOf, stageOf, stageable } from "../src/commitments.ts";
+import { CONFIRM_FIRST, changedSinceConfirm, confirmPlan, conflicts, decideCut, held, markAllStage, markStage, planOf, stageOf, stageable } from "../src/commitments.ts";
 import { changedBuyers, lockGate, orderSheets, pickLists } from "../src/pack.ts";
 import { acceptSubstitute, addLot } from "../src/orders.ts";
 import { proposeAllocations, snapshotHash } from "../src/planner.ts";
@@ -24,6 +24,42 @@ function change(w: Workbench, operation: "replace-total" | "add-quantity", amoun
 const drop = (w: Workbench, to: number, m = 60) => change(w, "replace-total", to, m);
 const total = (w: Workbench, orderId: string) => planOf(w.ledger).allocations.filter(a => a.orderId === orderId).reduce((s, a) => s + a.amount, 0);
 const short = (w: Workbench, orderId: string) => planOf(w.ledger).unfilled.find(u => u.orderId === orderId)?.amount ?? 0;
+
+test("a settled cut blocks individual and bulk packing until that sheet is confirmed again", () => {
+  const w = drop(confirmed(), 70);
+  const cut = decideCut(w, "lot-b", [{ orderId: "order-b", amount: 40 }], 40, ME, T(71));
+  const before = JSON.stringify(cut);
+  assert.throws(() => markStage(cut, "order-b", "packed", ME, T(72)), { message: CONFIRM_FIRST });
+  assert.ok(!stageable(cut, "packed").includes("order-b"));
+  const bulk = markAllStage(cut, "packed", ME, T(72));
+  assert.ok(!bulk.marked.includes("order-b"));
+  assert.ok(bulk.marked.includes("order-a"), "unchanged buyers can still pack");
+  assert.equal(stageOf(bulk.next.ledger, "order-b").stage, "promised");
+  assert.equal(JSON.stringify(cut), before, "refusals and eligibility checks do not mutate input");
+  const again = confirmPlan(cut, ME, T(73), { shipShort: true });
+  assert.equal(stageOf(markStage(again, "order-b", "packed", ME, T(74)).ledger, "order-b").stage, "packed");
+});
+
+test("a packed order changed by a later cut cannot be handed off until reconfirmed", () => {
+  const packed = markStage(confirmed(), "order-b", "packed", ME, T(55));
+  const w = drop(packed, 70);
+  assert.throws(() => markStage(w, "order-b", "handed-off", ME, T(70)), /Decide who takes the cut first/);
+  const cut = decideCut(w, "lot-b", [{ orderId: "order-b", amount: 40 }], 40, ME, T(71));
+  assert.throws(() => markStage(cut, "order-b", "handed-off", ME, T(72)), { message: CONFIRM_FIRST });
+  assert.deepEqual(stageable(cut, "handed-off"), []);
+  assert.throws(() => markAllStage(cut, "handed-off", ME, T(72)), /No order can be marked/);
+  const again = confirmPlan(cut, ME, T(73), { shipShort: true });
+  assert.equal(stageOf(markStage(again, "order-b", "handed-off", ME, T(74)).ledger, "order-b").stage, "handed-off");
+});
+
+test("extra allocations also need confirmation before packing the changed order", () => {
+  const w = confirmPlan(morning(), ME, T(50), { shipShort: true });
+  const more = change(w, "add-quantity", 20);
+  assert.throws(() => markStage(more, "order-b", "packed", ME, T(71)), { message: CONFIRM_FIRST });
+  assert.ok(stageable(more, "packed").includes("order-a"));
+  const again = confirmPlan(more, ME, T(72), { shipShort: true });
+  assert.ok(stageable(again, "packed").includes("order-b"));
+});
 
 test("before any confirm the plan is the same as today", () => {
   const w = resolved();

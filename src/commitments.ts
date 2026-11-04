@@ -32,6 +32,7 @@ export type Conflict = {
 
 // Refusal text for anything that needs the open conflicts settled first; the Pack page matches it.
 export const CUT_FIRST = "Decide who takes the cut first";
+export const CONFIRM_FIRST = "This order changed since the plan was confirmed. Confirm today's plan again before packing or handing it off.";
 export const cmp = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 // Takes from the front of `ids` until `excess` is covered; the amounts are what each order has on the lot.
@@ -199,23 +200,23 @@ export function stageOf(l: Ledger, orderId: string): { stage: Stage; promised: n
   return { stage: marked?.kind === "stage" ? marked.stage : promised > 0 || confirmedBefore ? "promised" : "planned", promised, ordered: q.amount, unit: q.unit, confirmedBefore };
 }
 
-// Packed needs a promise that no open conflict touches; handed off needs packed.
+// Both stages need the order's current sheet to match the latest confirmation.
+// Check per order: unrelated changes must not stop an unchanged buyer's packing.
 export function markStage(w: Workbench, orderId: string, stage: "packed" | "handed-off", by: string, at: string): Workbench {
   const who = text(by, NAME_MAX, "Actor name"), when = stamp(at), now = stageOf(w.ledger, orderId).stage;
   if (stage === "packed") {
     if (now !== "promised" || stageOf(w.ledger, orderId).promised === 0) throw new Error("Only a promised order can be packed");
-    if (conflicts(w.ledger).some(c => c.promises.some(p => p.orderId === orderId))) throw new Error(CUT_FIRST);
   } else if (stage === "handed-off") {
     if (now !== "packed") throw new Error("Only a packed order can be handed off");
   } else throw new Error("Unknown stage");
+  if (conflicts(w.ledger).some(c => c.promises.some(p => p.orderId === orderId))) throw new Error(CUT_FIRST);
+  if (changedSinceConfirm(w.ledger).some(line => line.orderId === orderId)) throw new Error(CONFIRM_FIRST);
   const next = structuredClone(w);
   next.ledger.commitments!.log.push({ kind: "stage", by: who, at: when, orderId, stage });
   return next;
 }
 
-// The orders that could take this stage now, by exactly the rules of markStage (stage order, open cuts).
-// It probes markStage with a placeholder name and time, so it stays exact only while markStage
-// checks neither against the confirm.
+// Use the same stage, conflict and confirmation checks for individual and bulk actions.
 export function stageable(w: Workbench, stage: "packed" | "handed-off"): string[] {
   return w.ledger.snapshot.orders.filter(o => { try { markStage(w, o.id, stage, "x", "2000-01-01T00:00:00.000Z"); return true; } catch { return false; } }).map(o => o.id);
 }

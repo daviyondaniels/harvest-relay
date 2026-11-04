@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../", import.meta.url));
 const source = (p: string) => readFileSync(join(root, p), "utf8");
 const files = (dir: string): string[] => readdirSync(join(root, dir)).flatMap(n => {
   const rel = `${dir}/${n}`;

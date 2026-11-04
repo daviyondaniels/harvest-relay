@@ -291,8 +291,8 @@ function PrimaryCard({ x, order, buyerName, version, open, known, bad, why, draf
         : <>
           <label>Message<span className="sr-only"> ({line})</span><textarea name="body" required maxLength={480} rows={4} defaultValue={draft} {...invalid(bad, on, "body")} /></label>
           <Problem bad={bad} on={on} name="body" />
-          <div className="row"><NamedSubmit label={<>Send<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></>} className="primary" known={known} on={on} bad={bad} />
-            <span className="fine-print">You can edit the words first.</span></div>
+          <div className="row"><NamedSubmit label={<>Record message<span className="sr-only"> to {opt.kind === "ask-grower" ? grower(opt.contactId) : buyerName}</span></>} className="primary" known={known} on={on} bad={bad} />
+            <span className="fine-print">Demo only: nothing is delivered. You can edit the words first.</span></div>
         </>}
     </form>
   );
@@ -411,8 +411,8 @@ function ResolutionCard({ r, w, version, me, typed, canSuggest, today, error }: 
         {fieldError("redraft")}
         <form action={sendAction} className="form"><Hidden {...h} />
           <div className="row">
-            <NamedSubmit label={<>Send<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
-            <span className="fine-print">{sendable ? "" : "Confirm the words above first."}</span>
+            <NamedSubmit label={<>Record message<span className="sr-only"> the message{ctx}</span></>} className="primary" disabled={!sendable} aria-describedby={errId("send")} {...named(known, "send")} />
+            <span className="fine-print">{sendable ? "Demo only: nothing is delivered." : "Confirm the words above first. Nothing is delivered."}</span>
           </div>
         </form>
         {fieldError("send")}

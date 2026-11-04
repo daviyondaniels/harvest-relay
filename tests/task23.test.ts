@@ -123,8 +123,8 @@ test("They said yes with no channel is never in quotation marks; the title says 
   assert.match(orders, /\{agreedLine\(src\.record\.evidence\.channel, src\.record\.recordedBy, src\.record\.evidence\.quote\)\}/);
   assert.match(orders, /`\$\{r\.status === "drafted" \? "Ask" : "Asked"\} \$\{r\.facts\.to\.name\} for more`/);
   assert.doesNotMatch(orders, /Ask for more to/);
-  assert.match(orders, /Send<span className="sr-only"> to \{opt\.kind === "ask-grower" \? grower\(opt\.contactId\) : buyerName\}<\/span>/);
-  assert.doesNotMatch(orders, /Send<span className="sr-only"> \(\{line\}\)/);
+  assert.match(orders, /Record message<span className="sr-only"> to \{opt\.kind === "ask-grower" \? grower\(opt\.contactId\) : buyerName\}<\/span>/);
+  assert.doesNotMatch(orders, /Record message<span className="sr-only"> \(\{line\}\)/);
 });
 
 test("Settle the cut on Orders says what was settled and links to the Next step instead of Orders", () => {

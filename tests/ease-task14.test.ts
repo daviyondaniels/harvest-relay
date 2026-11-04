@@ -122,7 +122,7 @@ test("accessible names: no stray colon before the sr-only part of a button or la
   assert.doesNotMatch(orders, /sr-only">:/);
   assert.doesNotMatch(orders, /const more = [^\n]*`: /, "the alternative buttons no longer say \": …\" after their label");
   // Shortened in task 23: the visible label plus who it goes to, not the whole offer.
-  assert.match(orders, /Send<span className="sr-only"> to \{opt\.kind === "ask-grower" \? grower\(opt\.contactId\) : buyerName\}<\/span>/);
+  assert.match(orders, /Record message<span className="sr-only"> to \{opt\.kind === "ask-grower" \? grower\(opt\.contactId\) : buyerName\}<\/span>/);
 });
 
 // ---- Task 5 path ----
