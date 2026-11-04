@@ -1,6 +1,6 @@
 # Submission and three-minute demonstration
 
-Status: recording plan, not a finished video or submitted entry. Public repository and a video no longer than three minutes are owner-confirmed mandatory requirements. Check the authenticated submission form for remaining fields before release.
+Status: a replacement local video is complete at approximately 2:43, with one continuous browser capture, an actual-event cursor, synthetic narration and no captions. Public repository and a video no longer than three minutes are owner-confirmed mandatory requirements. Video upload and the actual entry remain outstanding. Check the authenticated submission form for remaining fields before release.
 
 ## Narrative and shot plan (target 2:50, ten-second buffer)
 
@@ -20,9 +20,9 @@ Rehearse from a reset synthetic workspace. Record short segments if needed and e
 - Freeze and record the commit; verify clean install, tests, typecheck and production build from a new checkout. Confirm both CI operating systems pass.
 - Review repository history and tracked files for secrets and third-party rights. Resolve source-license choice with the owner. The bundled font has its own SIL license.
 - Make the intended repository public after that review; verify an unauthenticated visitor can clone the frozen source. A private PR URL alone does not satisfy this requirement.
-- Deploy synthetic isolated mode on a judge-accessible HTTPS origin with persistent database storage, secure cookies and hosting traffic limits. A Tailscale address must be checked from outside the tailnet before claiming public access.
+- If the authenticated submission form requires a working URL, or the owner chooses to offer interactive judge access, deploy synthetic isolated mode on a judge-accessible HTTPS origin with persistent database storage, secure cookies and hosting traffic limits. The official waiver considers live reliability as part of the Demo score but does not explicitly require a publicly hosted URL. A Tailscale address must be checked from outside the tailnet before claiming public access. The owner deferred public Funnel exposure while prioritizing the video; it remains disabled.
 - Check no-session → start, two independent visitors, reset/export isolation, expiry, paid-call refusal, mobile layout and stale-plan refusal on the deployed build. The local preview is not deployment proof.
-- Record/export the final video at 2:50 or less; verify actual duration, sound, readable text and public watch permission without sign-in. Script completion does not satisfy the video requirement.
+- Record/export the final video below three minutes, preferably with a buffer; verify actual duration, sound, readable text and public watch permission without sign-in. Script completion does not satisfy the video requirement.
 - Check event eligibility, contribution disclosure, required fields, licensing/rights and current deadline in the official submission flow. Owner handles any binding agreement or attestation.
 - Verify source, demo and video links in a signed-out browser, then submit the actual entry through the authorized account. Retain confirmation.
 
