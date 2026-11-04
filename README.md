@@ -17,7 +17,7 @@ npm run typecheck
 npm run demo
 ```
 
-`npm run demo` runs authored synthetic inputs with hand-authored update proposals. It performs no model inference or network requests. The coordinator web app (`npm run build && npm run start`, on 127.0.0.1:3600) is local only: there is no deployment, customer connector, authenticated multi-user service or message delivery yet. Live model calls are off unless the server sets an allowance.
+`npm run demo` runs authored synthetic inputs with hand-authored update proposals. It performs no model inference or network requests. The coordinator web app (`npm run build && npm run start`, on 127.0.0.1:3600) binds to loopback by default. An isolated synthetic demo is deployed behind the owner's tailnet HTTPS proxy; outside-tailnet judge access is not yet verified. There is no customer connector, authenticated organization service or message delivery. Live model calls are off unless a private server explicitly sets an allowance; public-demo mode always refuses them.
 
 ## Isolated judge demo
 
@@ -38,7 +38,7 @@ The current font and SIL license are bundled in `app/fonts/`; production builds 
 
 Existing orders support quantity changes through Orders → Adjust order quantity. Preview all affected buyers, then confirm with a name and reason. Changes cannot reduce demand below promises, edit packed orders, or bypass an open request. Quantity-only changes invalidate affected confirmed sheets even if allocated supply stays the same. History is in the adjustment screen and day export.
 
-See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). These are preparation materials; public repository visibility, a finished video and external judge access still require release verification.
+See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). The repository is public under Apache-2.0, with anonymous source access verified. A narrated, captioned video draft is prepared locally; public video hosting and outside-tailnet demo access remain to be verified. See [current release evidence](docs/RELEASE.md).
 
 ## Recovery
 
