@@ -189,3 +189,8 @@ After explicit owner approval, the existing HTTPS demo endpoint was routed to th
 Live HTTPS checks passed: start/guide, named supply approval, plan confirmation, demand preview/commit/history, quantity-only stale-sheet blocking, reconfirmation restoring eligibility, packing and JSON day export. The downloaded export matched stored version 6 and the synthetic 130 lb order's packed stage. These actions were test decisions in an isolated synthetic workspace, not deliveries or customer validation.
 
 Apache-2.0 was explicitly approved for project source. The root license, attribution notice, README and package metadata reflect it; Plus Jakarta Sans retains SIL. Repository visibility is unchanged. Both operating-system CI jobs passed for the recovery implementation. Video production and independent operator/model evidence remain outstanding.
+
+
+## November 3 partial-offer correction
+
+The filmed workflow exposed a template error: an order 60 lb short with 40 lb of substitute available produced an offer saying it was 40 lb short. Offer templates now ask about the offered replacement quantity without asserting the whole shortfall. Optional model drafting uses draft-v3 with the same instruction; draft checks refuse offer wording that claims a shortage, and old draft-v2 recordings no longer match. Existing recorded messages remain unchanged as history. Added regressions cover the 60/40 case and model fallback. No new live model call or new-case accuracy claim is made.

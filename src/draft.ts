@@ -4,7 +4,7 @@ import { checkDraft, display, template, type Check, type MessageFacts } from "./
 // Templates are the default; a model redraft is optional and must pass the
 // deterministic checker or it is replaced by the template (docs/EVIDENCE.md E10, E11).
 // A draft with only confirmation items is kept; the items travel on Draft.check.
-export const DRAFT_PROMPT_VERSION = "draft-v2";
+export const DRAFT_PROMPT_VERSION = "draft-v3";
 const DRAFT_PROMPT = [
   "You write one short, plain, friendly text message from a small food hub coordinator.",
   "Use only the facts given: the recipient name, product, substitute if any, quantity and day. The purpose says what the message must do.",
@@ -28,7 +28,7 @@ export function purpose(f: MessageFacts, quantity = display(f.amount, f.unit), d
     case "request": return `Ask the grower whether they can bring another ${quantity} of ${f.product} for ${day}, and ask how much they can do.`;
     case "offer":
       if (!f.substitute) throw new Error("An offer needs a substitute");
-      return `Say the buyer's ${f.product} order for ${day} is ${quantity} short, and ask whether ${f.substitute} would work instead for that ${quantity}, with a yes or no reply. Never suggest that ${f.product} is available.`;
+      return `Ask whether ${f.substitute} would work instead of ${quantity} of ${f.product} for ${day}, with a yes or no reply. The quantity is the offered substitute amount; do not state the full shortage. Never suggest that ${f.product} is available.`;
     case "notice": return `Say the ${f.product} order for ${day} will be ${quantity} short.`;
   }
 }
