@@ -34,7 +34,7 @@ The inspected host used Node 24.13.1, `/home/ayliea/dev/harvest-relay-demo`, and
 
 ## Remaining operational gates
 
-Supervision/start-on-reboot, off-host backup retention, host failure recovery, customer accounts/roles, organization isolation, monitoring and outbound delivery are separate production work. A successful demo cutover must not be described as solving these. Public source still needs an owner rights/license decision; the heuristic history screen alone does not establish publication rights.
+Off-host backup retention, host failure recovery, customer accounts/roles, organization isolation, monitoring and outbound delivery are separate production work. A successful demo cutover must not be described as solving these. The owner authorized Apache-2.0 and public source publication; the heuristic history screen alone does not establish publication rights.
 
 Reference: [Node SQLite backup API](https://nodejs.org/api/sqlite.html#sqlitebackupsource-db-path-options).
 
@@ -43,4 +43,8 @@ Reference: [Node SQLite backup API](https://nodejs.org/api/sqlite.html#sqlitebac
 
 The owner approved the November 3 cutover after staging. The existing port-3600 HTTPS proxy now routes to the isolated backend on loopback port 3603. Only that target changed. The user service `harvest-relay-demo-f3ec92e` runs the tested commit with a protected persistent database and no model credential. The old backend on loopback 3600 remains running for rollback; its private state matched the verified pre-cutover backup. An operator can revert the same proxy target to loopback 3600 if necessary.
 
-Through HTTPS, a synthetic named approval, confirmation, 120 → 130 lb demand change, stale-sheet block, reconfirmation, packing and day-record download all passed. Source licensing is Apache-2.0 by owner approval; visibility and outside-tailnet access are separate decisions. The service is transient user supervision; restart-on-reboot and off-host recovery are not claimed.
+Through HTTPS, a synthetic named approval, confirmation, 120 → 130 lb demand change, stale-sheet block, reconfirmation, packing and day-record download all passed. Source licensing is Apache-2.0 by owner approval; visibility and outside-tailnet access are separate decisions.
+
+On November 4, a verified backup of the isolated database preceded migration to persistent user unit `harvest-relay-demo.service`. It pins release `a537168`, keeps the same loopback port 3603 and protected database, and preserves public-demo mode, disabled paid calls, secure cookies, restart-on-failure, restrictive umask and NoNewPrivileges. `systemd-analyze --user verify` passed; the unit is enabled under `default.target`, the service is active, and user lingering was already enabled. The existing HTTPS guide loaded with the same workspace progress after migration. The superseded transient service is stopped. A host reboot was not performed, so boot behavior is configured rather than reboot-tested. Off-host retention remains outstanding.
+
+The host's SSH session may omit the user bus environment. For service administration, use `XDG_RUNTIME_DIR=/run/user/1000` and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus` for the inspected `ayliea` account; do not assume those values on another host.
