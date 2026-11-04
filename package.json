@@ -13,6 +13,7 @@
     "dev": "next dev -H 127.0.0.1 -p 3600",
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 3600",
+    "start:render": "node scripts/start-render.ts",
     "recovery": "node scripts/recovery.ts"
   },
   "devDependencies": {

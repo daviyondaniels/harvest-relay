@@ -36,9 +36,19 @@ Visitor cookies are random HttpOnly bearer capabilities, not account authenticat
 
 The current font and SIL license are bundled in `app/fonts/`; production builds no longer fetch Google Fonts. CI is configured to verify Linux and Windows installation, tests, typecheck and build with live calls off. It does not deploy.
 
+### Render deployment
+
+[`render.yaml`](render.yaml) defines one paid Node web service and a 1 GB persistent disk, using the same Node 24.20.0 version as CI. The prepared configuration still requires owner approval and a successful external verification before claiming a live judge URL. It uses the public repository and `ux/round-8`; no private database or model credentials are copied.
+
+Build with `npm ci --include=dev && npm run typecheck && npm run build`, then run `npm run start:render`. The Render start command requires `PORT` and an absolute `HARVEST_DB`, initializes the demo schema, and listens on `0.0.0.0` at that port. It always forces isolated demo mode, secure cookies and zero paid calls, and clears the model credential in the child process. The existing `npm start` retains its loopback-only behavior.
+
+Mount the disk at `/var/data/harvest-relay` and set `HARVEST_DB=/var/data/harvest-relay/isolated-demo.db`. Only files under that mount persist. The disk is available at runtime, not during builds; no pre-deploy database initialization is required. Public synthetic seed readings are tracked in the repository. Use `/start` as the health-check path. Automatic deploys are off so subsequent source changes do not silently replace the judged build. Review the current cost in Render before creating the service.
+
+After deployment, verify HTTPS entry, two independent visitor workspaces, secure session cookies, named approval, consent, stale-sheet guards and export. Restart the service and check that an unexpired workspace survives. For recovery use the SQLite backup CLI described below; a disk snapshot alone is not the demonstrated database restore procedure. See [Render's disk documentation](https://render.com/docs/disks) and [port binding requirements](https://render.com/docs/web-services#port-binding).
+
 Existing orders support quantity changes through Orders → Adjust order quantity. Preview all affected buyers, then confirm with a name and reason. Changes cannot reduce demand below promises, edit packed orders, or bypass an open request. Quantity-only changes invalidate affected confirmed sheets even if allocated supply stays the same. History is in the adjustment screen and day export.
 
-See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). The repository is public under Apache-2.0, with anonymous source access verified. A narrated, captioned video draft is prepared locally; public video hosting and outside-tailnet demo access remain to be verified. See [current release evidence](docs/RELEASE.md).
+See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). The repository is public under Apache-2.0, with anonymous source access verified. A narrated video with a normal-size cursor and no captions is prepared locally; public video hosting and outside-tailnet demo access remain to be verified. See [current release evidence](docs/RELEASE.md).
 
 ## Recovery
 

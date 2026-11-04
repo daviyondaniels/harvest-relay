@@ -1,0 +1,32 @@
+# Public synthetic demo only. No existing database or model credentials are copied.
+services:
+  - type: web
+    name: harvest-relay-demo
+    runtime: node
+    plan: 0.5c-512mb
+    region: ohio
+    branch: ux/round-8
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: npm ci --include=dev && npm run typecheck && npm run build
+    startCommand: npm run start:render
+    healthCheckPath: /start
+    disk:
+      name: harvest-relay-demo-data
+      mountPath: /var/data/harvest-relay
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24.20.0
+      - key: NODE_ENV
+        value: production
+      - key: HARVEST_DB
+        value: /var/data/harvest-relay/isolated-demo.db
+      - key: HARVEST_PUBLIC_DEMO
+        value: "1"
+      - key: HARVEST_LIVE_CALLS
+        value: "0"
+      - key: HARVEST_SECURE_COOKIES
+        value: "1"
+      - key: MODEL_API_KEY
+        value: ""
