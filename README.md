@@ -2,6 +2,8 @@
 
 Grower changes arrive as messages. Each one is read, checked against this week's orders, and nothing changes until you approve.
 
+**[Try the public synthetic demo](https://harvest-relay-demo.onrender.com/start).** Recorded Muse Spark responses, isolated visitor workspaces, and no paid inference or message delivery.
+
 **Evidence.** Balancing supply and demand was the top challenge hubs reported in every National Food Hub Survey from 2013 to 2019, and a closed hub's marketplace could not track whether a farmer was going to run out (`docs/EVIDENCE.md`, "The problem is real, but nobody has measured it"; E3). Today a grower tells staff by phone or message, and staff source from another member or non-member or tell the customer (`docs/EVIDENCE.md`, "Hubs handle shortfalls with a routine"; E1 for the phone caveat). Not yet validated: whether coordinators would adopt this, how much time it saves (no source gives one, so none is claimed; E24), and how accurately messages are read on real grower texts (the test sets are authored and no coordinator has been interviewed).
 
 Help small food-hub coordinators reconcile changing grower availability against existing buyer orders. Growers provide updates; the coordinator reviews each change; a substitute is offered only with the buyer's recorded yes (E8; that a buyer defines its own substitution list is an assumption still to test). Reducing avoidable food loss is an intended outcome, not a demonstrated result. Lead direction selected by the project owner on October 26, 2026; a working description, not a settled brand.
@@ -17,7 +19,7 @@ npm run typecheck
 npm run demo
 ```
 
-`npm run demo` runs authored synthetic inputs with hand-authored update proposals. It performs no model inference or network requests. The coordinator web app (`npm run build && npm run start`, on 127.0.0.1:3600) binds to loopback by default. An isolated synthetic demo is deployed behind the owner's tailnet HTTPS proxy; outside-tailnet judge access is not yet verified. There is no customer connector, authenticated organization service or message delivery. Live model calls are off unless a private server explicitly sets an allowance; public-demo mode always refuses them.
+`npm run demo` runs authored synthetic inputs with hand-authored update proposals. It performs no model inference or network requests. The coordinator web app (`npm run build && npm run start`, on 127.0.0.1:3600) binds to loopback by default. The public synthetic demo is hosted on Render; the owner's original tailnet deployment is retained separately. There is no customer connector, authenticated organization service or message delivery. Live model calls are off unless a private server explicitly sets an allowance; public-demo mode always refuses them.
 
 ## Isolated judge demo
 
@@ -38,7 +40,7 @@ The current font and SIL license are bundled in `app/fonts/`; production builds 
 
 ### Render deployment
 
-[`render.yaml`](render.yaml) defines one paid Node web service and a 1 GB persistent disk, using the same Node 24.20.0 version as CI. The prepared configuration still requires owner approval and a successful external verification before claiming a live judge URL. It uses the public repository and `ux/round-8`; no private database or model credentials are copied.
+[`render.yaml`](render.yaml) defines one paid Node web service and a 1 GB persistent disk, using the same Node 24.20.0 version as CI. The owner approved the cost and created the service on November 4. Render reports release `2f3e0fc` live; anonymous HTTPS entry returns 200, and the owner confirmed workspace entry in a regular browser. Automated end-to-end verification on Render and the restart-persistence check remain pending because browser automation failed. The same workflow has passed on the tailnet deployment. It uses the public repository and `ux/round-8`; no private database or model credentials are copied.
 
 Build with `npm ci --include=dev && npm run typecheck && npm run build`, then run `npm run start:render`. The Render start command requires `PORT` and an absolute `HARVEST_DB`, initializes the demo schema, and listens on `0.0.0.0` at that port. It always forces isolated demo mode, secure cookies and zero paid calls, and clears the model credential in the child process. The existing `npm start` retains its loopback-only behavior.
 
@@ -48,7 +50,7 @@ After deployment, verify HTTPS entry, two independent visitor workspaces, secure
 
 Existing orders support quantity changes through Orders → Adjust order quantity. Preview all affected buyers, then confirm with a name and reason. Changes cannot reduce demand below promises, edit packed orders, or bypass an open request. Quantity-only changes invalidate affected confirmed sheets even if allocated supply stays the same. History is in the adjustment screen and day export.
 
-See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). The repository is public under Apache-2.0, with anonymous source access verified. A narrated video with a normal-size cursor and no captions is prepared locally; public video hosting and outside-tailnet demo access remain to be verified. See [current release evidence](docs/RELEASE.md).
+See [the implementation plan](docs/implementation/2026-11-03-road-to-nine.md), [operator validation protocol](docs/implementation/operator-validation.md), and [three-minute recording plan](docs/implementation/submission-demo.md). The repository is public under Apache-2.0, with anonymous source access verified. A narrated video with a normal-size cursor and no captions is prepared locally; public video hosting remains an owner submission step. See [current release evidence](docs/RELEASE.md).
 
 ## Recovery
 
